@@ -1,0 +1,19 @@
+{
+  "units": "meters",
+  "upAxis": "+Y",
+  "rootMotion": false,
+  "asset": "assets/cook_rig_v39.glb",
+  "source": { "mesh": "cook_style_c.glb", "skeleton": "person_human.glb" },
+  "heightMeters": 1.72,
+  "walkAnimationName": "walk",
+  "cycleSeconds": 0.9583,
+  "strideMeters": 1.4523,
+  "authoredSpeedMps": 1.5155,
+  "runCycleSeconds": 0.6667,
+  "runStrideMeters": 1.6400,
+  "runAuthoredSpeedMps": 2.4590,
+  "audit": { "date": "2026-08-11", "pass": 19, "fail": 0,
+             "weightSumRange": "0.999~1.001", "maxInfluences": 4,
+             "zeroWeightVerts": 0, "boneScaleAnimation": "none (constant 1.0)",
+             "hipsHorizontalDrift_m": 0.0 }
+}

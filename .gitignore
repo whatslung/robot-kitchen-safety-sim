@@ -1,0 +1,36 @@
+# macOS
+.DS_Store
+._*
+
+# 로컬 도구 설정 (개인 환경, 공유 대상 아님)
+.claude/
+.mcp.json
+.vscode/
+.idea/
+
+# 작업 부산물 — 절대 커밋하지 말 것
+_snapshots/
+assets/_legacy/
+legacy/
+*.blend
+*.blend1
+
+# 실제 급식실 CCTV 프레임. 조리원이 찍혀 있어 공개 저장소에 올리지 않는다.
+# 참조 오버레이(sim.html?ref=…)는 이 폴더가 없으면 조용히 꺼진다.
+refs/
+
+# 원본 상용/외부 에셋 (라이선스상 재배포 불가)
+assets/sketchfab_*.glb
+assets/cook_cc_*.glb
+
+# 시뮬레이터가 생성한 데이터셋 / 실행 기록
+dataset/
+runs/
+captures/
+*.zip
+
+# 파이썬
+__pycache__/
+*.pyc
+.venv/
+venv/
