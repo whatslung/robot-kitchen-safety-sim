@@ -23,7 +23,8 @@
   @media (max-width:1180px){ #panel{width:264px;flex-basis:264px} #stagePanel{display:none} }
   @media (max-width:860px){ #panel{width:232px;flex-basis:232px;font-size:11px} }
   @media (max-width:680px){ #panel{display:none} }
-  #panelToggle{position:absolute;right:10px;top:52px;z-index:30;width:30px;height:30px;
+  /* 우상단은 PiP 자리다(크기가 15~45%로 변한다). 패널 접기 버튼은 우하단 FPS 위로 뺀다. */
+  #panelToggle{position:absolute;right:10px;bottom:52px;z-index:30;width:30px;height:30px;
     border-radius:8px;padding:0;font-size:14px;line-height:1;flex:none;opacity:.85}
   /* 탭 — 13개 섹션을 4개 그룹으로 (팀원용 정리) */
   #tabbar{display:flex;gap:4px;margin:10px 0 2px;position:sticky;top:0;z-index:5;
@@ -106,12 +107,34 @@
   .dot.bad{background:#f85149;color:#f85149}
   .dot.idle{background:#484f58;color:#484f58;box-shadow:none}
   #statusbar .v.ok{color:#3fb950} #statusbar .v.warn{color:#e3b341} #statusbar .v.bad{color:#f85149}
-  #status{position:absolute;top:62px;left:50%;transform:translateX(-50%);background:rgba(13,17,23,.92);
+  /* 가운데 정렬이면 PiP(우상단) 밑으로 뻗어 화면을 가린다 — 상태칩과 같은 왼쪽 열로 내린다.
+     PiP는 최대 45%까지 커질 수 있으므로 폭은 46%로 묶는다. */
+  #status{position:absolute;top:62px;left:14px;background:rgba(13,17,23,.92);
     border:1px solid #30363d;border-radius:9px;padding:8px 16px;font-size:12.5px;backdrop-filter:blur(14px);
-    white-space:nowrap;max-width:56vw;overflow:hidden;text-overflow:ellipsis}
+    white-space:nowrap;max-width:46%;overflow:hidden;text-overflow:ellipsis}
   #hint{margin-top:10px;padding-top:9px;border-top:1px solid #21262d;color:#6e7681;font-size:10.5px;line-height:1.75}
   kbd{background:#21262d;border:1px solid #30363d;border-bottom-width:2px;border-radius:4px;
     padding:0 4px;font-size:9.5px;font-family:ui-monospace,monospace;color:#8b949e}
+  /* 카메라 전환 바 — 등록된 카메라를 화면에 늘 띄워 클릭으로 고른다.
+     예전엔 전환이 숫자키·P키·PiP클릭 같은 숨은 조작뿐이라 아무도 못 찾았다.
+     썸네일이 아니라 이름 버튼이라 추가 렌더 비용이 0이다. */
+  /* 카메라 전환은 **왼쪽 STAGE 트리 안에서** 한다. 화면에 떠 있는 바로 만들었더니
+     상태칩·상태메시지와 위쪽에 3겹으로 쌓여 오히려 복잡해졌다. 트리에는 이미 카메라가
+     나열돼 있으니 그 줄을 눌러 전환하는 게 새 UI를 늘리지 않는 방법이다. */
+  .snode.cam{cursor:pointer}
+  .snode.cam.main{background:#1f6feb;color:#fff;font-weight:700}
+  .snode.cam.main:hover{background:#2b7bf3}
+  /* PiP 지정은 **항상 보이는 작은 버튼**으로 둔다. 우클릭/Shift+클릭으로만 되던 때는
+     기능이 있는 줄을 아무도 몰랐다 — 숨은 제스처는 단축키로만 남긴다. */
+  .snode .pipbtn{font-size:8.5px;letter-spacing:.4px;border-radius:4px;padding:1px 5px;
+    margin-left:auto;border:1px solid #3a4450;color:#6e7681;background:transparent;
+    cursor:pointer;white-space:nowrap;font-family:inherit}
+  .snode .pipbtn:hover{border-color:#76b900;color:#a6e22e}
+  .snode .pipbtn.on{border-color:#76b900;color:#a6e22e;background:rgba(118,185,0,.14)}
+  .snode.cam.main .pipbtn{border-color:#9ec8ff;color:#dbeaff}
+  .snode.cam.main .pipbtn.on{border-color:#fff;color:#fff}
+  .snode .pipbtn + .eye{margin-left:6px}
+  .streehint{padding:2px 10px 6px 26px;color:#6e7681;font-size:10px;line-height:1.6}
   #stats{position:absolute;right:14px;bottom:14px;background:rgba(13,17,23,.85);border:1px solid #30363d;
     border-radius:8px;padding:7px 11px;font:11px/1.6 ui-monospace,SFMono-Regular,monospace;color:#7d8590;
     backdrop-filter:blur(10px)}
@@ -198,16 +221,26 @@
     <ul>
       <li><b>▶ 자동 작업</b>을 누르면 로봇이 튀김 바스켓을 건져 카트로 옮깁니다.</li>
       <li><b>WASD</b>로 조리원을 직접 걸어서 로봇에 다가가 보세요 — 가까워지면 <b>노란 감속</b>, 더 가까우면 <b>빨간 정지</b>가 걸립니다.</li>
-      <li>화면 우상단의 작은 화면이 <b>천장 카메라(모델 입력 시점)</b>입니다.</li>
+      <li><b>왼쪽 STAGE 패널 아래 "시점" 목록</b>을 누르면 그 카메라 화면으로 바뀝니다
+          (Shift+클릭 또는 우클릭 = 작은 화면으로).</li>
+      <li>화면 우상단의 <b>작은 화면(PiP)</b>이 모델 입력 시점입니다.
+          <b>클릭하면 다음 카메라</b>로 넘어가고, 더블클릭하면 큰 화면과 자리를 바꿉니다.</li>
+      <li>큰 화면을 바꿔도 <b>작은 화면은 그대로</b>입니다. 다만 고른 시점이 작은 화면에
+          떠 있던 것이면 <b>둘이 자리를 맞바꿉니다</b>(같은 그림이 두 번 나오지 않게).</li>
+      <li>시점을 <b>위로 올려 내려다보면 천장(후드·배관)이 저절로 사라집니다.</b>
+          내려서 옆에서 보면 다시 나타납니다 — 따로 켤 필요 없습니다.</li>
     </ul>
 
     <h3>키보드</h3>
     <ul>
-      <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 사람 이동 · <kbd>Shift</kbd> 달리기</li>
-      <li><kbd>Tab</kbd> 조작 대상 전환 (사람 ↔ 로봇 관절)</li>
+      <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> <b>지금 고른 조작 대상</b>을 움직입니다 ·
+          <kbd>Shift</kbd> 빠르게</li>
+      <li><kbd>Tab</kbd> 조작 대상 전환 — <b>🎥 자유 시점</b>(WASD 이동·<kbd>Q</kbd><kbd>E</kbd> 높이)
+          ↔ 🚶 사람 ↔ 🤖 로봇 관절. 오른쪽 <b>▶ 실행</b> 탭의 "조작 대상"에서도 고를 수 있습니다.</li>
       <li>로봇 모드: <kbd>W/S</kbd> 어깨 · <kbd>Q/A</kbd> 베이스 · <kbd>E/D</kbd> 팔꿈치 · <kbd>R/F</kbd> 손목 · <kbd>T/G</kbd> 회전</li>
       <li><kbd>C</kbd> 주 시점 캡처 · <kbd>Shift</kbd>+<kbd>C</kbd> 주 시점 + PiP 둘 다</li>
-      <li><kbd>0</kbd> 자유 시점 · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 카메라 전환 · <kbd>P</kbd> PiP 순환 · <kbd>X</kbd> PiP와 교환</li>
+      <li><kbd>0</kbd> 자유 시점 · <kbd>1</kbd>~<kbd>3</kbd> 카메라 전환(그 외는 왼쪽 시점 목록) ·
+          <kbd>P</kbd> PiP 순환 · <kbd>X</kbd> PiP와 교환</li>
       <li><kbd>Space</kbd> 정지 · <kbd>H</kbd> 이 도움말</li>
       <li>마우스: 드래그 회전 · 휠 확대 · 우클릭 드래그 이동</li>
     </ul>
@@ -256,7 +289,16 @@
   <div class="section">카메라 · 모델 입력</div>
   <div class="row"><span>주 시점</span><select id="viewSel"></select></div>
   <div class="row"><span>PiP</span><select id="pipSel"></select></div>
-  <div class="note" style="margin:2px 0 6px">PiP를 클릭하면 주 시점과 맞바꿉니다.</div>
+  <div class="row"><span>PiP 크기</span><input id="pipSize" type="range" min="15" max="45" step="1" value="30"><b id="pipSizeV">30%</b></div>
+  <div class="note" style="margin:2px 0 6px">주 시점을 바꿔도 <b>PiP는 그대로</b>입니다.
+    단, 고른 시점이 <b>PiP에 떠 있던 것이면 둘이 자리를 맞바꿉니다</b>.<br>
+    PiP를 <b>클릭</b>하면 PiP만 다음 카메라로, <b>더블클릭</b>하면 주 시점과 교환합니다.</div>
+  <label class="row" style="cursor:pointer"><input type="checkbox" id="ceilHide" checked style="accent-color:#76b900">
+    <span style="width:auto;color:#c9d1d9">천장 자동 숨김 — 위에서 내려다볼 때</span></label>
+  <div class="hint">자유 시점에서 <b>천장 설비보다 위로 올라가 아래를 내려다보면</b> 후드·덕트·배관·등기구가
+    저절로 사라집니다. 방 안에서 올려다보면 그대로 보입니다 — 따로 켜고 끌 필요가 없습니다.<br>
+    끄면 항상 보입니다. <b>감시 카메라(CAM1~5)에는 적용되지 않습니다</b> — 데이터셋 화면이
+    저절로 바뀌면 안 되기 때문입니다. 수직 부감인 <b>CAM4만</b> 설정으로 천장을 뺍니다.</div>
   <div class="btnrow">
     <button id="capBtn">주 시점</button>
     <button id="capPipBtn">PiP</button>
@@ -283,9 +325,6 @@
     <button class="vp" data-vp="robot">로봇 어깨</button>
     <button class="vp" data-vp="cart">카트</button>
   </div>
-  <div class="btnrow">
-    <button id="camAdd">이 시점을 카메라로 등록</button>
-  </div>
   <div class="row"><span>궤도 각도수</span><input id="orbN" type="range" min="4" max="24" step="2" value="8"><b id="orbNV">8</b></div>
   <div class="btnrow">
     <button id="orbCap">궤도 다각도 캡처</button>
@@ -294,6 +333,7 @@
   <div class="section">조작 대상 <span class="note" style="font-weight:400">Tab 전환</span></div>
   <div class="row"><span>키보드</span>
     <select id="ctrlSel">
+      <option value="camera">🎥 자유 시점 (WASD 이동·QE 높이)</option>
       <option value="person">🚶 사람 (WASD·Shift 달리기)</option>
       <option value="robot">로봇 관절 (WASD·QE·RF·TG)</option>
     </select>
@@ -319,18 +359,34 @@
   <div class="row"><span>저해상</span><input id="snLow" type="range" min="0" max="2" step="1"><b id="snLowV">0</b></div>
   <div class="hint">라벨(마스크·깊이)에는 적용되지 않습니다 — 학습 입력만 실제 CCTV처럼 열화시킵니다.</div>
 
-  <div class="section">감시 카메라 위치·각도</div>
+  <div class="section">감시 카메라 관리 <span class="note" style="font-weight:400">추가 · 이동 · 삭제</span></div>
+  <div class="btnrow">
+    <button id="camAdd">＋ 지금 자유 시점으로 새 카메라</button>
+  </div>
   <div class="row"><span>조정할 카메라</span><select id="camSel"></select></div>
-  <div class="row"><span>X 좌우</span><input id="camX" type="range" min="-3.4" max="3.4" step="0.02"><b id="camXV">0</b></div>
-  <div class="row"><span>Y 높이</span><input id="camY" type="range" min="0.3" max="3.2" step="0.02"><b id="camYV">0</b></div>
-  <div class="row"><span>Z 앞뒤</span><input id="camZ" type="range" min="-3.4" max="3.4" step="0.02"><b id="camZV">0</b></div>
+  <div class="btnrow">
+    <button id="camRename">이름 변경</button>
+    <button id="camDel" style="color:#ff9a9a">🗑 삭제</button>
+  </div>
+  <div class="row"><span>X 좌우</span><input id="camX" type="range" step="0.02"><b id="camXV">0</b></div>
+  <div class="row"><span>Y 높이</span><input id="camY" type="range" step="0.02"><b id="camYV">0</b></div>
+  <div class="row"><span>Z 앞뒤</span><input id="camZ" type="range" step="0.02"><b id="camZV">0</b></div>
   <div class="row"><span>좌우각</span><input id="camYaw" type="range" min="-180" max="180" step="1"><b id="camYawV">0°</b></div>
-  <div class="row"><span>상하각</span><input id="camPit" type="range" min="-89" max="89" step="1"><b id="camPitV">0°</b></div>
+  <div class="row"><span>상하각</span><input id="camPit" type="range" min="-90" max="90" step="1"><b id="camPitV">0°</b></div>
   <div class="row"><span>화각</span><input id="camFov" type="range" min="30" max="120" step="1"><b id="camFovV">60°</b></div>
+  <div class="row"><span>부각(계산)</span><b id="camDip" style="width:auto">–</b></div>
   <div class="btnrow">
     <button id="camAim">셀 조준</button>
-    <button id="camReset">↩ 초기화</button>
+    <button id="camReset">↩ 이 카메라만 초기값</button>
   </div>
+  <div class="btnrow">
+    <button id="camCopy">설정 복사</button>
+    <button id="camFactory">전체 공장 초기화</button>
+  </div>
+  <div class="hint">바꾼 위치·각도와 추가한 카메라는 <b>이 브라우저에 자동 저장</b>됩니다(새로고침해도 유지).<br>
+    <b>설정 복사</b>는 현재 카메라 전체를 <code>CAM_DEFS</code> 코드로 복사합니다 — 확정된 값을
+    sim.html에 영구히 박을 때 씁니다.<br>
+    <b>부각</b>은 카메라가 내려다보는 각도입니다(90°=수직, 45°=대각). 실사 CCTV는 보통 30~45°.</div>
 
   <div class="section">사람 시나리오 · 화재</div>
   <div class="btnrow">
@@ -1671,6 +1727,31 @@ const steam = makeParticles("steam", new V3(F.pos.x, F.oilY+0.06, F.pos.z), {
 });
 steam.blendMode = BABYLON.ParticleSystem.BLENDMODE_STANDARD;
 
+/* ══ 천장 설비 가림 처리 ═════════════════════════════════════════════════
+   후드 캐노피(y 2.20~2.58)는 조리 라인 전체를 덮는다. 수직 부감 시점에서는 이게
+   솥과 로봇을 통째로 가려 좌표를 찍을 수 없다.
+
+   메시를 지우는 대신 **카메라별 레이어 마스크**로 뺀다 — 바로 아래 카메라 하우징이
+   쓰는 것과 같은 방식이다. isVisible/setEnabled 토글은 쓸 수 없다: applyCameras가
+   scene.activeCameras로 주 시점과 PiP를 한 프레임에 그리므로, 어느 카메라 차례에
+   껐는지에 따라 결과가 섞인다. layerMask는 카메라 속성이라 이 구조에서 안전하다.
+
+   ※ 기존 CAM1~3은 건드리지 않는다. 실사 급식실 CCTV도 후드가 시야에 걸리는 게
+     정상이고, 그 시점으로 이미 뽑아둔 데이터와 어긋나면 안 된다.
+     대상은 **새로 추가하는 수직 부감(CAM4)과 자유 시점**뿐이다.
+
+   접두사 매칭이라 ceilLight가 ceilLightBody까지 잡는다 — 아래 STATIC 정규식(그림자
+   최적화)이 쓰는 것과 같은 이름 규약이다. hood/duct는 절차 생성 솥 후드로,
+   ASSETS 모드에서는 이미 isVisible=false지만 절차 전용 모드를 위해 같이 넣는다. */
+const CEIL_BIT = 0x8000;
+const CEIL_RE = /^(ceiling|ceilLight|ceilPipe|pipeHanger|cableTray|hood|duct)/;
+/* GLB가 나중에 로드되므로 이름 수집은 호출할 때마다 다시 한다(호출 빈도가 낮아 비용 무시). */
+function applyCeilingMask() {
+  let n = 0;
+  for (const m of scene.meshes) if (CEIL_RE.test(m.name || "")) { m.layerMask = CEIL_BIT; n++; }
+  return n;
+}
+
 /* ══ 감시 카메라 — 모델 입력 시점 (1차 개발 목표) ═══════════════════════ */
 const CAM_DEFS = [
   // CAM1은 후드를 피해 셀 측방 상공에서 내려본다 (후드 직하방은 솥이 가려짐)
@@ -1681,30 +1762,136 @@ const CAM_DEFS = [
   { id:"eye",      label:"CAM3 눈높이 통로",
     pos: ENV_V1 ? new V3(-1.9,1.55,-1.5) : new V3(3.30,1.55,1.90),
     tgt: ENV_V1 ? new V3(-0.30,0.85,0.30) : new V3(-0.10,0.85,0.15), fov:0.85 },
+  /* ── CAM4 상부 수직 뷰(나디르) — **천장 밖 5.0m에 띄운 가상 시점** ────────
+     현실에 설치할 수 있는 카메라가 아니다. 일부러 그렇게 뒀다.
+
+     이유: 이 시점이 하는 일은 **접근을 예측하는 것**이지 이미 들어온 걸 확인하는 게
+     아니다. 천장 안(3.15m·74°)에 두면 바닥 x −4.3~2.1 · z −1.6~3.2밖에 못 봐서
+     사람 동선 12점 중 5점(순회 전 구간)을 놓쳤다 — 위험 구역 안에 들어온 뒤에야
+     보이는 뷰라 예측 자체가 불가능했다.
+
+     천장(3.30m)을 4.5m로 올리는 안은 실제 급식실(보통 2.7~3.5m)과 맞지 않아 버렸다.
+     천장 안에서 110° 어안으로 넓히면 커버는 되지만, Babylon은 직선 투영이라 실제
+     어안 화면과 다르게 생기고 가장자리가 심하게 늘어난다.
+     → **좌표가 깨끗한 진리값(GT) 뷰**로 쓰기로 하고 천장 밖으로 뺐다.
+        실제 설치 조건의 학습 이미지는 천장 안 카메라(CAM1·CAM2·CAM5)에서 뽑는다.
+
+     높이 5.0m·fov 1.30 근거(실측, 데이터셋 4:3 기준):
+       · 동선 12/12 · 정지링 1.2m 72/72 · 감속링 2.0m 72/72 · 북벽까지 포함
+       · 4.5m는 감속링이 61/72로 잘리고, 5.5m 이상은 화면의 19~27%가 방 밖 허공
+     중심 z=2.35는 북벽(z=-1.45)이 프레임 위 끝에 딱 걸리게 잡은 값 — 조리기기 라인을
+     버리지 않으면서 통로 쪽을 최대한 확보한다.
+
+     타겟에 +0.001을 주는 이유: 정확히 수직이면 방향벡터가 up(+Y)과 평행해져
+     하우징의 prop.lookAt이 정의되지 않는다. 5m에서 0.011° — 시각적으로 수직.
+     **오프셋은 반드시 z축에 준다.** 수직 시점은 요(yaw)가 불정인데 TargetCamera는
+     rotation.y = atan2(dx, dz)로 정하므로, x에 주면 atan2(ε,0)=90°가 걸려 화면이
+     통째로 90° 돌아간다(실측: 솥 림 26/36으로 잘림). z에 주면 atan2(0,ε)=0 —
+     **화면 세로축 = 월드 +Z, 가로축 = 월드 +X**로 고정된다. GT 좌표를 픽셀에서
+     역산할 때 이 방위가 흔들리면 안 되므로 관측이 아니라 계약으로 못박는다. */
+  { id:"top",   label:"CAM4 상부 진리값 뷰", pos:new V3(1.650,5.00,2.350),
+    tgt:new V3(1.650,0,2.351), fov:1.30, noCeil:true },
+  /* ── CAM5 서벽 고소 마운트, 정확히 45° 하향 ── 실사 급식실 CCTV 설치각.
+     수평거리와 낙차를 둘 다 2.25로 잡아 각도를 수치로 보장한다(atan(2.25/2.25)=45°).
+     x=-2.80은 서벽(x0=-2.85) 안쪽 5cm. 시선이 후드 아래(후드는 z -1.33~0.23,
+     이 시선은 z=0.55)로 지나가므로 천장을 뺄 필요가 없다 — 실사와 같은 화면. */
+  { id:"deg45", label:"CAM5 45° 벽마운트",    pos:new V3(-2.80,3.10,0.55),
+    tgt:new V3(-0.55,0.85,0.55), fov:1.00 },
+  /* ── CAM6 솥 정면 — 솥 쪽에서 **통로 바깥을 내다보는** 시점 ────────────────
+     지금 카메라들은 전부 위나 옆에서 내려다본다. 그래서 사람이 정수리·어깨만 잡힌다
+     (회의 지적: "조리실 CCTV는 머리 헤드 기준이라 사람 잡기 힘들다").
+     이 시점은 다가오는 사람을 **정면·전신**으로 본다 — 접근 감지에 가장 유리한 각도다.
+
+     설치 방식은 아직 정하지 않았다(후드 하부·기기 라인 벽면·폴 등). 실사 98장에는
+     이 각도의 고정 카메라가 없어 대응물이 없다 — 우선 시뮬에서 각도의 값어치를
+     확인하고, 쓸 만하면 그때 현실적인 장착 위치를 찾는다.
+
+     **증기 기둥을 피해 오른쪽(+x)으로 비켜 세운다.** 증기는 솥 중심(x0,z0)에서 0.78m
+     폭으로 곧장 위로 뿜는다(상승중력 +0.35, 수명 2.4s). 처음에 x=0·z=-0.90에 뒀더니
+     시선이 그 기둥을 정통으로 관통해서, 조리 중에는 통로가 아예 안 보였다.
+     x=1.50에서 남서쪽으로 비스듬히 보면 시선이 증기 x범위(±0.4)를 지날 때 z가 0.7~1.9라
+     기둥(z ±0.4)의 남쪽으로 빠진다 — 같은 화면에 증기를 담되 가려지지는 않는다.
+
+     높이 2.15m는 후드 바닥(2.20) 아래라 후드에 가리지 않는다.
+
+     화각 92°·조준 (-0.80, 0.35, 1.60)은 **접근 존(안전링)이 화면에 다 들어오게** 잡은 값이다.
+     처음엔 66°로 통로만 보게 했더니 감속링 2.0m가 35/72밖에 안 잡혔다. 원인을 재보니
+     솥에 가려서가 아니라(가림 0) 링 지름 4m가 화각에 안 들어와서였다 — 카메라를 앞으로
+     빼는 건 오히려 악화됐다(36→30→29). 위치는 그대로 두고 넓게·바닥 쪽으로 조준해야 했다.
+     결과: 정지링 72/72 · 감속링 72/72 · 동선 9/12 · 증기 기둥 회피 유지. */
+  { id:"front", label:"CAM6 솥 정면(통로 감시)", pos:new V3(1.50,2.15,-0.95),
+    tgt:new V3(-0.80,0.35,1.60), fov:1.60 },
 ];
 const SURV = {};
-const PROP_BITS = { overhead:0x1000, corner:0x2000, eye:0x4000 };
-for (const d of CAM_DEFS) {
+/* 붙박이 카메라는 **항상 같은 비트**를 쓴다. 풀에서 뽑게 두면 저장/복원을 한 번 할 때마다
+   반납 순서에 따라 비트가 뒤바뀌어(실측: overhead가 0x1000→0x20000) 로그를 못 믿게 된다. */
+const FIXED_BITS = { overhead:0x1000, corner:0x2000, eye:0x4000,   // 0x8000 = CEIL_BIT
+                     top:0x10000, deg45:0x20000, front:0x40000 };
+const PROP_BITS = Object.assign({}, FIXED_BITS);
+/* 공장 초기값 스냅샷 — "공장 초기화"가 되돌릴 기준. pos/tgt는 Vector3라 깊은 복사가 필요하다. */
+const CAM_FACTORY = CAM_DEFS.map(d => Object.assign({}, d, { pos:d.pos.clone(), tgt:d.tgt.clone() }));
+
+/* 하우징 비트 풀 — 고정 카메라가 2^12~2^17을 쓰고 그 사이 2^15는 CEIL_BIT다.
+   그래서 사용자 카메라는 2^18부터 나눠준다. layerMask는 28비트(0x0FFFFFFF)라 2^27이 끝 —
+   사용자 카메라 10대. 삭제하면 비트를 풀에 반납하므로 추가/삭제를 반복해도 마르지 않는다. */
+const BIT_POOL = [];
+for (let b = 0x80000; b <= 0x8000000; b *= 2) BIT_POOL.push(b);   // 0x40000까지는 붙박이 몫
+function allocBit(id) {
+  if (PROP_BITS[id]) return PROP_BITS[id];
+  if (FIXED_BITS[id]) return PROP_BITS[id] = FIXED_BITS[id];   // 붙박이는 풀을 타지 않는다
+  const b = BIT_POOL.shift();
+  if (b === undefined) {            // 고갈 — 기능은 유지하고 하우징만 자기 시점에 보인다
+    console.warn("[CAM] 하우징 레이어 비트 소진(최대 10대) — 이 카메라는 자기 하우징이 화면에 보입니다");
+    return PROP_BITS[id] = 0;
+  }
+  return PROP_BITS[id] = b;
+}
+/* 카메라 1대 = 시점(UniversalCamera) + 씬 안에 보이는 하우징 소품.
+   최초 5대와 사용자 추가분이 **같은 함수**를 쓴다 — 예전엔 이 블록이 addCameraFromFree에
+   통째로 복사돼 있어서 한쪽만 고치면 다른 쪽이 어긋났다(하우징 비트 충돌이 실제로 그렇게 났다). */
+function makeSurvCam(d) {
+  const bit = allocBit(d.id);
   const c = new BABYLON.UniversalCamera("cam_" + d.id, d.pos.clone(), scene);
   c.setTarget(d.tgt.clone()); c.fov = d.fov; c.minZ = 0.05; c.maxZ = 40;
-  // 자기 하우징은 자기 시점에서 제외 (레이어 마스크)
-  c.layerMask = 0x0FFFFFFF & ~PROP_BITS[d.id];
-  // 씬 안에 보이는 카메라 본체
+  // 자기 하우징은 자기 시점에서 제외 · noCeil이면 천장 설비(CEIL_BIT)도 같이 뺀다
+  c.layerMask = 0x0FFFFFFF & ~(bit | (d.noCeil ? CEIL_BIT : 0));
   const prop = new BABYLON.TransformNode("camProp_" + d.id, scene);
   prop.position.copyFrom(d.pos); prop.lookAt(d.tgt);
   const body = BABYLON.MeshBuilder.CreateBox("camBody_" + d.id, {width:0.09, height:0.09, depth:0.18}, scene);
-  body.material = MAT.dark; body.parent = prop; body.layerMask = PROP_BITS[d.id];
+  body.material = MAT.dark; body.parent = prop; body.layerMask = bit;
   const lens = BABYLON.MeshBuilder.CreateCylinder("camLens_" + d.id, {height:0.05, diameter:0.055, tessellation:14}, scene);
   lens.rotation.x = Math.PI/2; lens.position.z = 0.11;
   lens.material = mat("lensM_" + d.id, "#0a0e14", {emissiveColor:new C3(0.55,0.08,0.08)});
-  lens.parent = prop; lens.layerMask = PROP_BITS[d.id];
-  SURV[d.id] = { cam:c, def:d, prop:prop };
+  lens.parent = prop; lens.layerMask = bit;
+  return SURV[d.id] = { cam:c, def:d, prop:prop };
 }
+/* 삭제 — 카메라·하우징·머티리얼을 모두 dispose하고 비트를 반납한다.
+   메시만 지우고 머티리얼을 두면 렌즈 머티리얼이 씬에 계속 쌓인다(추가/삭제 반복 시 누수). */
+function disposeSurvCam(id) {
+  const S = SURV[id]; if (!S) return false;
+  S.prop.getChildMeshes().forEach(m => { if (m.material) m.material.dispose(); m.dispose(); });
+  S.prop.dispose(); S.cam.dispose();
+  // 붙박이 비트는 풀에 넣지 않는다 — 그 id 전용이라 다른 카메라가 가져가면 안 된다
+  if (PROP_BITS[id] && !FIXED_BITS[id]) { BIT_POOL.push(PROP_BITS[id]); BIT_POOL.sort((a, b) => a - b); }
+  delete PROP_BITS[id]; delete SURV[id];
+  const i = CAM_DEFS.findIndex(d => d.id === id);
+  if (i >= 0) CAM_DEFS.splice(i, 1);
+  return true;
+}
+CAM_DEFS.forEach(d => makeSurvCam(d));
+/* 절차 생성 천장 설비에 먼저 한 번 찍는다 (GLB분은 loadAssets 끝에서 재적용).
+   자유 시점의 기본값은 **보임**이다 — 지금 화면과 발표 데모를 바꾸지 않기 위해서다.
+   새 카메라 위치를 잡을 때만 UI 체크박스로 끈다. */
+applyCeilingMask();
 /* PiP 기본값은 **주 시점과 가장 다른 각도**여야 한다.
    예전 기본값 overhead는 자유 시점(방위각 180°)과 겨우 10° 차이(170°)여서,
    고도만 다를 뿐 같은 쪽을 보고 있었다 — "PiP가 본화면과 똑같다"는 지적의 원인.
    eye는 방위각 -120°로 반대편(동쪽)에서 본다. */
 let mainView = "free", pipView = "eye";
+/* 직전 주 시점 — 주 시점이 PiP와 같아졌을 때 PiP가 물려받을 값. applyCameras가 관리한다. */
+let PIP_PREV_MAIN = mainView;
+/* 자유 시점 전용 후처리가 지금 붙어 있는지. 파이프라인은 [camera]로 생성되므로 시작값은 true. */
+let FREE_PIPE_ON = true;
 /* 주 시점과 방위각이 가장 많이 벌어진 감시 카메라를 고른다.
    사용자가 주 시점을 CCTV로 바꿔 PiP와 겹칠 때도 이걸로 자동 회피한다. */
 function farthestCam(fromId) {
@@ -1726,11 +1913,23 @@ function farthestCam(fromId) {
    그대로 따라간다. 패널을 접어 전체화면(2.15:1)으로 보면 PiP가 옆으로 늘어나
    CCTV 화면처럼 안 보였다. 높이를 기준으로 잡고 폭을 16:9로 계산한다.
    화면 좌표(px, 좌상단 원점)와 Babylon 뷰포트(0~1, 좌하단 원점)를 함께 돌려준다. */
+/* PiP 크기 — 화면 대비 비율. 슬라이더로 0.15~0.45. 16:9는 유지한다(감시 화면비). */
+let PIP_SCALE = 0.30;
 function pipRect() {
   const W = engine.getRenderWidth(), H = engine.getRenderHeight();
-  const h = Math.round(Math.min(H * 0.30, W * 0.30 * 9 / 16));   // 좁은 창에서도 넘치지 않게
-  const w = Math.round(h * 16 / 9);
+  const s = PIP_SCALE;
+  let h = Math.round(Math.min(H * s, W * s * 9 / 16));           // 좁은 창에서도 넘치지 않게
+  let w = Math.round(h * 16 / 9);
   const m = Math.round(Math.min(W, H) * 0.022);                  // 가장자리 여백
+  /* 좌상단 상태칩(#statusbar)을 넘어가지 않게 폭을 깎는다. 칩은 DOM이라 캔버스 위에 그려지므로
+     PiP를 키우면 칩이 PiP의 카메라 이름을 덮어버린다(45%에서 실측). 슬라이더를 더 올려도
+     여기서 멈추는 게, 겹친 화면을 보는 것보다 낫다. 칩 폭은 창에 따라 변하므로 매번 잰다. */
+  const sb = document.getElementById("statusbar");
+  if (sb && canvas.clientWidth) {
+    const k = W / canvas.clientWidth;                            // CSS픽셀 → 렌더픽셀
+    const maxW = W - m - (14 + sb.getBoundingClientRect().width + 12) * k;
+    if (w > maxW && maxW > 120) { w = Math.round(maxW); h = Math.round(w * 9 / 16); }
+  }
   const x = W - w - m, y = m;                                    // 우상단
   return { x, y, w, h, W, H,
            vp: new BABYLON.Viewport(x / W, 1 - (y + h) / H, w / W, h / H) };
@@ -1749,20 +1948,54 @@ function applyCameras() {
 
   const main = camOf(mainView);
   const arr = [main];
+  /* ── PiP 규칙(한 곳에서만 정한다) ───────────────────────────────────────
+     ① 주 시점을 바꿔도 **PiP는 건드리지 않는다.**
+     ② 주 시점이 PiP와 같아지면 **둘이 자리를 맞바꾼다** — PiP는 직전 주 시점을 받는다.
+     같은 그림이 두 번 나오면 안 되므로 ②는 필요하다. 예전에는 여기서 farthestCam으로
+     '가장 각도가 다른 카메라'를 임의로 골라 넣었는데, 사용자가 고르지도 않은 카메라가
+     PiP에 튀어나와 무슨 규칙인지 알 수 없었다. 자리 교환이면 눈으로 따라갈 수 있다.
+     모든 전환 경로(트리·셀렉트·숫자키·P·X·PiP클릭)가 이 함수를 지나므로 규칙이 하나다. */
+  if (pipView === mainView) {
+    // 자유 시점은 PiP로 내려보내지 않는다 — PiP는 카메라를 보는 자리다
+    pipView = (PIP_PREV_MAIN && PIP_PREV_MAIN !== mainView && PIP_PREV_MAIN !== "free")
+            ? PIP_PREV_MAIN : "none";
+    const sel = document.getElementById("pipSel"); if (sel) sel.value = pipView;
+  }
+  PIP_PREV_MAIN = mainView;
   if (pipView !== "none") {
-    // 주 시점과 같은 카메라를 PiP에 띄우면 같은 그림이 두 번 나온다 → 가장 다른 각도로 바꾼다
-    let pid = pipView;
-    if (pid === mainView) { pid = farthestCam(mainView); if (pid) { pipView = pid;
-      const sel = document.getElementById("pipSel"); if (sel) sel.value = pid; } }
-    const p = pid ? camOf(pid) : null;
+    const p = camOf(pipView);
     if (p && p !== main) { p.viewport = pipRect().vp; arr.push(p); }
   }
   scene.activeCameras = arr;
   scene.cameraToUseForPointers = main;
+  /* ── 자유 시점 전용 후처리(post·ssao·ssr)를 붙일지 ──────────────────────
+     조건: **자유 카메라가 화면에 있고, PiP가 꺼져 있을 때만.**
+
+     ① 자유 카메라가 화면에 없는데 붙여 두면 SSR이 활성 카메라 목록에서 자기 카메라를
+        못 찾아 매 프레임 예외를 던진다(_finalizeFrame — reading '-1').
+     ② PiP가 켜져 있는데 붙여 두면 **PiP가 아예 안 보인다.** 후처리 체인의 최종 패스가
+        화면 전체를 덮어써서 인셋으로 그린 PiP를 지운다 — 실측으로 확인했고, 카메라
+        순서를 뒤집어도(PiP 먼저) 마찬가지였다(게다가 FPS가 2로 떨어졌다).
+        그래서 PiP를 쓰는 동안에는 자유 시점도 감시 카메라와 같은 소재 그대로 그린다.
+        감시 카메라에는 원래 이 체인을 안 붙인다(데이터셋 RGB를 바꾸면 안 되므로). */
+  const _mgr = scene.postProcessRenderPipelineManager;
+  const _freeOn = arr.indexOf(camera) >= 0 && arr.length === 1;
+  if (_mgr && _freeOn !== FREE_PIPE_ON) {
+    for (const n of ["post", "ssao", "ssr"]) {
+      try {
+        if (_freeOn) _mgr.attachCamerasToRenderPipeline(n, camera);
+        else _mgr.detachCamerasFromRenderPipeline(n, camera);
+      } catch (e) { /* 그 파이프라인이 꺼져 있는 품질 단계 — 무시 */ }
+    }
+    FREE_PIPE_ON = _freeOn;
+  }
   // overlayCv는 아래에서 const로 만들어진다 — 초기화 중 호출되면 TDZ라 접근만 해도 죽는다.
   // 캔버스가 준비된 뒤부터만 그린다.
   if (window.__overlayReady) drawOverlay();   // CCTV HUD 즉시 갱신
   if (main === camera) camera.attachControl(canvas, true); else camera.detachControl();
+  /* 시점을 바꾸는 경로가 여럿이다(셀렉트·숫자키·P·X·PiP클릭·트리). 전부 여기를 지나므로
+     하이라이트 갱신은 여기 한 곳에만 둔다. 트리가 아직 없으면 조용히 건너뛴다. */
+  if (typeof camTreeSync === "function") camTreeSync();
 }
 /* 캡처 — **화면에서 보던 그대로** 저장한다. 종전 구현의 문제 세 가지를 함께 고친다.
    ① CreateScreenshotUsingRenderTarget은 카메라 뷰포트를 되돌리지 않는다(Babylon 소스 확인:
@@ -2584,6 +2817,10 @@ async function loadAssets() {
   scene.meshes.forEach(m => { if (STATIC.test(m.name || "")) { m.freezeWorldMatrix(); frozen++; } });
   console.log("[OPT] 그림자 캐스터", before, "→", smap.renderList.length,
               "· 정적 메시 월드행렬 고정", frozen);
+
+  /* 천장 설비 레이어 마스크 재적용 — GLB에 후드/덕트 이름의 메시가 있으면 여기서 잡힌다.
+     (절차 메시는 씬 구성 직후 이미 한 번 찍었다. 재적용은 멱등이라 겹쳐도 안전하다.) */
+  console.log("[CEIL] GLB 포함 천장 설비 마스크", applyCeilingMask(), "개");
 
   // 프로브가 새 렌더리스트로 한 번 굽는 데 몇 프레임 걸린다 — 그 뒤에 MSAA를 연다
   setTimeout(() => { ENV_READY = true; }, 900);
@@ -4521,7 +4758,13 @@ const MIL_COLORS = { person:"#ff4d4f", robot:"#52e06f", kettle:"#ffab40", equipm
    → **화면은 선명하게 두고 표식으로 구분한다.** 실제 CCTV가 하는 방식 그대로:
      좌상단 카메라 이름 · 우상단 REC 점멸 · 좌하단 타임스탬프 · 모서리 크롭마크.  */
 const CAM_LABEL = { corner:"CAM 01  CORNER", eye:"CAM 02  EYE-LEVEL", overhead:"CAM 03  OVERHEAD",
+                    top:"CAM 04  TOP", deg45:"CAM 05  45DEG",
                     free:"FREE  ORBIT" };   // 자유 시점도 PiP에 올릴 수 있다 — 테에 이름이 필요하다
+/* 화면 테에 박히는 이름. 고정표기가 없으면 카메라가 들고 있는 label을 쓴다 —
+   사용자가 추가하거나 이름을 바꾼 카메라도 id(USER1) 대신 제 이름으로 나온다. */
+function camHudLabel(id) {
+  return CAM_LABEL[id] || (SURV[id] && SURV[id].def && SURV[id].def.label) || String(id).toUpperCase();
+}
 function drawCctvHud(ctx, x, y, w, h, camId, small, framed) {
   const s = small ? 0.72 : 1;
   if (framed) {
@@ -4535,7 +4778,7 @@ function drawCctvHud(ctx, x, y, w, h, camId, small, framed) {
     ctx.strokeRect(x - 2, y - bar - 2, w + 4, h + bar + 4);      // 바깥 테
     ctx.font = "700 " + Math.round(11 * s) + "px ui-monospace,monospace";
     ctx.textBaseline = "middle"; ctx.fillStyle = "#cfe4ff";
-    ctx.fillText((CAM_LABEL[camId] || camId).replace(/\s+/g, " "), x + 6, y - bar/2 - 1);
+    ctx.fillText(camHudLabel(camId).replace(/\s+/g, " "), x + 6, y - bar/2 - 1);
     const on = (Date.now() % 2000) < 1200;                       // REC 점멸
     if (on) { ctx.fillStyle = "#ff4d4d"; ctx.beginPath();
               ctx.arc(x + w - 10*s, y - bar/2 - 1, 3.5*s, 0, 7); ctx.fill(); }
@@ -4555,7 +4798,7 @@ function drawCctvHud(ctx, x, y, w, h, camId, small, framed) {
   }
   ctx.font = "600 " + fs + "px ui-monospace,monospace";
   ctx.textBaseline = "top";
-  const label = CAM_LABEL[camId] || camId.toUpperCase();
+  const label = camHudLabel(camId);
   ctx.fillStyle = "rgba(0,0,0,0.45)";
   ctx.fillRect(x + pad, y + pad, ctx.measureText(label).width + 12*s, fs + 8*s);
   ctx.fillStyle = "#e9f2ff";
@@ -5112,14 +5355,11 @@ $("tempSlider").addEventListener("input", e => {
 
 /* 카메라 UI */
 const viewSel = $("viewSel"), pipSel = $("pipSel");
-[["free","자유 시점 (궤도)"]].concat(CAM_DEFS.map(d => [d.id, d.label])).forEach(([v,l]) => {
-  const o = document.createElement("option"); o.value = v; o.textContent = l; viewSel.appendChild(o);
-});
-/* PiP에도 자유 시점을 올릴 수 있게 한다. 주 시점을 CCTV로 두고 구석에 3D 전경을 띄우는
+/* 세 개의 select(주 시점·PiP·조정할 카메라)는 camSelectsRebuild 하나로만 채운다 —
+   추가·삭제 후에도 같은 경로를 타야 목록이 어긋나지 않는다.
+   PiP에도 자유 시점을 올릴 수 있게 한다: 주 시점을 CCTV로 두고 구석에 3D 전경을 띄우는
    조합이 실제로 가장 많이 쓰이고, 이게 있어야 클릭 교환이 양방향으로 성립한다. */
-[["none","끄기"],["free","자유 시점 (궤도)"]].concat(CAM_DEFS.map(d => [d.id, d.label])).forEach(([v,l]) => {
-  const o = document.createElement("option"); o.value = v; o.textContent = l; pipSel.appendChild(o);
-});
+camSelectsRebuild();
 /* PiP 기본값은 하드코딩하지 않는다 — 주 시점(자유)과 방위각이 가장 벌어진 카메라를 고른다.
    카메라 배치를 바꾸면 기본값도 알아서 따라온다. */
 pipView = farthestCam(mainView) || pipView;
@@ -5128,12 +5368,45 @@ applyCameras();
 viewSel.addEventListener("change", () => { mainView = viewSel.value; applyCameras();
   setStatus("주 시점: " + viewSel.options[viewSel.selectedIndex].text); });
 pipSel.addEventListener("change", () => { pipView = pipSel.value; applyCameras(); });
+/* PiP 크기 — 뷰포트와 HUD 테두리가 같은 pipRect()를 쓰므로 값만 바꾸고 다시 적용하면 된다 */
+$("pipSize").addEventListener("input", e => {
+  PIP_SCALE = +e.target.value / 100;
+  $("pipSizeV").textContent = e.target.value + "%";
+  applyCameras();
+});
+/* ══ 천장 자동 숨김 (자유 시점) ═══════════════════════════════════════════
+   체크박스로 매번 켜고 끄는 게 아니라 **보는 방향으로 판정**한다:
+     · 설비보다 위에서 아래를 내려다본다  → 구조를 봐야 하는 상황이므로 뺀다
+     · 방 안에서 올려다보거나 수평으로 본다 → 천장은 천장이므로 그대로 둔다
+   매 프레임 카메라 포즈로 다시 재는 것이라 궤도를 돌리면 알아서 나타나고 사라진다.
+
+   감시 카메라(SURV)에는 적용하지 않는다. 데이터셋을 뽑는 시점인데 화면이 저절로 바뀌면
+   같은 카메라로 뽑은 이미지끼리도 천장 유무가 달라져 라벨을 믿을 수 없게 된다.
+   CCTV 쪽은 def의 noCeil 플래그로만 — 지금은 CAM4(수직 부감) 하나다. */
+const CEIL_TOP_Y = 2.15;       // 후드 캐노피 바닥(2.20)보다 살짝 아래 = '천장 설비대의 밑면'
+let CEIL_AUTO = true;
+function ceilAutoTick() {
+  let hide = false;
+  if (CEIL_AUTO) {
+    const p = camera.position, d = camera.target.subtract(p);
+    const dip = Math.atan2(-d.y, Math.hypot(d.x, d.z)) * 180 / Math.PI;
+    hide = p.y > CEIL_TOP_Y && dip > 10;   // 위에 있고(밖) + 아래를 본다(안으로)
+  }
+  const want = hide ? (0x0FFFFFFF & ~CEIL_BIT) : 0x0FFFFFFF;
+  if (camera.layerMask !== want) camera.layerMask = want;
+}
+$("ceilHide").addEventListener("change", e => {
+  CEIL_AUTO = e.target.checked;
+  ceilAutoTick();
+  setStatus(CEIL_AUTO ? "천장 자동 숨김 켜짐 — 위에서 내려다볼 때만 사라집니다"
+                      : "천장 자동 숨김 꺼짐 — 항상 보입니다");
+});
 
 /* ── 시점 이름 · 교환 · 순환 ─────────────────────────────────────────────
    종전에는 카메라를 바꾸려면 드롭다운을 찾아야 했고, PiP를 클릭해도 아무 일이 없었다. */
 function viewLabel(id) {
   if (id === "none") return "끄기";
-  return (CAM_LABEL[id] || id).replace(/\s+/g, " ");
+  return camHudLabel(id).replace(/\s+/g, " ");
 }
 function swapViews() {
   if (pipView === "none") { setStatus("PiP가 꺼져 있어 교환할 시점이 없습니다"); return; }
@@ -5147,30 +5420,40 @@ function pickView(n) {                       // 0 = 자유 시점, 1..N = 등록
   mainView = ids[n]; viewSel.value = mainView; applyCameras();
   setStatus("주 시점: " + viewLabel(mainView) + " (" + n + ")");
 }
-function cyclePip() {
-  const ids = ["none", "free"].concat(Object.keys(SURV));
+/* PiP를 다음 시점으로 돌린다. includeNone=false면 '끄기'를 건너뛴다 —
+   PiP를 클릭해서 돌릴 때는 화면이 꺼져버리면 다음 클릭 대상이 사라진다. */
+function cyclePip(includeNone = true) {
+  const ids = (includeNone ? ["none"] : []).concat(Object.keys(SURV));   // 자유 시점은 PiP 대상 아님
   const i = Math.max(0, ids.indexOf(pipView));
   for (let k = 1; k <= ids.length; k++) {     // 주 시점과 겹치는 후보는 건너뛴다
     const cand = ids[(i + k) % ids.length];
     if (cand !== mainView) { pipView = cand; break; }
   }
   pipSel.value = pipView; applyCameras();
-  setStatus("PiP: " + viewLabel(pipView) + " (P)");
+  setStatus("PiP: " + viewLabel(pipView));
 }
-/* PiP 클릭 → 주 시점과 교환. 궤도 회전 드래그와 섞이지 않게 이동량 4px 이하만 클릭으로 본다. */
+/* PiP 조작 — **클릭하면 PiP 안에서 다음 카메라로 넘어간다.**
+   예전엔 클릭이 곧 '주 시점과 교환'이라, PiP에 다른 카메라를 띄우려면 오른쪽 패널의
+   셀렉트를 찾아가거나 P키를 알아야 했다. PiP는 한 칸이므로 그 한 칸을 돌리는 게 맞다.
+   교환은 더블클릭(또는 X키)으로 남긴다.
+   궤도 회전 드래그와 섞이지 않게 이동량 4px 이하만 클릭으로 본다. */
 (() => {
   let down = null;
+  const inPip = e => {
+    if (pipView === "none") return false;
+    const rc = canvas.getBoundingClientRect(), R = pipRect();
+    const sx = rc.width / R.W, sy = rc.height / R.H;
+    const x = e.clientX - rc.left, y = e.clientY - rc.top;
+    return !(x < R.x*sx || x > (R.x+R.w)*sx || y < R.y*sy || y > (R.y+R.h)*sy);
+  };
   canvas.addEventListener("pointerdown", e => { down = { x: e.clientX, y: e.clientY }; });
   canvas.addEventListener("pointerup", e => {
     const d = down; down = null;
     if (!d || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 4) return;
-    if (pipView === "none") return;
-    const rc = canvas.getBoundingClientRect(), R = pipRect();
-    const sx = rc.width / R.W, sy = rc.height / R.H;
-    const x = e.clientX - rc.left, y = e.clientY - rc.top;
-    if (x < R.x*sx || x > (R.x+R.w)*sx || y < R.y*sy || y > (R.y+R.h)*sy) return;
-    swapViews();
+    if (!inPip(e)) return;
+    cyclePip(false);
   });
+  canvas.addEventListener("dblclick", e => { if (inPip(e)) swapViews(); });
 })();
 
 async function captureBoth() {
@@ -5220,35 +5503,125 @@ function applyPreset(name) {
 document.querySelectorAll("button.vp").forEach(b =>
   b.addEventListener("click", () => applyPreset(b.dataset.vp)));
 
+/* ══ 카메라 CRUD ═════════════════════════════════════════════════════════
+   추가/이동/이름변경/삭제 + localStorage 저장. 카메라 생성은 makeSurvCam 하나로만 한다.
+   여기서 만든 카메라는 주 시점·PiP·전체 캡처·GT 데이터셋에 자동으로 포함된다. */
 let camAddN = 0;
+function nextCamId() { do { camAddN++; } while (SURV["user" + camAddN]); return "user" + camAddN; }
+
+/* 세 개의 select(주 시점·PiP·조정할 카메라)를 CAM_DEFS로부터 다시 만든다.
+   추가/삭제/불러오기 뒤에 호출한다 — option을 append만 하면 삭제가 반영되지 않는다. */
+function camSelectsRebuild() {
+  const fill = (sel, head, keep) => {
+    if (!sel) return;
+    sel.innerHTML = "";
+    head.concat(CAM_DEFS.map(d => [d.id, d.label])).forEach(([v, l]) => {
+      const o = document.createElement("option"); o.value = v; o.textContent = l; sel.appendChild(o);
+    });
+    const has = Array.prototype.some.call(sel.options, o => o.value === keep);
+    sel.value = has ? keep : (sel.options[0] ? sel.options[0].value : "");
+  };
+  fill(viewSel, [["free", "자유 시점 (궤도)"]], mainView);
+  // PiP 목록에 자유 시점은 넣지 않는다 — PiP는 감시 카메라를 보는 자리다
+  fill(pipSel,  [["none", "끄기"]], pipView);
+  fill($("camSel"), [], $("camSel") ? $("camSel").value : "");
+  // 보고 있던 카메라가 삭제됐으면 select가 알아서 다른 값으로 떨어진다 — 그 값을 상태에 반영
+  mainView = viewSel.value; pipView = pipSel.value;
+  camTreeRebuild();
+}
+
+/* ══ 카메라 전환 — 왼쪽 STAGE 트리 ═══════════════════════════════════════
+   줄을 누르면 주 시점, Shift+클릭(또는 우클릭)이면 PiP. 눈(👁)은 씬 안의 하우징 소품
+   표시 토글로 원래 동작 그대로다.
+   트리의 카메라 줄은 예전에 CAM1~3으로 **하드코딩**돼 있어서 새로 추가한 카메라가
+   영영 나타나지 않았다 — 이제 CAM_DEFS에서 만들어 추가·삭제·이름변경이 그대로 반영된다. */
+const CAM_SHORT = { free:"자유 시점", overhead:"CAM1 부감", corner:"CAM2 코너",
+                    eye:"CAM3 눈높이", top:"CAM4 상부 GT", deg45:"CAM5 45°",
+                    front:"CAM6 솥 정면" };
+function camShort(id, label) {
+  return CAM_SHORT[id] || (label || id).replace(/\s*\([^)]*\)\s*$/, "");
+}
+function camTreeRebuild() {
+  const box = $("camRows"); if (!box) return;      // buildStage 전이면 조용히 건너뛴다
+  box.innerHTML = "";
+  const setView = (id, toPip, label) => {
+    // 주 시점만 바꾼다. PiP와 겹치면 applyCameras가 규칙대로 자리를 맞바꾼다(규칙은 한 곳에)
+    if (toPip) { pipView = (pipView === id) ? "none" : id; }
+    else { mainView = id; }
+    applyCameras();
+    viewSel.value = mainView; pipSel.value = pipView;   // applyCameras가 pipView를 바꿨을 수 있다
+    setStatus((toPip ? "PiP: " : "주 시점: ") + (toPip && pipView === "none" ? "끄기" : label));
+  };
+  [["free", "자유 시점 (궤도)", null]]
+    .concat(CAM_DEFS.map(d => [d.id, d.label, scene.getTransformNodeByName("camProp_" + d.id)]))
+    .forEach(([id, label, node]) => {
+      const div = document.createElement("div");
+      div.className = "snode child cam";
+      div.dataset.id = id;
+      div.title = label + "\n줄을 누르면 큰 화면 · 오른쪽 PiP 버튼을 누르면 작은 화면";
+      div.appendChild(document.createTextNode((id === "free" ? "🎥 " : "📷 ") + camShort(id, label)));
+      div.addEventListener("click", e => {
+        // 눈·PiP 버튼은 각자 처리한다 — 줄 클릭으로 새어들어가면 시점이 같이 바뀐다
+        if (e.target.classList.contains("eye") || e.target.classList.contains("pipbtn")) return;
+        setView(id, e.shiftKey, label);
+        canvas.focus();                    // 단축키(Space·Tab·WASD)가 계속 먹히도록
+      });
+      div.addEventListener("contextmenu", e => { e.preventDefault(); setView(id, true, label); });
+      /* 자유 시점에는 PiP 버튼을 두지 않는다 — 감시 화면(PiP)은 카메라를 보는 자리다.
+         (자유 시점이 PiP로 밀려나는 경우도 아래 교환 규칙에서 '끄기'로 처리한다) */
+      if (id !== "free") {
+        const pip = document.createElement("button");
+        /* type=button + tabindex=-1 + 누른 뒤 캔버스로 포커스 반환.
+           버튼이 키보드 포커스를 쥐고 있으면 Space(정지)·Enter를 누를 때마다 그 버튼이
+           다시 눌려 PiP가 제멋대로 바뀐다 — "PiP가 전혀 작동 안 한다"의 실제 원인이었다. */
+        pip.type = "button"; pip.tabIndex = -1;
+        pip.className = "pipbtn"; pip.textContent = "PiP";
+        pip.title = "작은 화면(PiP)에 띄우기 — 다시 누르면 끕니다";
+        pip.addEventListener("click", e => {
+          e.stopPropagation(); e.preventDefault();
+          setView(id, true, label);
+          pip.blur(); canvas.focus();      // 단축키가 계속 캔버스로 가게 한다
+        });
+        div.appendChild(pip);
+      }
+      if (node) {
+        const eye = document.createElement("span");
+        eye.className = "eye"; eye.textContent = "👁";
+        eye.title = "씬에 보이는 카메라 본체 표시/숨김";
+        eye.addEventListener("click", () => {
+          const on = !node.isEnabled();
+          node.setEnabled(on);
+          eye.classList.toggle("off", !on);
+          logConsole((on ? "표시: " : "숨김: ") + label);
+        });
+        div.appendChild(eye);
+      }
+      box.appendChild(div);
+    });
+  camTreeSync();
+}
+function camTreeSync() {
+  const box = $("camRows"); if (!box) return;
+  for (const div of box.children) {
+    const id = div.dataset.id;
+    div.classList.toggle("main", id === mainView);
+    const b = div.querySelector(".pipbtn");
+    if (b) b.classList.toggle("on", id === pipView);
+  }
+}
+
 function addCameraFromFree() {
-  camAddN++;
-  const id = "user" + camAddN, label = "CAM+" + camAddN + " 사용자";
-  const pos = camera.position.clone(), tgt = camera.target.clone();
-  const def = { id, label, pos, tgt, fov: camera.fov || 0.85 };
+  const id = nextCamId(), label = "CAM+" + camAddN + " 사용자";
+  const def = { id, label, pos: camera.position.clone(), tgt: camera.target.clone(),
+                fov: camera.fov || 0.85 };
   CAM_DEFS.push(def);
-  const bit = 0x1000 << (3 + camAddN);
-  PROP_BITS[id] = bit;
-  const c = new BABYLON.UniversalCamera("cam_" + id, pos.clone(), scene);
-  c.setTarget(tgt.clone()); c.fov = def.fov; c.minZ = 0.05; c.maxZ = 40;
-  c.layerMask = 0x0FFFFFFF & ~bit;                 // 자기 하우징은 자기 시점에서 제외
-  const prop = new BABYLON.TransformNode("camProp_" + id, scene);
-  prop.position.copyFrom(pos); prop.lookAt(tgt);
-  const body = BABYLON.MeshBuilder.CreateBox("camBody_" + id, {width:0.09, height:0.09, depth:0.18}, scene);
-  body.material = MAT.dark; body.parent = prop; body.layerMask = bit;
-  const lens = BABYLON.MeshBuilder.CreateCylinder("camLens_" + id, {height:0.05, diameter:0.055, tessellation:14}, scene);
-  lens.rotation.x = Math.PI/2; lens.position.z = 0.11;
-  lens.material = mat("lensM_" + id, "#0a0e14", {emissiveColor:new C3(0.55,0.08,0.08)});
-  lens.parent = prop; lens.layerMask = bit;
-  SURV[id] = { cam:c, def, prop };
-  sensorApply();          // 새 카메라에도 센서 특성 동일 적용
-  [[viewSel, id, label], [pipSel, id, label], [$("camSel"), id, label]].forEach(([sel, v, l]) => {
-    const o = document.createElement("option"); o.value = v; o.textContent = l; sel.appendChild(o);
-  });
-  setStatus("카메라 등록 — " + label + " (PiP·전체 캡처·GT 대상에 포함)");
+  makeSurvCam(def);
+  sensorApply();            // 새 카메라에도 센서 특성 동일 적용
+  camSelectsRebuild(); applyCameras();
+  setStatus("카메라 추가 — " + label + " (PiP·전체 캡처·GT 대상에 포함)");
   return id;
 }
-$("camAdd").addEventListener("click", addCameraFromFree);
+$("camAdd").addEventListener("click", () => { addCameraFromFree(); camStoreSave(); });
 
 $("orbN").addEventListener("input", e => $("orbNV").textContent = e.target.value);
 $("orbCap").addEventListener("click", async () => {
@@ -5357,6 +5730,36 @@ function camUIload() {
   $("camFov").value = Math.round(c.fov * 180 / Math.PI);
   camUIapply(false);
 }
+/* ══ 조준점은 def가 소유한다 ══════════════════════════════════════════════
+   Babylon의 cam.getTarget()은 믿고 쓸 수 없다:
+     ① _currentTarget은 뷰행렬이 한 번 계산돼야 갱신된다 → 방금 만든 카메라는 (0,0,0)
+     ② 갱신돼도 원래 준 타겟이 아니라 **시선 방향 1m 지점**이다
+   저장·코드출력·부각표시를 여기에 얹으면 엉뚱한 값이 나온다(실측으로 확인).
+   그래서 위치·조준·화각의 정본은 항상 S.def에 두고, 카메라는 거기서 따라간다. */
+function camPoseSet(S, pos, tgt, fov) {
+  if (pos) { S.cam.position.copyFrom(pos); S.def.pos = pos.clone(); }
+  if (tgt) { S.cam.setTarget(tgt.clone()); S.def.tgt = tgt.clone(); }
+  if (fov !== undefined) { S.cam.fov = fov; S.def.fov = fov; }
+  if (S.prop) {
+    S.prop.position.copyFrom(S.cam.position);
+    S.prop.rotationQuaternion = null;
+    if (tgt) S.prop.lookAt(tgt);
+  }
+}
+/* 슬라이더는 좌우각·상하각으로 조준한다 — 그 회전에서 조준점을 되돌려 def에 적는다.
+   거리는 의미가 없으므로 1m 앞 지점으로 둔다(setTarget은 방향만 쓴다). */
+function camDefSyncFromRotation(S) {
+  const c = S.cam;
+  const m = BABYLON.Matrix.RotationYawPitchRoll(c.rotation.y, c.rotation.x, c.rotation.z);
+  S.def.pos = c.position.clone();
+  S.def.tgt = c.position.add(V3.TransformCoordinates(new V3(0, 0, 1), m));
+  S.def.fov = c.fov;
+}
+function camDip(S) {   // 내려다보는 각(90°=수직) — def 기준이라 렌더 여부와 무관하다
+  const d = S.def.tgt.subtract(S.def.pos);
+  return Math.atan2(-d.y, Math.hypot(d.x, d.z)) * 180 / Math.PI;
+}
+
 function camUIapply(write = true) {
   const id = $("camSel").value, S = SURV[id]; if (!S) return;
   const c = S.cam;
@@ -5371,6 +5774,7 @@ function camUIapply(write = true) {
       S.prop.rotationQuaternion = null;
       S.prop.rotation.set(c.rotation.x, c.rotation.y, 0);
     }
+    camDefSyncFromRotation(S);
   }
   $("camXV").textContent = x.toFixed(2);
   $("camYV").textContent = y.toFixed(2);
@@ -5378,30 +5782,138 @@ function camUIapply(write = true) {
   $("camYawV").textContent = yaw + "°";
   $("camPitV").textContent = pit + "°";
   $("camFovV").textContent = fov + "°";
+  // 부각 — def 기준. 셀 조준처럼 setTarget으로 조준을 바꾼 경우에도 맞게 나온다
+  const dip = camDip(S);
+  $("camDip").textContent = dip.toFixed(1) + "°" +
+    (dip >= 85 ? " 수직" : dip >= 40 ? " 대각" : dip > 5 ? " 완만" : " 수평");
 }
+
+/* ══ 카메라 설정 저장/복원 ═══════════════════════════════════════════════
+   추가·이동·삭제 결과를 localStorage에 둔다. 새로고침해도 유지되지 않으면 각도를 잡아둔
+   작업이 매번 날아가서 쓸 수가 없다. 파일(sim.html)은 건드리지 않으므로,
+   확정된 값은 '설정 복사'로 뽑아 CAM_DEFS에 직접 박는다. */
+/* 키에 버전을 붙인다. 기본 카메라 배치를 바꿔도(예: CAM4를 천장 밖 5m로 이동) 예전에
+   저장된 값이 그대로 복원돼 새 배치가 안 보이는 일을 막는다 — 버전을 올리면 새 기본값으로 시작. */
+const CAM_STORE = "hkr.sim.cams.v3";   // v3: CAM6(솥 정면) 추가
+function camStoreSave() {
+  try {
+    localStorage.setItem(CAM_STORE, JSON.stringify(CAM_DEFS.map(d => {
+      const r3 = v => +v.toFixed(4);      // 정본은 def — 카메라의 getTarget()은 쓰지 않는다
+      return { id:d.id, label:d.label, noCeil:!!d.noCeil, fov:+d.fov.toFixed(4),
+               pos:[r3(d.pos.x), r3(d.pos.y), r3(d.pos.z)],
+               tgt:[r3(d.tgt.x), r3(d.tgt.y), r3(d.tgt.z)] };
+    })));
+    return true;
+  } catch (e) { return false; }
+}
+function camStoreLoad() {
+  let arr = null;
+  try { arr = JSON.parse(localStorage.getItem(CAM_STORE) || "null"); } catch (e) { return false; }
+  if (!Array.isArray(arr)) return false;
+  /* 먼저 전부 검증해서 defs를 만든 뒤에 기존 카메라를 지운다.
+     저장값이 깨졌을 때 지우고 나서 실패하면 카메라가 0대로 남는다. */
+  const defs = [];
+  for (const s of arr) {
+    if (!s || typeof s.id !== "string" || !Array.isArray(s.pos) || s.pos.length !== 3
+        || !Array.isArray(s.tgt) || s.tgt.length !== 3) continue;
+    if (![...s.pos, ...s.tgt, s.fov].every(v => typeof v === "number" && isFinite(v))) continue;
+    defs.push({ id:s.id, label:s.label || s.id, noCeil:!!s.noCeil, fov:s.fov,
+                pos:V3.FromArray(s.pos), tgt:V3.FromArray(s.tgt) });
+  }
+  if (!defs.length) return false;
+  CAM_DEFS.slice().forEach(d => disposeSurvCam(d.id));
+  camAddN = 0;
+  for (const d of defs) {
+    CAM_DEFS.push(d); makeSurvCam(d);
+    const m = /^user(\d+)$/.exec(d.id); if (m) camAddN = Math.max(camAddN, +m[1]);
+  }
+  return true;
+}
+function camFactoryReset() {
+  CAM_DEFS.slice().forEach(d => disposeSurvCam(d.id));
+  camAddN = 0;
+  for (const f of CAM_FACTORY) {
+    const d = Object.assign({}, f, { pos:f.pos.clone(), tgt:f.tgt.clone() });
+    CAM_DEFS.push(d); makeSurvCam(d);
+  }
+  try { localStorage.removeItem(CAM_STORE); } catch (e) {}
+}
+/* 현재 카메라 전체를 CAM_DEFS 소스 코드로 — 확정된 값을 sim.html에 영구히 박을 때 쓴다 */
+function camConfigText() {
+  const f = v => v.toFixed(3);
+  return CAM_DEFS.map(d =>
+      "  { id:" + JSON.stringify(d.id) + ", label:" + JSON.stringify(d.label) + ","
+    + (d.noCeil ? " noCeil:true," : "")
+    + " pos:new V3(" + f(d.pos.x) + "," + f(d.pos.y) + "," + f(d.pos.z) + "),"
+    + " tgt:new V3(" + f(d.tgt.x) + "," + f(d.tgt.y) + "," + f(d.tgt.z) + "),"
+    + " fov:" + d.fov.toFixed(3) + " },   // 부각 " + camDip(SURV[d.id]).toFixed(1) + "°"
+  ).join("\n");
+}
+
 (function camUIinit() {
-  const sel = $("camSel");
-  CAM_DEFS.forEach(d => {
-    const o = document.createElement("option");
-    o.value = d.id; o.textContent = d.label; sel.appendChild(o);
+  /* 슬라이더 범위를 방 크기에서 뽑는다. 예전엔 X·Z가 ±3.4 고정이라 방(x −2.85~6.15,
+     z −1.45~7.55)의 동쪽·남쪽 통로로는 카메라를 아예 옮길 수 없었다.
+     ENV_V1(9×9 원점 중심)로 열어도 알아서 맞는다. */
+  const RM = LAYOUT.room;
+  const setRange = (id, lo, hi) => { const el = $(id); el.min = lo.toFixed(2); el.max = hi.toFixed(2); };
+  setRange("camX", RM.x0 - 0.2, RM.x1 + 0.2);
+  setRange("camZ", RM.z0 - 0.2, RM.z1 + 0.2);
+  /* 천장 위까지 허용한다 — CAM4는 천장 밖 5.0m에 띄운 가상 진리값 뷰다.
+     상한을 천장(3.3m)으로 묶으면 슬라이더를 건드리는 순간 CAM4가 천장 아래로 끌려내려온다. */
+  setRange("camY", 0.30, RM.h + 3.0);
+
+  if (camStoreLoad()) {          // 저장된 카메라 구성이 있으면 그걸로 갈아끼운다
+    camSelectsRebuild(); applyCameras(); sensorApply();
+    console.log("[CAM] 저장된 카메라 구성 복원 —", CAM_DEFS.length, "대");
+  }
+
+  $("camSel").addEventListener("change", camUIload);
+  // input=드래그 중 즉시 반영 / change=놓을 때 저장. 드래그마다 저장하면 localStorage를 두들긴다
+  ["camX","camY","camZ","camYaw","camPit","camFov"].forEach(id => {
+    $(id).addEventListener("input",  () => camUIapply(true));
+    $(id).addEventListener("change", () => camStoreSave());
   });
-  sel.value = CAM_DEFS[0].id;
-  sel.addEventListener("change", camUIload);
-  ["camX","camY","camZ","camYaw","camPit","camFov"].forEach(id =>
-    $(id).addEventListener("input", () => camUIapply(true)));
   $("camAim").addEventListener("click", () => {
     const S = SURV[$("camSel").value]; if (!S) return;
-    S.cam.setTarget(CELL_AIM.clone());          // 셀 중심을 바라보게 재조준
-    camUIload();
-    setStatus("카메라 재조준 — 셀 중심");
+    camPoseSet(S, null, CELL_AIM);              // 셀 중심을 바라보게 재조준
+    camUIload(); camStoreSave();
+    setStatus("카메라 재조준 — 셀 중심 (부각 " + camDip(S).toFixed(1) + "°)");
   });
   $("camReset").addEventListener("click", () => {
+    const id = $("camSel").value, S = SURV[id]; if (!S) return;
+    const f = CAM_FACTORY.find(x => x.id === id) || S.def;   // 공장값이 있으면 그쪽 우선
+    camPoseSet(S, f.pos.clone(), f.tgt.clone(), f.fov);
+    camUIload(); camStoreSave();
+    setStatus("카메라 초기 설치값 복원 — " + S.def.label);
+  });
+  $("camRename").addEventListener("click", () => {
     const S = SURV[$("camSel").value]; if (!S) return;
-    S.cam.position.copyFrom(S.def.pos);
-    S.cam.setTarget(S.def.tgt.clone());
-    S.cam.fov = S.def.fov;
-    camUIload();
-    setStatus("카메라 초기 설치값 복원");
+    const v = prompt("카메라 이름", S.def.label);
+    if (v === null || !v.trim()) return;
+    S.def.label = v.trim();
+    camSelectsRebuild(); camStoreSave();
+    setStatus("이름 변경 — " + S.def.label);
+  });
+  $("camDel").addEventListener("click", () => {
+    const id = $("camSel").value, S = SURV[id]; if (!S) return;
+    if (CAM_DEFS.length <= 1) { setStatus("마지막 카메라는 삭제할 수 없습니다"); return; }
+    const label = S.def.label;
+    if (!confirm(label + " 을(를) 삭제할까요?\n\n'전체 공장 초기화'로 되돌릴 수 있습니다.")) return;
+    disposeSurvCam(id);
+    camSelectsRebuild(); applyCameras(); sensorApply(); camStoreSave(); camUIload();
+    setStatus("카메라 삭제 — " + label + " (남은 " + CAM_DEFS.length + "대)");
+  });
+  $("camCopy").addEventListener("click", async () => {
+    const txt = camConfigText();
+    console.log("[CAM] 현재 구성 —\n" + txt);
+    try { await navigator.clipboard.writeText(txt); setStatus("카메라 설정 " + CAM_DEFS.length + "대 복사됨 — 콘솔에도 출력"); }
+    catch (e) { setStatus("클립보드 실패 — 브라우저 콘솔에 출력했습니다 (F12)"); }
+  });
+  $("camFactory").addEventListener("click", () => {
+    if (!confirm("추가한 카메라와 바꾼 위치를 모두 버리고 초기 " + CAM_FACTORY.length + "대로 되돌릴까요?")) return;
+    camFactoryReset();
+    camSelectsRebuild(); applyCameras(); sensorApply(); camUIload();
+    setStatus("카메라 공장 초기화 — " + CAM_FACTORY.length + "대");
   });
   camUIload();
 })();
@@ -5548,35 +6060,52 @@ scene.onPointerObservable.add(info => {
 const KEYMAP_ROBOT = { q:[0,1], a:[0,-1], w:[1,1], s:[1,-1], e:[2,1], d:[2,-1],
                        r:[3,1], f:[3,-1], t:[4,1], g:[4,-1] };
 const KEYMAP_PERSON = { q:[0,1], e:[2,1], r:[3,1], f:[3,-1], t:[4,1], g:[4,-1] };  // WASD는 사람에게 양보
-const CTRL = { target:"person" };            // person | robot
+const KEYMAP_CAMERA = {};                    // WASD·QE를 전부 시점 이동에 쓴다 — 관절 조그 없음
+/* 조작 대상 기본값 — 캐릭터가 꺼져 있으면(?person=1 아님) 사람을 조작해봐야 아무 일도
+   안 일어난다. 실제로 기본 빌드에서 WASD가 완전히 먹통이라 고장으로 보였다.
+   그래서 캐릭터가 없으면 자유 시점 카메라를 기본 조작 대상으로 둔다. */
+const CTRL = { target: SHOW_PERSON ? "person" : "camera" };   // camera | person | robot
 // 이동속도 = 애니메이션 원저작 속도와 동일 → speedRatio 1.0 → 발 미끄러짐 0
 const WALK_SPEED = 1.515, RUN_SPEED = 2.459;
-const MOVE = { w:false, a:false, s:false, d:false, run:false };
+const CAM_SPEED = 2.2, CAM_RUN = 5.5;        // 자유 시점 이동 m/s
+const MOVE = { w:false, a:false, s:false, d:false, q:false, e:false, run:false };
 const held = {};
-const keymap = () => CTRL.target === "person" ? KEYMAP_PERSON : KEYMAP_ROBOT;
+const keymap = () => CTRL.target === "camera" ? KEYMAP_CAMERA
+                   : CTRL.target === "person" ? KEYMAP_PERSON : KEYMAP_ROBOT;
 
+/* Tab이 도는 순서. 캐릭터가 꺼져 있으면 '사람'은 건너뛴다 — 골라도 아무 일이 안 일어난다. */
+const ctrlCycle = () => SHOW_PERSON ? ["camera", "person", "robot"] : ["camera", "robot"];
 function setCtrlTarget(t) {
+  if (!ctrlCycle().includes(t)) t = "camera";
   CTRL.target = t;
   for (const k in held) delete held[k];
-  MOVE.w = MOVE.a = MOVE.s = MOVE.d = false;
+  MOVE.w = MOVE.a = MOVE.s = MOVE.d = MOVE.q = MOVE.e = false;
   const sel = $("ctrlSel"); if (sel) sel.value = t;
-  setStatus(t === "person" ? "조작 대상: 사람 — WASD 이동 · Shift 달리기"
+  setStatus(t === "camera" ? "조작 대상: 자유 시점 — WASD 이동 · Q/E 높이 · Shift 빠르게"
+          : t === "person" ? "조작 대상: 사람 — WASD 이동 · Shift 달리기"
                            : "조작 대상: 로봇 — WASD/QE/RF/TG 관절 조그");
 }
 window.addEventListener("keydown", e => {
   const k = e.key.toLowerCase();
-  if (k === "tab") { e.preventDefault(); setCtrlTarget(CTRL.target === "person" ? "robot" : "person"); return; }
+  if (k === "tab") { e.preventDefault();
+    const c = ctrlCycle(); setCtrlTarget(c[(c.indexOf(CTRL.target) + 1) % c.length]); return; }
   if (k === " ") { e.preventDefault(); state.auto = false; setStatus("정지 (Space)"); return; }
   if (e.shiftKey) MOVE.run = true;
+  // 자유 시점 조작 중에는 WASD가 이동, Q/E가 높이 — 관절로 새지 않게 여기서 가로챈다
+  if (CTRL.target === "camera" && "wasdqe".includes(k)) { e.preventDefault(); MOVE[k] = true; return; }
   if (CTRL.target === "person" && "wasd".includes(k)) { e.preventDefault(); MOVE[k] = true; return; }
   if (keymap()[k]) { held[k] = true; state.auto = false; }
 });
 window.addEventListener("keyup", e => {
   const k = e.key.toLowerCase();
   if (!e.shiftKey) MOVE.run = false;
-  if ("wasd".includes(k)) MOVE[k] = false;
+  if ("wasdqe".includes(k)) MOVE[k] = false;   // q/e는 자유 시점 높이 조작
   delete held[k];
 });
+/* select의 첫 항목(카메라)과 실제 기본값을 맞춘다. 캐릭터가 켜져 있으면 기본은 '사람'이다.
+   **반드시 CTRL 선언 뒤에서 호출한다** — ctrlSel 리스너 옆(파일 앞쪽)에 두면 const의
+   TDZ에 걸려 "Cannot access 'CTRL' before initialization"으로 스크립트가 통째로 죽는다. */
+setCtrlTarget(CTRL.target);
 window.addEventListener("blur", () => {
   MOVE.w = MOVE.a = MOVE.s = MOVE.d = MOVE.run = false;
   for (const k in held) delete held[k];
@@ -5611,7 +6140,33 @@ function personDrive(dt) {
   p.walkT += dt / 1000 * (MOVE.run ? 11 : 7);  // 절차 폴백용 위상
 }
 
+/* ══ 자유 시점 WASD 이동 ══════════════════════════════════════════════════
+   ArcRotateCamera는 target을 옮기면 카메라가 그만큼 따라 이동한다(궤도 각도·거리는 유지).
+   setTarget()을 쓰면 안 된다 — 그건 카메라 위치를 두고 각도를 다시 계산해서 시점이 튄다.
+   전후좌우는 **보고 있는 방향 기준**이라, 돌려놓은 방향 그대로 걸어가듯 움직인다. */
+function cameraDrive(dt) {
+  if (CTRL.target !== "camera") return;
+  const fz = (MOVE.w ? 1 : 0) - (MOVE.s ? 1 : 0);
+  const fx = (MOVE.d ? 1 : 0) - (MOVE.a ? 1 : 0);
+  const fy = (MOVE.e ? 1 : 0) - (MOVE.q ? 1 : 0);
+  if (!fx && !fz && !fy) return;
+  const f = camera.getForwardRay(1).direction;
+  const fwd = new V3(f.x, 0, f.z);
+  if (fwd.lengthSquared() < 1e-4) fwd.set(0, 0, 1);   // 정수리에서 내려다볼 때 수평성분 0
+  fwd.normalize();
+  const right = new V3(fwd.z, 0, -fwd.x);              // 좌수좌표계: right = up × forward
+  const spd = (MOVE.run ? CAM_RUN : CAM_SPEED) * dt / 1000;
+  const d = fwd.scale(fz).add(right.scale(fx));
+  if (d.lengthSquared() > 1e-6) d.normalize().scaleInPlace(spd);
+  const t = camera.target;                             // 내부 벡터 — 직접 옮긴다
+  const RM = LAYOUT.room;
+  t.x = clamp(t.x + d.x, RM.x0 - 2, RM.x1 + 2);        // 방에서 너무 멀리 못 나가게
+  t.z = clamp(t.z + d.z, RM.z0 - 2, RM.z1 + 2);
+  t.y = clamp(t.y + fy * spd, 0.20, RM.h + 2);
+}
+
 function applyKeys(dt) {
+  cameraDrive(dt);
   personDrive(dt);
   if (PHYS.estop) return;   // E-STOP 중 수동 조그 차단
   let touched = false;
@@ -5779,6 +6334,7 @@ scene.registerBeforeRender(() => {
   const dt = Math.min(now - last, 60);
   last = now;
   applyKeys(dt);
+  ceilAutoTick();            // 자유 시점 천장 자동 숨김 — 카메라 포즈로 매 프레임 판정
   stepUpdate(dt);
   updateCooking(dt);
   personUpdate(dt);
@@ -5995,9 +6551,7 @@ function logConsole(msg) {
     ["🗄 prep — 조리대", anchors["pot2"].node, true],
     ["🧺 shelf — 선반", anchors["shelf"].node, true],
     ["🖥 panel — 제어반", anchors["panel"].node, true],
-    ["📷 CAM1 부감", scene.getTransformNodeByName("camProp_overhead"), true],
-    ["📷 CAM2 코너", scene.getTransformNodeByName("camProp_corner"), true],
-    ["📷 CAM3 눈높이", scene.getTransformNodeByName("camProp_eye"), true],
+    // 카메라 줄은 여기 하드코딩하지 않는다 — 아래 camRows에 CAM_DEFS로부터 만든다
   ];
   for (const [label, node, child] of rows) {
     const div = document.createElement("div");
@@ -6016,6 +6570,20 @@ function logConsole(msg) {
     }
     tree.appendChild(div);
   }
+  /* 카메라 구역 — 제목 한 줄 + 카메라 줄들. 추가·삭제·이름변경이 그대로 반영된다. */
+  const head = document.createElement("div");
+  head.className = "snode";
+  head.textContent = "▾ 시점";
+  head.style.marginTop = "6px";
+  tree.appendChild(head);
+  const hint = document.createElement("div");
+  hint.className = "streehint";
+  hint.innerHTML = "이름을 누르면 <b>큰 화면</b> · <b>PiP</b> 버튼은 오른쪽 위 작은 화면";
+  tree.appendChild(hint);
+  const box = document.createElement("div");
+  box.id = "camRows";
+  tree.appendChild(box);
+  camTreeRebuild();
 })();
 $("mbPlay").addEventListener("click", () => $("autoBtn").click());
 $("mbStop").addEventListener("click", () => $("stopBtn").click());
@@ -6067,7 +6635,7 @@ initPhysics();   // 비동기 — 파일 없으면 물리만 꺼진 채 계속 �
   const TABS = [
     { id:"start", label:"🚀 시작", secs:[] },   // 아래 startTabUI()가 내용을 채운다
     { id:"run",  label:"▶ 실행",   secs:["관절 제어","조리 설정","조리 상태","조작 대상","사람 시나리오 · 화재","사고 시나리오 (연쇄)"] },
-    { id:"cam",  label:"📷 카메라", secs:["카메라 · 모델 입력","시점 프리셋","감시 카메라 위치·각도"] },
+    { id:"cam",  label:"📷 카메라", secs:["카메라 · 모델 입력","시점 프리셋","감시 카메라 관리"] },
     /* 데이터 탭은 "데이터를 만든다 → 모델을 검증한다 → 회차를 비교한다" 순서로 읽히게 둔다.
        센서 리얼리즘·조리실 인원은 데이터셋의 다양성을 정하는 손잡이라 고급이 아니라 여기다.
        (고급에 있으면 데이터 만드는 사람이 영영 못 찾는다) */
@@ -6118,8 +6686,11 @@ initPhysics();   // 비동기 — 파일 없으면 물리만 꺼진 채 계속 �
   /* 전문가 기능 접기 — 섹션 제목으로 찾아 그 섹션의 노드 전체를 감춘다.
      컨트롤이 104개나 되는데 모델 학습·검증에 필요한 건 그중 일부다.
      지우지 않고 감추는 이유: 필요한 사람은 있고, 지우면 되돌릴 수 없다. */
-  const DEV_SECTIONS = ["감시 카메라 위치·각도", "에셋 임포트 (선택)"];
-  const DEV_IDS = ["camAdd", "orbCap", "devTools", "sensorFine", "mbInspector"];
+  /* 카메라 관리(추가·이동·삭제)는 전문가 기능에서 뺐다. 원하는 각도로 카메라를 놓는 것은
+     이 시뮬레이터의 기본 사용법이지 고급 기능이 아닌데, DEV_SECTIONS에 묶여 있어서
+     기본 상태에서는 섹션 자체가 안 보였다 — 기능이 있는 줄도 모른다는 지적을 받았다. */
+  const DEV_SECTIONS = ["에셋 임포트 (선택)"];
+  const DEV_IDS = ["orbCap", "devTools", "sensorFine", "mbInspector"];
   window.applyDevMode = on => {
     for (const name of DEV_SECTIONS) {
       const g = groups.find(x => x.key.startsWith(name));
