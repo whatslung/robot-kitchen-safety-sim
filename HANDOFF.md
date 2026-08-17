@@ -1,0 +1,125 @@
+# 핸드오프 — 조리로봇 안전: 검출 학습 루프
+
+> 정식 작업 레포: `E:\VsCodeProjects\robot-kitchen-safety-sim`
+> 최종 갱신: 2026-08-17
+
+## 한 줄 요약
+
+시뮬레이터에서 **합성 데이터를 만들어 YOLO를 학습 → 시뮬에서 검출이 되는지** 검증하는 루프를 구축 중.
+파이프라인은 검증됨(kettle mAP50 0.995), **person 검출만 데이터 부족으로 약함**. 다음 할 일은 **overhead(천장) 전용으로 데이터를 더 뽑아 재학습**.
+
+---
+
+## 목표 & 전체 파이프라인
+
+```
+CCTV(천장) → 검출(YOLO) → 추적(ByteTrack, ID) → 사람별 x,y 궤적 → 예측(칼만/LSTM) → SSM 안전판정 → 로봇제어
+```
+
+- **검출**만 이 레포(시뮬)에서 학습·검증. 예측기(칼만/LSTM)·SSM은 이미 별도 레포에 구현됨.
+- 천장뷰 탑다운이라 이미지 (x,y) → 바닥 (x,z)가 거의 선형 → 궤적 좌표 확보가 쉬움(overhead 고정의 핵심 이유).
+
+## 관련 레포
+
+| 레포 | 역할 |
+|---|---|
+| `robot-kitchen-safety-sim` (여기) | 시뮬레이터 + 데이터 생성 + detect_server. **정식본** |
+| `cooking-robot-safety` | 궤적 예측기(칼만/LSTM), SSM, ADE/FDE 벤치마크(ETH/ATC) |
+| `overhead-person-yolo11` | 실제 CCTV 검출(별개, 실사 도메인) |
+| `simulator-robot-cooking` | 옛 로컬 시뮬 사본 — **이 레포로 대체됨, 사용 금지** |
+
+---
+
+## 현재 상태
+
+**✅ 되는 것**
+- 시뮬 데이터 생성 파이프라인(합성 프레임 + YOLO 라벨, 6클래스). 데이터 유효성 검증 통과(손상0·형식0).
+- 학습 파이프라인(yolo11n 파인튜닝, CPU). kettle 0.995 / robot 0.67 / equipment 0.67로 **"sim→학습→sim검출" 유효 증명**.
+- `detect_server.py` 경로로 브라우저 ONNX/스로틀링 우회 가능.
+- `sim.html`에 **overhead 전용 생성 옵션** 추가(아래).
+
+**🔴 남은 것 / 막힌 것**
+- **person 검출 약함**: 37장(3~6시점 혼합)에서 person mAP50 0.11, **Recall 0**. 안전의 핵심인데 최악. → 데이터 부족 문제(방법론 아님).
+- **헤드리스 대량 생성 불가**: 브라우저 백그라운드 탭은 GPU 렌더가 멈춤(90초에 0샘플). **데이터 생성은 반드시 실제 브라우저 포그라운드**에서. 학습은 순수 Python으로 가능.
+
+---
+
+## 핵심 결정
+
+1. **overhead(천장) 전용 피벗** — 여러 시점을 섞으니 person이 시점·스케일로 쪼개져 학습 실패. 시점 고정하면 (a) kettle처럼 일관돼 검출이 잘 배워지고 (b) 탑다운 x,y로 궤적 좌표를 바로 얻음.
+2. **detect_server.py로 검출을 파이썬 백엔드에서** — 브라우저 안 ONNX/WebGPU/스로틀링을 우회. 시뮬이 프레임을 POST → 박스 반환.
+3. **stock YOLO는 시뮬에서 안 됨** — 실사로 학습해 합성 시뮬을 못 잡음(역도메인갭 실측 확인). 그래서 시뮬 데이터로 학습해야 함.
+
+---
+
+## 주요 산출물 & 경로
+
+| 항목 | 경로 |
+|---|---|
+| 시뮬 (편집됨) | `robot-kitchen-safety-sim/sim.html` |
+| 검출 서버 | `robot-kitchen-safety-sim/tools/detect_server.py` |
+| 옛 데이터셋(3~6시점 혼합, 37장, **참고용**) | `E:\다운로드\dataset` |
+| 학습 워크스페이스(분할·data.yaml·runs) | `E:\VsCodeProjects\cooking-robot-safety\train_sim` |
+| 학습된 가중치 | `...\train_sim\runs\detect\runs\sim6\weights\best.pt` |
+
+> ⚠ `sim.html` 편집(overhead 옵션)은 **아직 커밋 안 됨**. 데이터셋/best.pt는 이 레포 밖에 있음.
+
+### sim.html 편집 내용 (uncommitted)
+`generateDataset`에 카메라 필터 추가. `__sim.DATAGEN`으로 노출:
+- `DATAGEN.cams` — 생성할 카메라 배열. 예 `['overhead']`. `null`=전체(6개: overhead·corner·eye·top·deg45·front).
+- `DATAGEN.imagesOnly` — `true`면 `gt/`(mask·inst·depth·meta) 생략 → 더 빠름/가벼움.
+
+---
+
+## 다음 단계 (순서대로)
+
+### 1. overhead 전용 데이터 생성 (사용자 브라우저에서)
+```
+# 서버 (이 레포 루트에서)
+python -m http.server 5173      # 또는 launch/실행하기_Windows.bat
+# Chrome/Edge → http://localhost:5173/sim.html
+```
+콘솔(F12):
+```js
+__sim.DATAGEN.cams = ['overhead'];
+__sim.DATAGEN.imagesOnly = true;
+```
+→ 📊 데이터 탭 → 샘플 수 200 → **데이터셋 생성** → **새 빈 폴더** 선택 → 탭 앞에 두고 대기.
+결과: `overhead_XXXX.png` + `labels/`. 1장/샘플이라 빠름. person이 다양하게(사람 수·위치) 나오게.
+
+### 2. 재학습 (Python, 브라우저 불필요)
+train/val 분할(샘플 인덱스 단위로 — 누수 방지) + `data.yaml`(6클래스) 생성 후:
+```bash
+KMP_DUPLICATE_LIB_OK=TRUE yolo detect train model=yolo11n.pt data=data.yaml \
+  epochs=80 imgsz=640 batch=8 workers=0
+```
+> 환경: anaconda python, **CPU only**, ultralytics 설치됨. `KMP_DUPLICATE_LIB_OK=TRUE` 필수(OMP 충돌 회피). names: `0 person 1 fire 2 smoke 3 robot 4 kettle 5 equipment`.
+
+### 3. detect_server에 모델 물리기 & 검증
+`tools/detect_server.py`는 이미 **v2.0(FastAPI + ByteTrack + track id + 속도 vx/vy)** 로 업그레이드돼 있음(워킹카피, 미커밋). 검출→추적→속도까지 서버가 처리.
+```bash
+pip install fastapi uvicorn ultralytics trackers supervision pillow numpy
+python tools/detect_server.py     # http://127.0.0.1:8000/detect  (/health로 상태 확인)
+```
+우리 모델 연결:
+- **49행** `MODEL = YOLO("yolov8n.pt")` → `YOLO(".../best.pt")`
+- **66행** `LABEL_MAP` → 6클래스 통과(또는 `None`으로 전부 통과)
+
+응답 계약: `{boxes:[{label,conf,cx,cy,w,h,id,vx,vy}], mode, camera}` (정규화 0~1, id=트랙, vx/vy=이미지평면 속도).
+> ⚠ **현재 sim.html 파서는 id·vx·vy를 무시**함(label/conf/cx/cy/w/h만 읽음). 트랙·속도를 실제로 쓰려면 시뮬 쪽 `__customModel` 응답 처리를 트랙 단위로 확장하는 후속 작업 필요.
+
+시뮬을 http(server) 모드로 연결(`MIL.url = http://127.0.0.1:8000/detect`) → **stock vs 우리 모델** 비교, person 잡히는지 확인.
+
+### 4. 이후
+- detect_server가 이미 track id + 속도를 주므로, **사람별 x,y 트랙**은 서버에서 나옴 → `cooking-robot-safety`의 칼만/LSTM 예측기 연결 → SSM.
+- 남은 배선: 시뮬 파서 확장(id/vx/vy 수용) + 월드 좌표 역투영(카메라 파라미터로 이미지 x,y→바닥 x,z).
+
+---
+
+## 함정 / 주의
+
+- **데이터 생성은 반드시 실제 브라우저 포그라운드.** 백그라운드 탭·헤드리스는 렌더가 멈춤.
+- `sim.html`을 `file://`로 열지 말 것 — http 서버로. (ONNX wasm 로드 실패)
+- GT 해상도 `GT_W/GT_H`는 `const`(960×720) — 코드 수정 없이 못 바꿈.
+- 옛 `E:\다운로드\dataset`(혼합 시점)과 새 overhead 데이터를 **섞지 말 것**.
+- 37장 결과(person 0.11)는 데이터 부족 탓 — 방법론 문제 아님. overhead+더 많은 샘플로 해결.

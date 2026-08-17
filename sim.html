@@ -3036,13 +3036,17 @@ function safetyUpdate() {
   if (MIL.safety && MIL.on) {
     // 모델 기반 안전 — 로봇은 '모델이 마지막으로 사람을 본 위치'만 안다.
     // 지연·미검출 동안 실제 위치와 벌어지는 간극이 곧 이 연구의 위험 시나리오다.
-    const s = MIL.lastPersonSeen;
+    // 트래킹 응답이면 로봇에 가장 위협적인 트랙으로, 아니면 종전 단일 위치로 판정한다.
+    const thr = (typeof milThreatSrc === "function") ? milThreatSrc() : null;
+    const s = thr || MIL.lastPersonSeen;
     if (s && performance.now() - s.t < 5000) {
       SAFE.dist = SCALE.m(Math.hypot(s.pos.x - LAYOUT.robot.base.x, s.pos.z - LAYOUT.robot.base.z));
       srcPos = s.pos;
+      SAFE.trackId = thr ? thr.id : -1;
     } else {
       SAFE.dist = 99;   // 최근 5초 내 사람 검출 없음 → 로봇은 '없다'고 판단
       srcPos = null;
+      SAFE.trackId = -1;
     }
   } else {
     SAFE.dist = SAFE.trueDist;
@@ -4014,8 +4018,9 @@ function restoreAfterDataset() {
      생성 중에는 흔들리고, 끝나면 선명하게 돌아온다. */
   sensorPreset("clean");     // 슬라이더 UI까지 같이 맞춰 준다
 }
-const DATAGEN = { running:false, abort:false, saved:0 };   // P7: 실행 상태 · 중단 플래그 · 누적 저장 이미지 수(상태바용)
+const DATAGEN = { running:false, abort:false, saved:0, cams:null, imagesOnly:false };   // P7: 실행 상태 · 중단 · 누적 · cams(null=전체, 예 ['overhead']) · imagesOnly(gt/ 생략)
 async function generateDataset(n) {
+  const cams = (DATAGEN.cams && DATAGEN.cams.length) ? DATAGEN.cams.filter(c => SURV[c]) : Object.keys(SURV);
   let dir = null;
   if (window.showDirectoryPicker) {
     try { dir = await showDirectoryPicker({ mode:"readwrite" }); }
@@ -4047,7 +4052,7 @@ async function generateDataset(n) {
   $("gtGenBtn").textContent = "■ 중단";
   RUNLOG.start("dataset", {
     label: ($("runLabel").value || "").trim() || "dataset",
-    n, cameras: Object.keys(SURV).length, res: GT_W + "×" + GT_H,
+    n, cameras: cams.length, res: GT_W + "×" + GT_H,
     classes: GT_CLASSES.length, labelMode: "instance",
     randomize: !!(typeof ENV_RAND !== "undefined" && ENV_RAND.enabled),
   });
@@ -4059,18 +4064,20 @@ async function generateDataset(n) {
       await setExtraCount([0, 1, 1, 2, 2, 3][(Math.random() * 6) | 0]);
       randomizeScene();
       for (let f = 0; f < 4; f++) scene.render();        // 파티클·포즈 안정화
-      for (const id of Object.keys(SURV)) {
+      for (const id of cams) {
         if (DATAGEN.abort) break;
         const gt = await groundTruth(id);
         const base = id + "_" + String(i).padStart(4, "0");
         await write("images", base + ".png", gt.rgb);
         DATAGEN.saved++;                                   // 상태바 데이터셋 카운트
         await write("labels", base + ".txt", undefined, gt.labelText);
-        await write("gt", base + "_mask.png", gt.mask);
-        await write("gt", base + "_inst.png", gt.instMask);
-        if (gt.depth) await write("gt", base + "_depth.png", gt.depth);
-        if (gt.depthNear) await write("gt", base + "_depthnear.png", gt.depthNear);
-        await write("gt", base + "_meta.json", undefined, JSON.stringify(gt.meta, null, 1));
+        if (!DATAGEN.imagesOnly) {
+          await write("gt", base + "_mask.png", gt.mask);
+          await write("gt", base + "_inst.png", gt.instMask);
+          if (gt.depth) await write("gt", base + "_depth.png", gt.depth);
+          if (gt.depthNear) await write("gt", base + "_depthnear.png", gt.depthNear);
+          await write("gt", base + "_meta.json", undefined, JSON.stringify(gt.meta, null, 1));
+        }
       }
       done = i + 1;
       const per = (performance.now() - t0) / done / 1000;
@@ -4082,8 +4089,8 @@ async function generateDataset(n) {
     if (dir && done > 0) {
       const manifest = {
         created: new Date().toISOString(), samples: done,
-        cameras: Object.keys(SURV),
-        images_per_sample: Object.keys(SURV).length,
+        cameras: cams,
+        images_per_sample: cams.length,
         resolution: [GT_W, GT_H],
         classes: GT_CLASSES.map(c => c.label),
         layout: { images: "images/", labels: "labels/ (YOLO)", gt: "gt/ (mask·inst·depth·meta)" },
@@ -4100,13 +4107,13 @@ async function generateDataset(n) {
     $("gtGenBtn").textContent = "데이터셋 생성";
     if (RUNLOG.cur) {
       RUNLOG.cur.samples = done;
-      RUNLOG.cur.images = done * Object.keys(SURV).length;
+      RUNLOG.cur.images = done * cams.length;
     }
     RUNLOG.finish(DATAGEN.abort ? "사용자 중단" : null);
     restoreAfterDataset();
   }
   setStatus((DATAGEN.abort ? "⏹ 중단됨 — " : "✅ 데이터셋 완료 — ") + done + "샘플 × " +
-            Object.keys(SURV).length + "카메라 · images/labels/gt 구조" + (dir ? "" : " (다운로드 폴더 확인)"));
+            cams.length + "카메라 · images/labels/gt 구조" + (dir ? "" : " (다운로드 폴더 확인)"));
 }
 
 /* ══ 물리 (Havok) — A: 안전 물리 ════════════════════════════════════════
@@ -4507,7 +4514,10 @@ const RUNLOG = {
 const MIL = { on:false, mode:"mock", url:"http://localhost:8000/detect",
               latency:2000, hz:1, acc:0, busy:false, cam:"corner",
               lastBoxes:null, lastAge:0, drift:0, err:0, n:0,
-              safety:false, lastPersonSeen:null };
+              safety:false, lastPersonSeen:null,
+              // 트래킹 연동: 서버가 track id를 주면 트랙별 월드 위치·이력·속도를 여기 유지한다.
+              //   { [id]: { pos:V3, t, hist:[{t,x,z}…2s], vImg:{x,y}, vWorld:{x,z} } }
+              tracks:{} };
 
 async function milMaskBoxes(cam) {   // 현재 해상도 마스크 → 박스 (mock 모델의 '완벽한 검출')
   const savedClear = scene.clearColor.clone();
@@ -4729,6 +4739,9 @@ async function milCapture() {
     MIL.lastBoxes = { camId, boxes, capturedAt, personAt };
     const sawPerson = boxes.some(b => b.label === "person");
     if (sawPerson) MIL.lastPersonSeen = { pos: personAt.clone(), t: performance.now() };
+    // 서버가 track id를 주면 트랙별 월드 위치·속도를 갱신(다인원·id 안정).
+    // 아니면 tracks를 비워 종전 단일 위치 경로로 폴백한다.
+    if (!milAssocTracks(boxes, camId)) MIL.tracks = {};
     MIL.n++;
     MIL.drift = V3.Distance(person.node.position, personAt);   // 지연 동안 사람이 움직인 거리
     MIL.lastAge = performance.now() - capturedAt;
@@ -4744,6 +4757,65 @@ async function milCapture() {
     $("milStatus").textContent = "모델 응답 실패 (" + MIL.err + "회): " + (e.message || e);
     $("milStatus").style.color = "#ff7b72";
   } finally { MIL.busy = false; }
+}
+
+/* ══ 트래킹 연동 — 서버 track id·속도를 월드 궤적으로 ══════════════════════
+   서버(detect_server.py + ByteTrack)는 박스에 id·vx·vy(이미지 정규화/초)를 얹어 준다.
+   시뮬은 카메라 내·외부 파라미터로 박스를 월드에 역투영하는 대신, **실제 인물(주 인물+
+   EXTRAS)을 이미지에 투영해 최근접 매칭**한다 — MIL의 '검출로 게이팅된 실좌표' 철학을
+   유지하면서 다인원·트랙 안정으로 확장한다. 검출이 놓친 인물은 여전히 로봇에게 안 보인다. */
+function worldToImageNorm(pos, m, vp) {
+  // 월드 → 정규화 이미지좌표(0~1, 원점 좌상단 = 서버 cx,cy 규약과 동일)
+  const s = BABYLON.Vector3.Project(pos, BABYLON.Matrix.Identity(), m, vp);
+  return { x: s.x, y: s.y };
+}
+function milAssocTracks(boxes, camId) {
+  const S = SURV[camId]; if (!S || !S.cam) return false;
+  const tracked = boxes.filter(b => b.label === "person" && Number.isFinite(b.id) && b.id >= 0);
+  if (!tracked.length) return false;                    // 트래킹 정보 없음 → 레거시 경로
+  const cam = S.cam;
+  const m = cam.getViewMatrix(true).multiply(cam.getProjectionMatrix(true));
+  const vp = new BABYLON.Viewport(0, 0, 1, 1);
+  // 후보: 주 인물 + 자율 인원. 각자의 월드 위치를 이미지에 투영해 둔다.
+  const cand = [{ node: person.node, ip: worldToImageNorm(person.node.position, m, vp) }];
+  for (const P of EXTRAS) cand.push({ node: P.root, ip: worldToImageNorm(P.root.position, m, vp) });
+  const now = performance.now();
+  for (const b of tracked) {
+    let best = null, bd = Infinity;
+    for (const c of cand) {
+      const d = Math.hypot(c.ip.x - b.cx, c.ip.y - b.cy);
+      if (d < bd) { bd = d; best = c; }
+    }
+    if (!best) continue;
+    const wp = best.node.position.clone();
+    const prev = MIL.tracks[b.id];
+    const rec = prev || { hist: [], vWorld: { x:0, z:0 } };
+    if (prev) {
+      const dt = (now - prev.t) / 1000;
+      if (dt > 0.02 && dt < 1.5)
+        rec.vWorld = { x: (wp.x - prev.pos.x) / dt, z: (wp.z - prev.pos.z) / dt };
+    }
+    rec.pos = wp; rec.t = now; rec.vImg = { x: b.vx || 0, y: b.vy || 0 };
+    rec.hist.push({ t: now, x: wp.x, z: wp.z });
+    while (rec.hist.length && now - rec.hist[0].t > 2000) rec.hist.shift();
+    MIL.tracks[b.id] = rec;
+  }
+  for (const id of Object.keys(MIL.tracks))            // 만료 트랙(5s 무갱신) 폐기
+    if (now - MIL.tracks[id].t > 5000) delete MIL.tracks[id];
+  return true;
+}
+/* 로봇에 가장 위협적인(가장 가까운) 신선한 트랙을 안전 판정 소스로 고른다.
+   트랙이 없으면 null → safetyUpdate가 종전 lastPersonSeen으로 폴백한다. */
+function milThreatSrc() {
+  const now = performance.now(), bx = LAYOUT.robot.base.x, bz = LAYOUT.robot.base.z;
+  let best = null, bd = Infinity, bid = -1;
+  for (const id of Object.keys(MIL.tracks)) {
+    const tr = MIL.tracks[id];
+    if (now - tr.t > 5000) continue;
+    const d = Math.hypot(tr.pos.x - bx, tr.pos.z - bz);
+    if (d < bd) { bd = d; best = tr; bid = +id; }
+  }
+  return best ? { pos: best.pos, id: bid, t: best.t } : null;
 }
 
 const overlayCv = document.createElement("canvas");
@@ -4851,14 +4923,28 @@ function drawMilBoxes(ctx, W, H, camId) {
     const col = MIL_COLORS[b.label] || "#e6edf3";
     const x = (b.cx - b.w/2) * W, y = (b.cy - b.h/2) * H;
     ctx.strokeStyle = col; ctx.strokeRect(x, y, b.w*W, b.h*H);
-    const tag = b.label + " " + ((b.conf||0)*100).toFixed(0) + "%";
+    let tag = b.label + " " + ((b.conf||0)*100).toFixed(0) + "%";
+    if (Number.isFinite(b.id) && b.id >= 0) tag += " #" + b.id;   // 트랙 id
     ctx.fillStyle = col; ctx.fillRect(x, y-16*s, ctx.measureText(tag).width+10*s, 16*s);
     ctx.fillStyle = "#0d1117"; ctx.fillText(tag, x+5*s, y-4*s);
+    // 속도 벡터 — 이미지 정규화 속도(vx,vy)를 0.6s 앞으로 투사해 화살표로 표시
+    if (b.vx || b.vy) {
+      const cxp = b.cx*W, cyp = b.cy*H, ex = cxp + b.vx*0.6*W, ey = cyp + b.vy*0.6*H;
+      ctx.strokeStyle = col; ctx.lineWidth = 3*s;
+      ctx.beginPath(); ctx.moveTo(cxp, cyp); ctx.lineTo(ex, ey); ctx.stroke();
+      const ang = Math.atan2(ey-cyp, ex-cxp), hl = 7*s;
+      ctx.beginPath(); ctx.moveTo(ex, ey);
+      ctx.lineTo(ex - hl*Math.cos(ang-0.4), ey - hl*Math.sin(ang-0.4));
+      ctx.moveTo(ex, ey);
+      ctx.lineTo(ex - hl*Math.cos(ang+0.4), ey - hl*Math.sin(ang+0.4));
+      ctx.stroke(); ctx.lineWidth = 2*s;
+    }
   }
-  ctx.fillStyle = "rgba(13,17,23,0.8)"; ctx.fillRect(8*s, H-26*s, 330*s, 20*s);
+  const nT = Object.keys(MIL.tracks || {}).length;
+  ctx.fillStyle = "rgba(13,17,23,0.8)"; ctx.fillRect(8*s, H-26*s, 360*s, 20*s);
   ctx.fillStyle = "#e6edf3";
   ctx.fillText("모델 출력 — " + (MIL.lastAge/1000).toFixed(1) + "s 전 프레임 기준 · 드리프트 " +
-               MIL.drift.toFixed(2) + "m", 14*s, H-12*s);
+               MIL.drift.toFixed(2) + "m" + (nT ? " · 트랙 " + nT : ""), 14*s, H-12*s);
   ctx.restore();
 }
 
@@ -5980,7 +6066,7 @@ $("milBtn").addEventListener("click", () => {
   $("milBtn").textContent = MIL.on ? "■ 검증 중지" : "▶ 검증 시작";
   $("milBtn").className = MIL.on ? "danger" : "primary";
   if (!MIL.on) {
-    MIL.lastBoxes = null; MIL.lastPersonSeen = null; drawOverlay();
+    MIL.lastBoxes = null; MIL.lastPersonSeen = null; MIL.tracks = {}; drawOverlay();
     const r = RUNLOG.finish();     // 검증 시작~중지 = 1회차
     if (r) setStatus("📋 회차 #" + r.id + " 기록 — 응답 " + r.model.resp + "회 · 지연 " +
       (r.model.latMean === null ? "–" : r.model.latMean + "ms") + " · 검출률 " +
@@ -6518,7 +6604,7 @@ window.__sim = {
   setPip:  v => { pipView = v; pipSel.value = v; applyCameras(); },
   person, personGo, SCN, SAFE, setFire,
   // Ground Truth · 데이터셋
-  groundTruth, generateDataset, randomizeScene, restoreAfterDataset,
+  groundTruth, generateDataset, DATAGEN, randomizeScene, restoreAfterDataset,
   GT_CLASSES, classOfMesh, showInspector,
   // 물리 · 안전
   PHYS, ROBOT_GUARD, buildRobotGuard, resetBasket, ONNX, onnxLoadModel, onnxInfer, PRED, ENV_RAND, randomizeEnvironment, placeOccluder, setExtraCount, spawnDebris, triggerEstop, clearEstop,
