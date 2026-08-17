@@ -271,6 +271,10 @@
     <button id="autoBtn" class="primary">▶ 자동 작업</button>
     <button id="stopBtn" class="danger">■ 정지</button>
   </div>
+  <!-- 연속 작업이 기본 — 1회만 돌면 '로봇이 움직이는 동안 사람이 접근하는 순간'이
+       아예 안 만들어진다(실측: 겹친 프레임 0건). 그 순간이 이 연구의 관측 대상이다. -->
+  <label class="row" style="cursor:pointer"><input type="checkbox" id="autoLoop" checked
+    style="accent-color:#76b900"><span style="width:auto;color:#c9d1d9">연속 작업 — 사이클 반복</span></label>
   <div class="btnrow">
     <button id="homeBtn">홈</button>
     <button id="resetBtn">↺ 리셋</button>
@@ -388,10 +392,26 @@
     sim.html에 영구히 박을 때 씁니다.<br>
     <b>부각</b>은 카메라가 내려다보는 각도입니다(90°=수직, 45°=대각). 실사 CCTV는 보통 30~45°.</div>
 
+  <div class="section">근무 시나리오 <span class="note" style="font-weight:400">직무 배정</span></div>
+  <div class="row">
+    <select id="scenSel" style="flex:1"></select>
+    <button id="scenRun">배치</button>
+  </div>
+  <div class="hint">인원마다 <b>직무</b>를 주고 정해진 동선을 순서대로 돌립니다. 무작위는 체류시간·속도에만
+    남아 있어, <b>같은 seed + 같은 시나리오면 같은 회차가 재현</b>됩니다.<br>
+    데이터셋 라벨(person 위험도)은 그 직무의 동선이 로봇에 얼마나 가까이 가느냐로 자동 결정됩니다.</div>
+
   <div class="section">사람 시나리오 · 화재</div>
   <div class="btnrow">
-    <button id="scApproach">솥 접근</button>
-    <button id="scPatrol">순회</button>
+    <button id="scRoleFar">＋ A 원거리 작업자 (로봇 접근 안 함)</button>
+    <button id="scRoleCaution">＋ B 주의구역 작업자 (감속까지만)</button>
+    <button id="scRoleDanger">＋ C 위험 접근자 (정지 반경 진입)</button>
+    <button id="scWander">🎲 랜덤 움직임 시작/중지</button>
+    <button id="scWork">🔁 작업 동선 (선반↔조리대)</button>
+    <button id="scKettle">솥 접근 (감속·정지)</button>
+    <button id="scFull">전체 순회 (입구→작업→퇴장)</button>
+    <button id="scApproach">솥 접근(구)</button>
+    <button id="scPatrol">순회(구)</button>
   </div>
   <div class="btnrow">
     <button id="scCrouch">앉기</button>
@@ -402,7 +422,8 @@
   </div>
 
   <div class="section">조리실 인원 (다양성)</div>
-  <div class="row"><span>추가 인원</span><input id="pplN" type="range" min="0" max="3" step="1" value="0"><b id="pplNV">0</b></div>
+  <!-- 상한 2명(주인공 포함 총 3명) — 솥 한 대에 통로가 좁아 그 이상은 동선이 뭉개진다 -->
+  <div class="row"><span>추가 인원</span><input id="pplN" type="range" min="0" max="2" step="1" value="0"><b id="pplNV">0</b></div>
   <div class="btnrow">
     <button id="pplReroll">외형·체형 다시 뽑기</button>
     <button id="pplCrouch">자세 섞기</button>
@@ -411,6 +432,22 @@
     <span style="width:auto;color:#c9d1d9">사람 숨기기 — 환경만 보기</span></label>
   <div class="hint">키 1.55~1.85m · 어깨폭 ±8% · 위생복 4색 · 위생모/마스크 착용 여부 랜덤. 안전 판정은 <b>최근접 인물</b> 기준.<br>
     숨기기는 <b>표시만</b> 끕니다 — 위치·안전 판정은 그대로 돌아갑니다(GT 라벨에서는 빠집니다).</div>
+
+  <label class="row" style="cursor:pointer"><input type="checkbox" id="ovLap" checked
+    style="accent-color:#76b900"><span style="width:auto;color:#c9d1d9">작업 겹침 — 이송 중 배식 담당이 카트로</span></label>
+  <div class="hint">장애물을 놓지 않습니다. 로봇이 바스켓을 <b>카트로 옮기는 동안</b> 배식 담당도
+    그 카트에서 가져가려 오게 합니다 — 둘이 같은 자리를 동시에 필요로 합니다.<br>
+    겹치면 안전 정지가 걸리고, 검출이 실패하면 <b>끼임</b>이 됩니다. 안 겹치면 아무 일도 없습니다.</div>
+
+  <div class="section">로봇 접촉 사고 <span class="note" style="font-weight:400">검출 실패 조건</span></div>
+  <div class="btnrow">
+    <button id="hzPush">충돌 — 팔에 맞고 밀림</button>
+    <button id="hzPinch">끼임 — 설비 사이에 낌</button>
+    <button id="hzClear">해제</button>
+  </div>
+  <div class="hint">안전 정지가 정상 동작하면 접촉은 <b>일어나지 않습니다</b>(그게 맞는 동작입니다).
+    두 버튼은 <b>모델이 사람을 못 본 상태</b>를 강제해 로봇을 멈추지 않게 합니다 — 이 연구가 겨냥하는 실패 모드입니다.<br>
+    자리는 런타임에 찾습니다: 사방이 트인 바닥이면 <b>밀림</b>, 솥·카트 사이처럼 막힌 슬롯이면 <b>끼임</b>이 됩니다.</div>
 
   <div class="section">사고 시나리오 (연쇄)</div>
   <div class="btnrow">
@@ -555,14 +592,45 @@ const $ = id => document.getElementById(id);
 /* 캐릭터 표시. 환경 구축 동안 false로 꺼뒀다가 2026-08-12 복귀 —
    사람이 없으면 이 시뮬의 본체인 안전(거리 정지/감속 + 물리 접촉 E-STOP) 시연이 성립하지 않는다.
    sim.html?person=0 으로 끄면 환경만 빠르게 볼 수 있다(33MB 캐릭터 로드 생략). */
-/* 캐릭터 기본 제외 — v48~v51 캐릭터가 품질 미달로 전부 반려됨(2026-08-14).
-   제대로 된 캐릭터가 생기기 전까지 시뮬은 환경 전용. ?person=1 로만 임시 복귀. */
-const SHOW_PERSON = new URLSearchParams(location.search).get("person") === "1";
+/* 캐릭터 **기본 포함**으로 복귀 (2026-08-17).
+   v48~v51이 품질 미달로 반려돼 한동안 꺼둔 상태였다(2026-08-14). 그 원인이 이제
+   규명됐고(scaling 트랙 + 메시 병합으로 스킨이 깨짐) 베이스를 MIT 리그로 교체했다.
+   사람이 없으면 이 시뮬의 본체인 안전(거리 정지/감속 + 물리 접촉 E-STOP) 시연이
+   성립하지 않는다. ?person=0 으로 끄면 환경만 빠르게 볼 수 있다. */
+const SHOW_PERSON = new URLSearchParams(location.search).get("person") !== "0";
 /* 환경 버전 스위치 — sim.html?env=v1 이면 2026-08-12 환경 작업 이전 상태로 되돌린다.
    (9×9 원점 중심 회색 방 · 배수 트렌치/타일/창 없음 · 주변 설비 프롭 없음 · CAM3 구위치)
    이 프로젝트는 git이 없어 되돌릴 안전망이 없으므로, 파일을 복사하는 대신
    한 빌드 안에서 신·구 환경을 직접 비교할 수 있게 둔다. */
 const ENV_V1 = new URLSearchParams(location.search).get("env") === "v1";
+/* ══ 아일랜드(섬) 배치 — sim.html?layout=island ═══════════════════════════════
+   지금 배치는 조리기기가 **북벽에 한 줄**로 붙어 있다(참조 현장 CCTV 근거).
+   그래서 방을 넓힐수록 주인공(솥+로봇)이 구석으로 밀린다 — 12×12m 방에서 솥이
+   중앙에서 5.53m 벗어나 있었고, 새로 단 카메라에서 솥 앞 사람이 화면의 5~12%로
+   찍혔다(기존 6대는 39~81%).
+
+   섬 배치는 **솥을 옮기지 않는다.** 솥은 월드 원점 고정(좌표 계약)이므로 벽만 밀어내면
+   같은 설비가 자동으로 '가운데 섬'이 된다. 방을 x±6·z±6으로 잡으면 솥이 정확히 정중앙.
+
+   연구 관점에서도 이쪽이 맞다: 지금은 사람이 로봇에 접근할 수 있는 방향이 통로 쪽
+   하나뿐인데(정지 반경 안 통행 가능 칸 실측 5칸), 섬이 되면 360° 어디서나 접근한다.
+   "사람이 어디서 올지 모른다"가 이 연구의 전제다.
+
+   **기본값은 바꾸지 않는다.** 참조 현장 근거가 걸린 변경이라 팀 판단이 필요하고,
+   git이 없어 되돌릴 안전망이 없다. ?env=v1·?reach= 와 같은 방식으로 플래그만 연다. */
+const ISLAND = new URLSearchParams(location.search).get("layout") === "island";
+/* 섬을 방 정중앙이 아니라 **북동쪽으로 치우치게** 둔다.
+   정중앙이면 사방 6m가 다 뚫려 있어 **끼임이 성립하지 않는다** — 끼임은 로봇 반경과
+   고정 장애물 사이의 좁은 틈에서만 생기는데, 그 틈이 없기 때문이다(실측: 팔 반경 안
+   설 수 있는 208칸 중 끼임 후보 25칸 = 12%).
+   북동으로 밀면 그쪽 벽 라인과 섬 사이가 좁아져 슬롯이 생기고, 반대쪽(남서)은 넓어져
+   사람이 접근·이탈하는 통로가 된다. 솥은 못 옮기므로(월드 원점) **방을 남서로 민다.**
+   값을 0으로 두면 정중앙으로 되돌아간다 — 비교용. */
+/* 0으로 되돌렸다. 끼임을 노리고 북동 1.5m를 줬는데 **효과가 0이었다** —
+   로봇에서 가장 가까운 벽이 5.3m라 팔(1.87m)이 절반도 못 미쳐, 벽은 끼임 면이 될 수
+   없었다(끼임 후보 25칸 12%로 전후 동일). 얻는 것 없이 주인공만 다시 구석으로 밀렸다. */
+const ISLAND_OFF = { x: 0, z: 0 };        // 솥이 방 정중앙
+const ISLAND_HALF = 6;                    // 방 반너비 (12×12)
 /* GLB 로드 + 리플렉션 프로브 재캡처가 끝났는지 — MSAA 활성 시점 게이트 */
 let ENV_READY = false;
 const ASSETS = {
@@ -625,6 +693,14 @@ const LAYOUT = {
   // 방 한 칸 9×9m — 솥은 월드 원점(좌표 계약)이라 못 움직이므로 '벽을 솥에 붙인다'.
   // 북벽(z0)이 조리기기 벽: 솥 뒤 수전(z=-0.79)·후드(z=-1.3) 뒤로 0.15m 물려 세운다.
   // 근거: 참조 현장 CCTV — [로봇][튀김솥][국솥][국솥]이 벽을 따라 한 줄, 앞은 열린 통로.
+  /* 2026-08-17 — 방·프롭·카메라를 **공개 저장소 커밋 47719ad 상태로 되돌렸다.**
+     12×12m로 넓히고 카메라를 10대로 늘렸던 작업을 전부 물린 것이다. 넓힌 근거였던
+     4족보행 사람 추종을 안 하기로 했고, 넓히니 거리가 멀어져 사람이 화면 세로의
+     12~31%로 작아졌다(실측). 방을 줄이는 쪽이 카메라를 늘리는 것보다 낫다.
+     **되돌리지 않은 것** — 캐릭터(person_cook_v5·에리카 리그·액션 14종)와
+     사람 동작(직무 동선·A* 길찾기·회피 스티어링·충돌/끼임·팔 반경). 저장소에 없는
+     로컬 작업이고 이번 롤백의 대상이 아니다.
+     되돌리기 직전 상태는 _snapshots/sim_2026-08-17_v48-12x12-cams10.html 에 있다. */
   room:   ENV_V1 ? { x0:-4.5, x1:4.5, z0:-4.5, z1:4.5, h:3.3, tileSplit:1.35,
                      splash:{y0:0.80,y1:1.65}, trenchW:0.30 }
                  : { x0:-2.85, x1:6.15, z0:-1.45, z1:7.55, h:3.3,
@@ -635,6 +711,40 @@ const LAYOUT = {
   // 로봇이 실제로 도달해야 하는 지점들 — Phase 1 도달성 검증 대상
   targets:{}
 };
+/* ══ 로봇 팔 반경 확대 — sim.html?reach=<도달거리 m> ═════════════════════════
+   회의 요구: "로봇 움직임 반경 더 넓히기 (로봇 팔 크기 넓히기)".
+
+   **팔 링크와 GLB 세그먼트를 같은 배율로 키운다.** 링크 길이만 바꾸면 관절 앵커는
+   벌어지는데 메시는 원래 크기라 세그먼트 사이가 벌어진다. 세그먼트 노드에 같은 배율을
+   주면 피벗에서 늘어나므로 다음 관절 앵커와 정확히 맞물린다
+   (ASSETS.pivots의 |E-S|=0.72·|W-E|=0.60이 곧 upper·fore 길이라 이 관계가 성립한다).
+
+   페데스탈·J1은 키우지 않는다 — 바닥 고정면이 커지면 배치와 충돌 박스가 다 흔들린다.
+   '팔만 키운다'가 회의 문구에도 맞다.
+
+   **기본값은 바꾸지 않는다.** 이 프로젝트는 git이 없어 되돌릴 안전망이 없으므로,
+   ?fryer= · ?env=v1 과 같은 방식으로 플래그를 열어 두고 원본과 나란히 비교한다.
+   예) sim.html?reach=1.7  → 두산 H2017급(도달 1.7m)
+   안전 링(1.2/2.0m)은 절대 안전거리라 그대로 둔다 — 팔이 정지 링을 넘어서는 상태가
+   되는데, 그게 이 연구의 논점("반경만으로는 부족하다")을 그림으로 보여 준다. */
+const REACH = (() => {
+  /* 기준은 **upper+fore**(현재 1.30m). 그리퍼는 뺀다 — 협동로봇 카탈로그의 '도달거리'가
+     플랜지까지의 값이고, 이 파일의 기존 주석("도달 1.3m — 두산 M1013급")도 그 규약이다.
+     그래야 ?reach=1.7 이 곧 H2017급(1700mm)을 뜻한다. */
+  const R0 = LAYOUT.robot.upper + LAYOUT.robot.fore;
+  const q = new URLSearchParams(location.search).get("reach");
+  const want = q !== null ? parseFloat(q) : NaN;
+  if (!isFinite(want) || want <= 0) return { k:1, base:R0, target:R0 };
+  const k = clamp(want / R0, 0.6, 2.5);      // 극단값 방어 — IK·관절한계가 버티는 범위
+  return { k, base:R0, target:R0 * k };
+})();
+if (REACH.k !== 1) {
+  const R = LAYOUT.robot;
+  R.upper *= REACH.k; R.fore *= REACH.k; R.grip *= REACH.k;
+  console.log("[REACH] 팔 확대 ×" + REACH.k.toFixed(3) +
+              " — 도달 " + REACH.base.toFixed(2) + "m → " + REACH.target.toFixed(2) + "m" +
+              " (upper " + R.upper.toFixed(3) + " · fore " + R.fore.toFixed(3) + ")");
+}
 (function () {
   const F = LAYOUT.fryer, cx = F.pos.x, cz = F.pos.z, sy = F.oilY + 0.05;
   LAYOUT.targets.potHover = new V3(cx, 1.10, cz);        // 솥 상공 대기
@@ -1822,11 +1932,48 @@ const CAM_DEFS = [
   { id:"front", label:"CAM6 솥 정면(통로 감시)", pos:new V3(1.50,2.15,-0.95),
     tgt:new V3(-0.80,0.35,1.60), fov:1.60 },
 ];
+/* ══ 섬 배치용 카메라 재배치 ═════════════════════════════════════════════════
+   섬이 되면 주인공이 정중앙이라 **벽에서 안쪽을 보면 곧 주인공을 보는 것**이 된다.
+   그래서 새 4대를 네 벽 중앙에 걸고 전부 섬을 겨눈다.
+
+   화각을 80°에서 **57°로 좁혔다.** 벽에서 섬까지 5.6m인데 80°면 사람이 화면의 18%밖에
+   안 되고(골격 검출에는 25~30% 필요), 57°면 28%가 된다. 57°로도 가로 6.1m를 담아
+   섬(폭 4m)과 그 앞 통로가 다 들어온다.
+
+   CAM9는 높이를 0.5 → 1.6m로 올렸다. 0.5m는 앞에 작업대·카트가 하나만 있어도 통째로
+   가린다 — 저상 시점의 장점(누운 사람 옆모습)보다 가림 손실이 크다.
+   CAM5(45° 서벽 마운트)는 벽이 물러났으므로 새 서벽으로 옮기되 45° 규약을 유지한다. */
+if (ISLAND) (function () {
+  const put = (id, pos, tgt, fov) => {
+    const d = CAM_DEFS.find(c => c.id === id);
+    if (!d) return;
+    d.pos = pos; d.tgt = tgt;
+    if (fov !== undefined) d.fov = fov;
+  };
+  /* 카메라도 **벽에서 재서** 잡는다. 섬 오프셋을 바꾸면 벽이 움직이는데 좌표를 박아 두면
+     카메라가 벽 밖으로 나가거나 허공에 뜬다. 조준점은 전부 섬(월드 원점)이다. */
+  const R = LAYOUT.room, M = 0.40, AIM = new V3(0, 0.95, 0);
+  const aim = (x, y, z) => new V3(x, y, z);
+  put("deg45",    new V3(R.x0+M, 3.10, 0.55), aim(R.x0+M+2.25, 0.85, 0.55));   // 45° 유지(수평=낙차=2.25)
+  put("southTop", new V3(-1, 3.05, R.z1-M), aim(0, 0.95, 1.10), 1.00);          // 남벽 → 섬
+  put("seCorner", new V3(R.x1-M, 3.05, 0), aim(1.30, 0.95, 0.10), 1.00);       // 동벽 → 섬
+  put("lowFloor", new V3(R.x0+M, 1.60, 3.60), aim(0, 0.95, 0.30), 1.10);       // 서벽 눈높이 → 섬
+  put("wideAll",  new V3(R.x1-M, 3.15, R.z1-M), aim(0, 0.70, 0), 1.75);        // 남동 코너 광각
+  CAM_DEFS.forEach(d => {
+    if (d.id === "southTop") d.label = "CAM7 남벽 중앙(→섬)";
+    if (d.id === "seCorner") d.label = "CAM8 동벽 중앙(→섬)";
+    if (d.id === "lowFloor") d.label = "CAM9 서벽 눈높이(→섬)";
+    if (d.id === "wideAll")  d.label = "CAM10 남동 광각(→섬)";
+  });
+})();
 const SURV = {};
 /* 붙박이 카메라는 **항상 같은 비트**를 쓴다. 풀에서 뽑게 두면 저장/복원을 한 번 할 때마다
    반납 순서에 따라 비트가 뒤바뀌어(실측: overhead가 0x1000→0x20000) 로그를 못 믿게 된다. */
 const FIXED_BITS = { overhead:0x1000, corner:0x2000, eye:0x4000,   // 0x8000 = CEIL_BIT
-                     top:0x10000, deg45:0x20000, front:0x40000 };
+                     top:0x10000, deg45:0x20000, front:0x40000,
+                     // CAM7~10 증설분 — 붙박이라 풀을 타지 않고 고정 비트를 쓴다
+                     southTop:0x80000, seCorner:0x100000,
+                     lowFloor:0x200000, wideAll:0x400000 };
 const PROP_BITS = Object.assign({}, FIXED_BITS);
 /* 공장 초기값 스냅샷 — "공장 초기화"가 되돌릴 기준. pos/tgt는 Vector3라 깊은 복사가 필요하다. */
 const CAM_FACTORY = CAM_DEFS.map(d => Object.assign({}, d, { pos:d.pos.clone(), tgt:d.tgt.clone() }));
@@ -1863,22 +2010,83 @@ function makeSurvCam(d) {
   lens.rotation.x = Math.PI/2; lens.position.z = 0.11;
   lens.material = mat("lensM_" + d.id, "#0a0e14", {emissiveColor:new C3(0.55,0.08,0.08)});
   lens.parent = prop; lens.layerMask = bit;
-  return SURV[d.id] = { cam:c, def:d, prop:prop };
+  const S = SURV[d.id] = { cam:c, def:d, prop:prop, mount:addCamMount(d, bit) };
+  applyRigMask();      // 새 카메라의 장비를 기존 카메라들 화면에서도 즉시 뺀다
+  return S;
+}
+/* ══ 카메라 하우징 표시 여부 — 지지대는 만들지 않는다 ════════════════════════════
+   **브래킷·기둥을 일절 세우지 않는다.** 이 카메라들은 실제로 설치한 장비가 아니라
+   시점을 띄운 것이다. 지지대를 그리면 없는 설비를 있는 것처럼 만드는 셈이다.
+
+   시도했다가 물린 것 두 가지를 남겨 둔다:
+     · 천장 드롭 폴 — CAM3은 어느 벽에서도 2.85m라 1.75m 파이프가 필요했고,
+       조리실 한가운데를 관통해 내려오는 그림이 됐다
+     · 짧은 벽 브래킷(0.25~0.50m) — 기둥은 아니지만 결국 같은 문제다.
+       가상 시점에 실물 금구를 붙일 근거가 없다
+   바닥 스탠드는 애초에 안 된다 — 통행 격자에 기둥이 생겨 A* 동선이 막힌다.
+
+   대신 **면에서 HOUSING_MAX(0.6m)보다 먼 하우징은 그리지 않는다.** 방 한가운데
+   공중에 검은 상자가 떠 있는 게 실제로 눈에 걸렸다(CAM3, 높이 1.55m). 벽 근처
+   0.5m 이내는 벽걸이 카메라로 읽히므로 그대로 둔다.
+
+   시점 자체는 어느 경우에도 건드리지 않는다 — 위치·조준·화각 그대로다.
+   데이터셋에는 applyRigMask가 하우징을 전부 빼므로 이 판단이 학습 데이터에 닿지 않는다. */
+const HOUSING_MAX = 0.60;
+function addCamMount(d, bit) {
+  const R = LAYOUT.room, p = d.pos;
+  if (p.y > R.h) return null;                       // 천장 밖 가상 시점(CAM4) — 방 안에서 안 보인다
+  const face = [
+    { n:"천장", len:R.h - p.y },  { n:"서벽", len:p.x - R.x0 }, { n:"동벽", len:R.x1 - p.x },
+    { n:"북벽", len:p.z - R.z0 }, { n:"남벽", len:R.z1 - p.z },
+  ].filter(o => o.len >= 0).sort((a, b) => a.len - b.len);
+  const m = face[0];
+  if (m.len <= HOUSING_MAX) return { face:m.n, len:m.len, parts:[] };
+  const S = SURV[d.id];
+  const prop = S ? S.prop : scene.getTransformNodeByName("camProp_" + d.id);
+  if (prop) prop.getChildMeshes().forEach(x => { x.isVisible = false; });
+  console.log("[CAM] " + d.id + " — 가장 가까운 면이 " + m.len.toFixed(2) + "m(" + m.n +
+              "). " + HOUSING_MAX + "m 초과라 하우징을 그리지 않는다(시점은 그대로)");
+  return { face:m.n, len:m.len, parts:[], hidden:true };
 }
 /* 삭제 — 카메라·하우징·머티리얼을 모두 dispose하고 비트를 반납한다.
    메시만 지우고 머티리얼을 두면 렌즈 머티리얼이 씬에 계속 쌓인다(추가/삭제 반복 시 누수). */
 function disposeSurvCam(id) {
   const S = SURV[id]; if (!S) return false;
   S.prop.getChildMeshes().forEach(m => { if (m.material) m.material.dispose(); m.dispose(); });
+  // 지지대는 prop의 자식이 아니다(prop이 lookAt으로 돌아가 있어 월드 좌표로 세웠다) — 따로 지운다
+  if (S.mount) S.mount.parts.forEach(m => m.dispose());
   S.prop.dispose(); S.cam.dispose();
   // 붙박이 비트는 풀에 넣지 않는다 — 그 id 전용이라 다른 카메라가 가져가면 안 된다
   if (PROP_BITS[id] && !FIXED_BITS[id]) { BIT_POOL.push(PROP_BITS[id]); BIT_POOL.sort((a, b) => a - b); }
   delete PROP_BITS[id]; delete SURV[id];
+  applyRigMask();      // 반납한 비트를 남은 카메라들의 마스크에서 걷어낸다
   const i = CAM_DEFS.findIndex(d => d.id === id);
   if (i >= 0) CAM_DEFS.splice(i, 1);
   return true;
 }
+/* ══ 카메라 장비를 CCTV 시점 전부에서 뺀다 ═══════════════════════════════════
+   원래는 "자기 하우징만 자기 시점에서 제외"였다. 그래서 **남의 카메라 장비는 찍혔다**
+   (실측: CAM6 프레임에 9개 — CAM1·CAM2·CAM5의 하우징·렌즈·지지대. CAM4에는 CAM3 폴).
+
+   데이터셋에 남기면 안 된다. 클래스가 `0 person 1 fire 2 smoke 3 robot 4 kettle
+   5 equipment`인데 카메라 장비는 어디에도 없다 — 라벨 없는 검은 상자와 파이프가
+   프레임마다 고정 위치에 박히면, 모델이 그 자리를 배경으로 외우거나 equipment와
+   헷갈릴 여지를 준다. 실사 CCTV에 다른 카메라가 보이는 건 사실이지만, 그건 라벨이
+   달려 있을 때 얘기다.
+
+   자유 시점(사람이 보는 화면)에서는 그대로 보인다 — 어디에 몇 대가 달렸는지
+   확인해야 하고, 지지대가 벽·천장에 제대로 붙었는지도 눈으로 봐야 한다. */
+function applyRigMask() {
+  let rig = 0;
+  for (const id in SURV) rig |= (PROP_BITS[id] || 0);
+  for (const id in SURV) {
+    const S = SURV[id];
+    S.cam.layerMask = 0x0FFFFFFF & ~rig & ~(S.def.noCeil ? CEIL_BIT : 0);
+  }
+  return rig;
+}
 CAM_DEFS.forEach(d => makeSurvCam(d));
+applyRigMask();
 /* 절차 생성 천장 설비에 먼저 한 번 찍는다 (GLB분은 loadAssets 끝에서 재적용).
    자유 시점의 기본값은 **보임**이다 — 지금 화면과 발표 데모를 바꾸지 않기 위해서다.
    새 카메라 위치를 잡을 때만 UI 체크박스로 끈다. */
@@ -2113,6 +2321,7 @@ function setFire(on) {
 const person = {
   node: anchors["person"].node, rig: PERSON_RIG,
   mode:"idle", path:[], pi:0, loop:false, speed:0.55, walkT:0, crouch:0,
+  stations:null, dwellT:0,   // 동선 실행 중 스테이션 목록 / 남은 체류시간(ms)
 };
 const SCN = {
   // 전방 통로에서 접근 — 카트·키오스크를 피해 로봇 작업 반경으로 진입 (새 배치 기준)
@@ -2127,6 +2336,364 @@ const SCN = {
   patrol:   [ new V3(2.6,0,2.6), new V3(4.3,0,2.6), new V3(4.3,0,5.4),
               new V3(1.6,0,5.6), new V3(-1.2,0,4.6), new V3(-1.4,0,2.7) ],
 };
+/* ══ 작업 동선 — 스테이션 + 경로 ═════════════════════════════════════════
+   회의 우선순위 ③ "동선 — 사람 움직임 시나리오 (선반 · 조리대 · 로봇 반경)".
+
+   좌표를 손으로 적지 않고 **앵커에서 오프셋으로 계산**한다. 예전 SCN.patrol은 하드코딩
+   이라 북벽을 솥 쪽으로 당겼을 때 두 점이 벽 밖으로 나갔고 한 점은 이웃 국솥을 관통했다.
+   앵커 기준이면 배치를 바꿔도 동선이 따라온다.
+
+   각 스테이션에는 **도착 시 재생할 작업 동작**을 붙인다. 그래야 "무엇을 하러 갔는지"가
+   화면과 데이터셋에 남는다 — 그냥 왔다갔다 하면 라벨이 전부 '걷는 사람'이 된다.
+   설비 앞 정지 위치는 앵커에서 통로 쪽(+z)으로 물러난 지점이다(설비 안에 서지 않게). */
+const STATION = (() => {
+  const S = LAYOUT.shelf.pos, P = LAYOUT.prep.pos, F = LAYOUT.fryer.pos,
+        PA = LAYOUT.panel.pos;
+  return {
+    /* act에 **여러 개를 주면 방문할 때마다 하나를 뽑는다**(인원별 시드로 재현됨).
+       같은 자리에서 늘 같은 포즈가 나오면 데이터셋이 그 포즈로 편중된다.
+
+       쓸 수 있는 작업 자세는 **pickup·interact·kneel·idleTalk·idle 다섯뿐**이다.
+       crouch(Crouch_Idle_Loop)는 낮은 칸에서 물건 꺼내는 자세가 아니라 **몸을 낮춘 잠입
+       자세**라 조리실에 안 맞는다(화면 확인). 작업 자리에는 쓰지 않는다. */
+    shelf : { pos:new V3(S.x + 0.08, 0, S.z + 0.80), act:["pickup","kneel"], dwell:2200, label:"선반 앞" },
+    /* 조리대·제어반은 조리기기 라인(솥·옆 국솥 1.85,-0.12) 사이에 끼어 있다.
+       충돌 박스를 자동 수집한 뒤로는 앵커 바로 앞에 설 자리가 없어졌다(verifyRoute가 잡음).
+       기기 라인 앞 통로(z≈1.0)로 물러나 세운다 — 실제 조리원도 기기 사이가 아니라
+       라인 앞 통로에 서서 일한다. */
+    prep  : { pos:new V3(P.x + 0.95, 0, P.z + 1.85), act:["pickup","interact"], dwell:3000, label:"조리대 앞" },
+    /* 솥 앞 — 솥 콜라이더는 반너비 1.02×0.68에 사람 반경 0.26이 더해져 z 방향 0.94까지다.
+       1.05로 두면 경계에 딱 붙어 도달 판정이 안 나 스테이션을 건너뛴다(실측).
+       1.22로 물러나면 도달하면서도 감속 반경(2.0m) 안에 남는다 — 안전 반응 시연 유지. */
+    kettle: { pos:new V3(F.x + 0.22, 0, F.z + 1.22), act:["interact"], dwell:2600, label:"솥 앞" },
+    panel : { pos:new V3(PA.x + 0.55, 0, PA.z + 1.75), act:["interact","idle"], dwell:1800, label:"제어반 앞" },
+    aisle : { pos:new V3( 2.60, 0,  2.20),             act:["idleTalk","idle"], dwell:1600, label:"통로 대기" },
+    door  : { pos:new V3( 5.20, 0,  3.30),             act:["idle","idleTalk"], dwell:1200, label:"입구" },
+    /* ── 남·동·서쪽 목적지 ────────────────────────────────────────────────
+       위 6곳은 전부 x[0.2,3.6]·z[1.0,5.2] 북쪽에 몰려 있어, 사람이 방의 21%만 밟았다.
+       그런데 **설비는 이미 사방에 놓여 있었다** — 동벽 세척대·배식대·작업대,
+       남벽 냉장고 2대·선반, 서벽 선반. 갈 곳이 없던 게 아니라 목적지로 **등록이 안 돼**
+       있었을 뿐이다. 빈 바닥에 배회 지점을 뿌리면 이유 없이 서성이는 사람이 되지만,
+       실제 설비 앞에 세우면 그건 일하는 사람이다.
+
+       좌표는 각 설비 정면으로 물러나며 사람이 실제로 설 수 있는 칸을 찾아 잡았다
+       (resolvePersonCollision 통과 · 로봇에서 4.0~8.1m로 전부 감속 반경 밖). */
+    /* ── 구역별 작업 자리 ── 설비 정면으로 물러난 위치. 좌표가 어긋나면
+       buildNavGrid의 재배치가 가장 가까운 통행 칸으로 당기고 겹침도 떼어놓는다. */
+    // 남벽 세정 구역(오염)
+    sink  : { pos:new V3( 5.90, 0, -2.20), act:["interact"], dwell:3400, label:"세척대 앞" },
+    store : { pos:new V3( 3.40, 0,  4.45), act:["pickup","kneel"], dwell:2200, label:"건조 선반 앞" },
+    // 동벽 내보내기 구역 — 배식구는 조리실과 식당의 경계. 조리실 사람은 여기까지만 온다
+    serve : { pos:new V3(-2.20, 0,  4.40), act:["pickup","interact"], dwell:2800, label:"배식구 앞" },
+    etable: { pos:new V3( 5.90, 0,  1.60), act:["pickup","interact"], dwell:2600, label:"배선 작업대" },
+    // 서벽 전처리 구역(오염)
+    fridge: { pos:new V3(-2.95, 0, -1.95), act:["interact","pickup"], dwell:2000, label:"냉장고 앞" },
+    wrack : { pos:new V3(-2.95, 0,  0.40), act:["pickup","kneel"], dwell:2400, label:"재료 선반 앞" },
+    island: { pos:new V3(-2.90, 0,  2.20), act:["pickup","interact"], dwell:3000, label:"전처리대" },
+    /* 남쪽 확장 구역의 섬 3곳. 좌표는 통행 격자에서 실제로 설 수 있는 칸으로 잡았다.
+       여기까지 동선이 뻗어야 방을 넓힌 의미가 있다 — 목적지가 없으면 그냥 빈 바닥이다. */
+    /* 가운데 준비 아일랜드 앞자리 — **카메라가 사람을 정면에서 잡는 자리**다.
+       벽 쪽 자리만 있으면 사람이 늘 벽에 붙어 서고, 카메라도 벽에 있어 옆·뒤만 찍힌다. */
+    isle1 : { pos:new V3( 0.30, 0, -4.45), act:["pickup","interact"], dwell:2600, label:"중앙 준비대(북)" },
+    isle2 : { pos:new V3( 2.10, 0, -4.45), act:["pickup","kneel"],    dwell:2400, label:"중앙 준비대(사이)" },
+    isle3 : { pos:new V3(-0.20, 0,  4.45), act:["interact","pickup"], dwell:2600, label:"중앙 배선 준비대" },
+    /* 로봇 앞 점검 위치 — **팔의 이송 경로 바로 아래**다.
+       카트를 통로로 빼기 전에는 정지 반경 안에 갈 수 있는 칸이 5개뿐이었고(전부 z≈1.95),
+       그마저 팔이 지나지 않는 자리라 접촉이 물리적으로 불가능했다. 카트가 비켜나면서
+       반경 안 통행 가능 칸이 **5 → 134**로 늘었고, 최근접이 0.55m까지 들어온다.
+       (-0.30, 1.28)은 솥(0,0)→카트(-0.50,2.10) 이송선 위, 베이스에서 0.93m다.
+       즉 **로봇이 바스켓을 옮기는 동안 사람이 그 밑에 서 있는** 배치 — 이 연구가
+       보려는 상황 그 자체다. */
+    robotside:{ pos:new V3(-0.30, 0, 1.28), act:["interact","kneel"], dwell:2600, label:"로봇 앞 점검" },
+    /* 카트에서 바스켓을 가져가는 자리 — **솥과 카트 사이 슬롯**이다.
+       일부러 위험하게 잡은 게 아니라, 카트(-0.50, 2.10)와 솥(원점) 사이에서
+       카트에 손이 닿는 자리가 여기뿐이다. 8방향 중 7방향이 막혀 있다(실측).
+       평소 동선에는 넣지 않는다 — 로봇이 이송 중일 때만 배식 담당이 여기로 온다. */
+    cartPick:{ pos:new V3(-0.35, 0, 1.30), act:["pickup"], dwell:2600, label:"카트 수거" },
+  };
+})();
+/* 섬 배치 전용 — 북벽 조리 라인 앞자리.
+   벽 라인을 세워도 **갈 이유가 없으면 배경일 뿐**이다. 확장 때 이미 겪었다(넓히자마자
+   커버리지 38%→17%). 목적지를 걸어야 사람이 북쪽까지 돈다. 좌표가 어긋나면
+   buildNavGrid의 재배치가 가장 가까운 통행 칸으로 당긴다. */
+if (ISLAND) (function () {
+  const R = LAYOUT.room, cxm = (R.x0 + R.x1) / 2, fz = R.z0 + 1.45;   // 북벽 라인 앞 통로
+  Object.assign(STATION, {
+    nkettle:{ pos:new V3(cxm-1.65, 0, fz), act:["interact"],          dwell:3000, label:"북측 국솥 앞" },
+    ntable :{ pos:new V3(cxm+0.40, 0, fz), act:["pickup","interact"], dwell:2600, label:"북측 배출대" },
+    nrack  :{ pos:new V3(cxm+2.65, 0, fz), act:["pickup","kneel"],    dwell:2400, label:"북측 선반 앞" },
+  });
+})();
+/* ══ 직무(JOB) — 조리실이 실제로 돌아가는 방식 ═══════════════════════════════
+   지금까지 추가 인원은 갈 곳을 **매번 무작위로** 골랐다. 그림은 다양해지는데 통제가 안 된다:
+   같은 장면을 다시 만들 수 없고, "로봇에 몇 번 접근했는가"를 지정할 수도 없다.
+   데이터셋을 만들려면 회차를 재현하고 사건 수를 지정할 수 있어야 한다.
+
+   그래서 사람마다 **직무**를 주고 정해진 동선을 순서대로 돌게 한다. 무작위는
+   체류시간·속도의 흔들림에만 남긴다(시드로 재현됨).
+
+   ROLE(far/caution/danger)은 없애지 않는다 — 그건 **데이터셋 라벨**이고, 직무는
+   **왜 거기 가는가**다. 라벨은 동선이 로봇에 얼마나 가까이 가느냐로 자동으로 정해진다.
+   조리 담당이 솥을 확인하러 가니까 감속 구역을 지나는 것이지, 감속 구역을 지나려고
+   움직이는 게 아니다. 이 순서가 뒤집히면 장면이 부자연스러워진다. */
+const JOB = {
+  /* 남쪽 확장 구역(isle1~3·fridge·store)을 동선에 넣는다. 방을 넓혀도 갈 이유가 없으면
+     사람은 예전 구역만 돈다(실측: 확장 직후 커버리지 17%). */
+  /* 직무 구성은 **급식 조리실의 실제 작업 흐름**을 따른다:
+       전처리(재료 준비) → 조리 → 배식구로 내보내기 → 세정
+     처음엔 '배식'을 직무로 뒀는데 그건 조리실이 아니라 **배식구 너머 식당**에서 일어나는
+     일이다. 조리실 안에서 일어나는 건 다 된 것을 배식구까지 **옮기는** 것까지다.
+     (배식대 프롭 자체는 원래 씬에 있던 것 — 조리실과 식당의 경계에 놓인 설비다.) */
+  /* 동선은 **자기 구역 안에서 돈다.** 구역을 나눠 놓고 동선이 방을 가로지르면 아무 의미가
+     없다 — 배식구 운반이 서쪽 전처리대에서 출발하게 뒀더니 도착률이 25%까지 떨어졌다.
+     각 직무는 담당 벽 + 가운데 준비대 하나를 오간다. */
+  prep : { label:"재료 준비", route:["fridge","island","wrack","isle1","island"] },   // 서벽 + 중앙(북)
+  cook : { label:"조리",     route:["prep","kettle","panel","kettle"] },             // 북벽 조리 셀
+  carry: { label:"배식구 운반", route:["isle3","serve","etable","serve"] },            // 중앙(남) + 동벽
+  wash : { label:"세정",     route:["sink","store","isle2","sink"] },                // 남벽 + 중앙(사이)
+  // 점검만 정지 반경 안(로봇 옆)에 들어간다 — 한 바퀴에 한 번이므로 빈도가 통제된다
+  lead : { label:"점검 순회", route:["door","aisle","panel","robotside","aisle","etable"] },
+};
+/* 섬 배치에서는 북벽 라인을 동선에 끼운다 — 안 그러면 방 북쪽 절반이 배경으로만 남는다 */
+if (ISLAND) {
+  JOB.cook.route  = ["prep","kettle","nkettle","panel","kettle","ntable"];
+  JOB.prep.route  = ["shelf","prep","nrack","fridge","isle3","ntable"];
+  JOB.carry.route = ["island","serve","aisle","nkettle","serve"];
+  JOB.wash.route  = ["sink","wrack","nrack","isle2","sink","store"];
+  JOB.lead.route  = ["door","aisle","robotside","ntable","aisle","nrack"];
+}
+/* 동선이 로봇에 가장 가까이 가는 거리로 데이터셋 라벨을 정한다 */
+function jobRole(jobKey) {
+  const J = JOB[jobKey];
+  if (!J) return "far";
+  const B = LAYOUT.robot.base;
+  let min = Infinity;
+  for (const k of J.route) {
+    const st = STATION[k];
+    if (st) min = Math.min(min, Math.hypot(st.pos.x - B.x, st.pos.z - B.z));
+  }
+  return min < SAFE.NOM_STOP ? "danger" : min < SAFE.NOM_SLOW ? "caution" : "far";
+}
+/* 근무 시나리오 — 몇 명이 어떤 직무를 맡는가. 이게 '통제 가능한 한 회차'의 단위다.
+
+   **인원은 2~3명으로 묶는다.** 이 셀은 솥 한 대에 통로가 좁아서 4명 이상 넣으면
+   서로 비켜다니느라 동선이 뭉개진다. 회의 결정도 "사람 한 두명"이고,
+   발표 데모도 "한 명이 시나리오로 이동, 한 명 조종"이다.
+   아래 인원수는 **주인공(WASD 조작) 1명을 포함한 총원**이다 — jobs는 그만큼 하나 적다.
+
+   라벨은 시나리오마다 다르게 덮는다. 세 라벨을 한 화면에 다 넣으려 하지 않는다. */
+const SCENARIO = {
+  cook1    : { label:"조리 1명 (총 2명) — caution",        jobs:["cook"] },
+  cookServe: { label:"조리+운반 (총 3명) — caution·far", jobs:["cook","carry"] },
+  cookCheck: { label:"조리+점검 (총 3명) — caution·danger", jobs:["cook","lead"] },
+  prepWash : { label:"준비+세척 (총 3명) — caution·far",   jobs:["prep","wash"] },
+};
+/* 경로 = 스테이션 이름의 나열. 회의가 지목한 "선반-조리대-로봇 반경"이 work·toKettle이다. */
+const ROUTE = {
+  work    : ["shelf","prep","shelf","prep"],                        // 정상 조리 왕복
+  toKettle: ["aisle","shelf","kettle"],                             // 솥 접근 — 감속·정지 트리거
+  full    : ["door","aisle","shelf","prep","kettle","panel","aisle","door"],
+  inspect : ["aisle","panel","prep"],                               // 점검 동선
+};
+/* 경로 실행 — personGo에 좌표를 넘기고, 스테이션 정보를 같이 실어 도착 시 동작을 재생한다. */
+function personRoute(name, opts) {
+  opts = opts || {};
+  const keys = ROUTE[name];
+  if (!keys) { console.warn("[ROUTE] 없는 경로:", name); return null; }
+  const st = keys.map(k => STATION[k]).filter(Boolean);
+  person.stations = st;
+  personGo(st.map(s => s.pos.clone()), { loop: !!opts.loop, speed: opts.speed || 0.62 });
+  setStatus("동선 " + name + " — " + st.map(s => s.label).join(" → "));
+  return st;
+}
+/* 동선 자가검증 — 스테이션이 설비 안이거나 방 밖이면 콘솔에 표로 찍는다.
+   verifyReach()가 로봇에 하는 것과 같은 방식. 배치를 바꾼 뒤 이걸 먼저 본다. */
+function verifyRoute() {
+  const RM = LAYOUT.room, B = LAYOUT.robot.base, rows = [];
+  for (const [k, s] of Object.entries(STATION)) {
+    const p = s.pos.clone();
+    const inRoom = p.x > RM.x0 + 0.3 && p.x < RM.x1 - 0.3 && p.z > RM.z0 + 0.3 && p.z < RM.z1 - 0.3;
+    const test = p.clone();
+    const pushed = resolvePersonCollision(test);
+    const d = Math.hypot(p.x - B.x, p.z - B.z);
+    rows.push({ 스테이션:s.label, x:+p.x.toFixed(2), z:+p.z.toFixed(2),
+                "로봇거리(m)":+d.toFixed(2),
+                구역: d < SAFE.NOM_STOP ? "정지" : d < SAFE.NOM_SLOW ? "감속" : "밖",
+                방안: inRoom ? "OK" : "벗어남", 설비충돌: pushed ? "겹침" : "OK", 동작:s.act });
+  }
+  console.table(rows);
+  const bad = rows.filter(r => r.방안 !== "OK" || r.설비충돌 !== "OK");
+  return { ok: bad.length === 0, rows, failed: bad };
+}
+
+/* ══ 랜덤 움직임 ═════════════════════════════════════════════════════════
+   회의 우선순위 ④ "사람 한 명 — 랜덤 움직임 구축".
+   고정 경로(ROUTE)와 다르다 — 목적지·속도·체류시간을 매번 새로 뽑는다.
+   같은 경로만 돌면 데이터셋이 그 경로에 편중되고, 모델이 '이 길로만 오는 사람'을 배운다.
+
+   **시드를 고정한다.** ?seed=123 으로 열면 같은 움직임이 그대로 재현된다.
+   재현이 안 되면 동작팀이 "이 프레임에서 왜 못 잡았나"를 되짚을 수 없고,
+   회차 간 비교(RUNLOG)도 의미가 없어진다. 시드 없이 열면 시각으로 뽑는다. */
+/* 난수기 공장 — **인원마다 독립된 흐름**을 준다.
+   전역 하나를 공유하면 호출 순서가 얽혀 한 사람의 행동이 다른 사람에게 영향을 준다
+   (인원을 한 명 추가하면 기존 인원의 궤적까지 통째로 달라진다). 시드를 나눠 주면
+   각자 재현되고, 서로 간섭하지 않는다. */
+function makeRNG(seed) {
+  let s = (seed >>> 0) || 1;
+  const next = () => {                       // mulberry32 — 짧고 분포가 고르다
+    s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  return { seed: seed >>> 0, next,
+           range: (a, b) => a + next() * (b - a),
+           pick: arr => arr[(next() * arr.length) | 0] };
+}
+const SEED0 = (() => {
+  const q = new URLSearchParams(location.search).get("seed");
+  return (q !== null ? (parseInt(q, 10) >>> 0) : (Date.now() >>> 0)) || 1;
+})();
+const RNG = makeRNG(SEED0);                  // 주인공·전역용
+const WANDER = { on:false, last:null, count:0 };
+/* 목적지 뽑기 — 70% 스테이션(작업 동작이 붙음) / 30% 통로 임의 지점(그냥 지나감).
+   임의 지점은 설비 안이 아닌 곳이 나올 때까지 다시 뽑는다. */
+function wanderTarget() {
+  if (RNG.next() < 0.70) {
+    const keys = Object.keys(STATION).filter(k => k !== WANDER.last);
+    const k = RNG.pick(keys); WANDER.last = k;
+    const s = STATION[k];
+    return { pos:s.pos.clone(), act:s.act, dwell:s.dwell * RNG.range(0.6, 1.5), label:s.label };
+  }
+  const RM = LAYOUT.room;
+  for (let i = 0; i < 30; i++) {
+    const p = new V3(RNG.range(RM.x0 + 0.9, RM.x1 - 0.9), 0, RNG.range(1.5, RM.z1 - 0.9));
+    if (!resolvePersonCollision(p.clone()))
+      return { pos:p, act: RNG.next() < 0.5 ? "idleTalk" : "idle",
+               dwell: RNG.range(700, 2400), label:"통로" };
+  }
+  const s = STATION.aisle;
+  return { pos:s.pos.clone(), act:s.act, dwell:s.dwell, label:s.label };
+}
+function wanderStep() {
+  const t = wanderTarget();
+  WANDER.count++;
+  person.stations = [t];
+  personGo([t.pos], { speed: RNG.range(0.42, 0.88) });
+}
+/* ══ 인원 역할 ═══════════════════════════════════════════════════════════
+   회의 요구: 여러 명이 **각기 다른 위험 수준**으로 움직여야 한다.
+     "1명은 로봇에 접근 안 하고, 다른 한 명은 주의지역에 접근하지만 그 이상은 아니고,
+      하나는 접근해서 로봇에 치이거나 주저앉거나"
+   랜덤 하나로는 이게 안 나온다 — 셋이 같은 확률로 움직이면 역할이 섞인다.
+   그래서 역할별로 **갈 수 있는 스테이션을 제한**한다. 로봇 거리로 자동 분류하므로
+   배치를 바꿔도 역할 정의는 그대로다. */
+const ROLE = {
+  /* far — 감속 반경 밖 스테이션만 돌며 실제로 일한다. 명백한 음성(negative). */
+  far:     { zone:"out",  mode:"station", speed:[0.42, 0.68], label:"원거리 작업자",
+             /* 스테이션이 북쪽 6곳뿐이던 시절엔 방을 넓히려고 배회를 45%까지 올렸는데,
+                그러면 '이유 없이 서성이는 사람'이 된다. 사방 설비를 목적지로 등록한 뒤로는
+                배회 없이도 넓게 도므로 낮춘다 — 빈 바닥보다 설비 앞이 언제나 낫다. */
+             roam:0.20 },
+  /* caution — **하드 네거티브(hard negative).**
+     감속 구역에 들어오지만 머무르지 않고 **가로질러 지나간다.**
+     모델이 배워야 할 것은 "주의 구역에 사람이 보인다 → 그래도 정지할 상황은 아니다"이다.
+     이 사례가 없으면 모델은 '구역 안에 뭐가 있으면 무조건 위험'으로 학습하고,
+     현장에서 조리원이 옆을 지날 때마다 로봇이 멈춰 쓸 수 없게 된다.
+     그래서 배회(station)가 아니라 **통과(transit)**로 움직인다. */
+  caution: { zone:"slow", mode:"transit", speed:[0.55, 0.85], label:"주의구역 통행자",
+             pass:[1.35, 1.92] },   // 로봇에서 이 거리 사이를 스쳐 지나간다(정지 1.2m 밖)
+  /* danger — 정지 반경까지 들어와 실제 사고를 낸다. 명백한 양성(positive).
+     mode는 station이 아니라 **approach**다. station으로 두면 양성이 거의 안 나온다:
+     roleStations는 정지 반경(1.2m) 안에 스테이션이 하나도 없어(최근접 솥 앞 1.38m)
+     C가 그냥 A와 같은 곳을 돌게 된다. 목표를 dangerTarget으로 직접 만든다. */
+  danger:  { zone:"stop", mode:"approach", speed:[0.55, 0.95], label:"위험 접근자",
+             dwell:2200 },   // 반경 안 체류 — 로봇이 실제로 정지하는 것을 볼 만큼만
+};
+/* 통과 경로 생성 — 로봇을 중심으로 한 현(chord)을 그린다.
+   현의 수직거리 m을 [pass_min, pass_max]에서 뽑으면 **스치는 깊이를 제어**할 수 있다.
+   양 끝점은 반경 R(구역 밖)에 두므로 밖에서 들어와 밖으로 나간다. */
+function transitPath(role, rng) {
+  const RNGx = rng || RNG;
+  const R = ROLE[role] || ROLE.caution, RM = LAYOUT.room, B = LAYOUT.robot.base;
+  const lo = (R.pass && R.pass[0]) || 1.35, hi = (R.pass && R.pass[1]) || 1.9;
+  /* 로봇이 서벽(x −2.85) 쪽에 붙어 있어(x −1.1) 사방으로 현을 그리면 대부분 벽을 넘는다
+     (실측: 300회 중 295회가 방 밖). 통행 가능한 **통로 쪽(+z 반원)** 으로 방향을 제한하고
+     끝점 반경도 방에 들어가는 크기로 줄인다. */
+  /* 끝점 반경을 뽑아 놓고 방 밖이면 버리는 방식은 **거의 안 맞는다.**
+     로봇 베이스(-1.10, 0.81)가 서벽 안쪽 경계에서 1.15m밖에 안 떨어져 있는데(동쪽은 6.65m)
+     끝점을 반경 2.6~3.6m로 잡으니 −x 성분이 조금만 있어도 벽을 넘는다
+     — 시도당 성공률 1.7%, 60번 재시도해도 호출의 35%가 빈손이었다(실측 2000회).
+     실패하면 스테이션으로 폴백하므로 그만큼 하드 네거티브가 일반 작업자로 희석됐다.
+
+     그래서 **버리지 않고 처음부터 되는 현을 만든다**: 현의 최근접점 c에서 ±방향으로
+     방 경계까지 실제로 갈 수 있는 거리를 구한 뒤, 그 안에서 길이를 뽑는다. */
+  const PAD = 0.6;                                   // 벽에서 띄울 여유
+  const X0 = RM.x0 + PAD, X1 = RM.x1 - PAD, Z0 = RM.z0 + PAD, Z1 = RM.z1 - PAD;
+  /* 끝점은 **반드시 감속 구역 밖**이어야 한다. 안쪽에 잡히면 거기서 체류하게 되고,
+     "지나가는 사람"이 아니라 "구역에 머무는 사람"이 되어 하드 네거티브가 깨진다
+     (실측: 구역 안 정지 193초). 여유 0.35m를 둬 경계에 걸치는 것도 막는다. */
+  for (let attempt = 0; attempt < 40; attempt++) {
+    /* 앞쪽 시도는 여유 0.35m로 넉넉히 잡고, 끝까지 안 되면 0.15m로 줄여 한 번 더 노린다.
+       2.15m도 감속 링(2.0m) **밖**이라 하드 네거티브 조건은 그대로다. 여기서 포기하면
+       스테이션 체류로 폴백해 통행자가 일반 작업자로 희석되므로, 살릴 수 있으면 살린다. */
+    const OUT = SAFE.NOM_SLOW + (attempt < 28 ? 0.35 : 0.15);
+    const m = RNGx.range(lo, hi);                // 로봇까지의 최단거리(스치는 깊이)
+    const th = RNGx.range(0, Math.PI);           // 현의 방향 (직선이라 반원이면 전부 덮는다)
+    const dir = new V3(Math.cos(th), 0, Math.sin(th));
+    let perp = new V3(-dir.z, 0, dir.x);
+    if (perp.z < 0) perp = new V3(dir.z, 0, -dir.x);   // 현은 항상 통로 쪽(+z)으로 치우치게
+    const c = new V3(B.x + perp.x * m, 0, B.z + perp.z * m);
+    if (c.x < X0 || c.x > X1 || c.z < Z0 || c.z > Z1) continue;
+    // c에서 sign·dir 방향으로 방 경계까지의 거리 (축정렬 상자와의 광선 교차)
+    const span = sign => {
+      let t = Infinity;
+      const ex = sign * dir.x, ez = sign * dir.z;
+      if (ex >  1e-6) t = Math.min(t, (X1 - c.x) / ex);
+      else if (ex < -1e-6) t = Math.min(t, (X0 - c.x) / ex);
+      if (ez >  1e-6) t = Math.min(t, (Z1 - c.z) / ez);
+      else if (ez < -1e-6) t = Math.min(t, (Z0 - c.z) / ez);
+      return t;
+    };
+    const need = Math.sqrt(Math.max(0.01, OUT * OUT - m * m));  // 끝점이 구역 밖이 되는 최소 길이
+    const tNeg = span(-1), tPos = span(+1);
+    if (tNeg < need || tPos < need) continue;    // 이 방향으로는 양쪽 다 빠져나갈 수 없다
+    const hNeg = RNGx.range(need, Math.min(tNeg, need + 2.2));
+    const hPos = RNGx.range(need, Math.min(tPos, need + 2.2));
+    const p0 = new V3(c.x - dir.x * hNeg, 0, c.z - dir.z * hNeg);
+    const p1 = new V3(c.x + dir.x * hPos, 0, c.z + dir.z * hPos);
+    if (resolvePersonCollision(p0.clone()) || resolvePersonCollision(p1.clone())) continue;
+    /* c(로봇에 가장 가까워지는 지점)를 같이 돌려준다 — 호출부가 이 점을 **경유점**으로 놓고
+       길찾기를 태운다. 그래야 스치는 깊이는 유지하면서 설비를 돌아갈 수 있다. */
+    if (!navReachable(p0) || !navReachable(p1) || !navReachable(c)) continue;
+    return { path:[p0, p1], depth:m, mid:c };
+  }
+  return null;
+}
+/* 역할이 갈 수 있는 스테이션 — 로봇 베이스로부터의 거리로 거른다 */
+function roleStations(roleKey) {
+  const B = LAYOUT.robot.base, z = (ROLE[roleKey] || ROLE.far).zone;
+  const min = z === "out" ? SAFE.NOM_SLOW : z === "slow" ? SAFE.NOM_STOP : 0;
+  const out = [];
+  for (const [k, s] of Object.entries(STATION)) {
+    const d = Math.hypot(s.pos.x - B.x, s.pos.z - B.z);
+    if (d < min) continue;
+    // 갈 수 없는 곳은 아예 후보에서 뺀다 — 고르고 나서 실패하면 그 턴을 버리게 된다
+    if (NAV.ready && !navReachable(s.pos)) continue;
+    out.push(Object.assign({ key:k, dist:d }, s));
+  }
+  return out;
+}
+
+function personWander(on) {
+  WANDER.on = on;
+  if (on) { WANDER.count = 0; wanderStep(); }
+  else { person.mode = "idle"; person.path = []; person.stations = null;
+         person.dwellT = 0; personIdle(); }
+  setStatus(on ? "랜덤 움직임 시작 — seed " + RNG.seed + " (?seed=" + RNG.seed + " 로 재현)"
+               : "랜덤 움직임 중지");
+}
+
 function personGo(points, opts) {
   opts = opts || {};
   person.path = points; person.pi = 0;
@@ -2141,14 +2708,321 @@ const COLL_FOOTPRINTS = [   // 2026-08-08 신규 배치(GLB 주방) 기준
   [ 0.00, 0.000, 1.02, 0.68],   // 솥+양측 캐비닛 (보울 r0.645 + 캐비닛 x±0.855)
   [-1.10, 0.795, 0.29, 0.27],   // 로봇 페데스탈
   [-1.95, 1.690, 0.29, 0.19],   // 키오스크
-  [-0.50, 1.280, 0.39, 0.39],   // 원형 카트 (로봇 정면 도달권 — 런타임 시프트 반영)
+  [-0.50, 2.100, 0.39, 0.39],   // 원형 카트 — 통로 쪽으로 뺐다(런타임 시프트와 같은 값)
   [ 0.62,-0.720, 0.10, 0.10],   // 급수 라이저
   [-1.68, 0.880, 0.36, 0.09],   // 바닥 덕트(로봇-키오스크 가로런)
   [-1.95, 1.260, 0.09, 0.40],   // 바닥 덕트(세로런)
 ];
+/* ══ 사람 충돌 박스 — 씬에서 자동 수집 ═══════════════════════════════════
+   COLL_FOOTPRINTS는 2026-08-08 배치를 손으로 적은 7개에서 멈춰 있었다. 그 뒤 들어온
+   옆 국솥 4대·냉장고 2대·쓰레기통 4개·설비 12개가 목록에 없어 **사람이 27개 중 22개를
+   그냥 통과**했다(실측). 로봇은 buildRobotGuard로 씬을 훑어 자동 수집하는데 사람만
+   수동이었던 게 원인이다.
+
+   원 주석이 자동화를 피한 이유는 "패딩 박스로 충돌하면 통로까지 막힌다"였다. 그래서
+   두 가지 안전장치를 둔다:
+     ① **바닥 근처(발 높이 0.55m 이하)에 서 있는 물체만** 잡는다. 선반 위로 튀어나온
+        상판·후드처럼 사람이 밑으로 지나가는 것은 제외된다.
+     ② 수집 후 verifyRoute()로 **스테이션 6곳이 여전히 설 수 있는지** 검사한다.
+        막히면 콘솔에 표로 뜨므로 눈으로 놓치지 않는다.
+   손으로 적은 7개는 그대로 두고(솥·페데스탈 등 핵심) 자동 수집분을 더한다. */
+const COLL_AUTO = [];
+function buildPersonColliders() {
+  const SKIP = /^(floor|ground|ceiling|wall_|skirt_|cove_|tile|markTape|zone|trench|grating|backsplash|camBody|camLens|camProp|col_|hood|duct|ceil|pipeHanger|cableTray|window|sky|steam|smoke|fire|lamp|oil|noodle|debris|predLine|splash|Cook|Erika|robot|potB|vat|paddle)/i;
+  COLL_AUTO.length = 0;
+  for (const m of scene.meshes) {
+    if (!m.getTotalVertices || !m.getTotalVertices() || !m.isVisible) continue;
+    if (SKIP.test(m.name || "")) continue;
+    m.computeWorldMatrix(true);
+    const b = m.getBoundingInfo().boundingBox;
+    if (b.minimumWorld.y > 0.55) continue;                       // 공중에 뜬 것 — 밑으로 지나간다
+    const w = b.maximumWorld.x - b.minimumWorld.x;
+    const d = b.maximumWorld.z - b.minimumWorld.z;
+    const h = b.maximumWorld.y - b.minimumWorld.y;
+    if (w < 0.20 || d < 0.20 || h < 0.35) continue;              // 너무 작으면 넘어간다
+    if (w > 4.0 || d > 4.0) continue;                            // 벽·바닥 같은 거대 면 제외
+    COLL_AUTO.push([(b.minimumWorld.x + b.maximumWorld.x) / 2,
+                    (b.minimumWorld.z + b.maximumWorld.z) / 2,
+                    w / 2, d / 2]);
+  }
+  console.log("[COLL] 사람 충돌 박스 — 수동", COLL_FOOTPRINTS.length, "+ 자동", COLL_AUTO.length);
+  return COLL_AUTO.length;
+}
+/* ══ 길찾기 ══════════════════════════════════════════════════════════════
+   지금까지 사람은 목표를 향해 **직선으로만** 걸었다. 스테이션 6곳이 전부 북쪽 열린
+   구역에 몰려 있을 때는 이게 통했는데, 사방 설비를 목적지로 등록하자 바로 깨졌다
+   — 실측: 도착률 8%(594초에 목표 347번 중 27번 도착), 나머지 321번은 설비에 막혀
+   1.5초 만에 포기하고 다른 목적지를 다시 골랐다. 사람이 계속 방향만 바꾸는 이유가 이것.
+
+   충돌 박스는 이미 런타임에 모으고 있으므로(COLL_AUTO), 같은 것으로 격자를 굽고
+   A*로 통로를 찾는다. 격자가 자동 생성이라 설비를 옮겨도 따라온다.               */
+const NAV = { cell:0.35, x0:0, z0:0, nx:0, nz:0, open:null, ready:false };
+function buildNavGrid() {
+  const RM = LAYOUT.room, C = NAV.cell, M = 0.55;      // M: 벽에서 띄울 여유
+  NAV.main = null;                                     // 이전 판정이 새 격자에 섞이지 않게
+  NAV.x0 = RM.x0 + M; NAV.z0 = RM.z0 + M;
+  NAV.nx = Math.max(1, Math.floor((RM.x1 - M - NAV.x0) / C));
+  NAV.nz = Math.max(1, Math.floor((RM.z1 - M - NAV.z0) / C));
+  NAV.open = new Uint8Array(NAV.nx * NAV.nz);
+  const p = new V3(0, 0, 0);
+  let free = 0;
+  for (let i = 0; i < NAV.nx; i++) for (let j = 0; j < NAV.nz; j++) {
+    p.set(NAV.x0 + (i + 0.5) * C, 0, NAV.z0 + (j + 0.5) * C);
+    const ok = !resolvePersonCollision(p);
+    NAV.open[i * NAV.nz + j] = ok ? 1 : 0;
+    if (ok) free++;
+  }
+  /* ── 연결성 ── 열려 있다고 갈 수 있는 건 아니다.
+     설비에 둘러싸여 **본체와 끊긴 주머니**가 생긴다(실측: 배식대 앞 22칸이 고립돼
+     사람이 그리로 가려다 설비에 끼었다 — 정체 54건 중 48건이 같은 지점).
+     가장 큰 덩어리만 통행 가능으로 인정하고, 나머지는 없는 것으로 친다. */
+  NAV.main = new Uint8Array(NAV.nx * NAV.nz);
+  let best = 0;
+  const mark = new Int32Array(NAV.nx * NAV.nz).fill(-1);
+  let comp = 0;
+  for (let s0 = 0; s0 < NAV.open.length; s0++) {
+    if (!NAV.open[s0] || mark[s0] >= 0) continue;
+    const cells = [s0]; mark[s0] = comp; const stack = [s0];
+    while (stack.length) {
+      const c = stack.pop(), ci = (c / NAV.nz) | 0, cj = c % NAV.nz;
+      for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
+        if (!di && !dj) continue;
+        const ni = ci + di, nj = cj + dj;
+        if (ni < 0 || nj < 0 || ni >= NAV.nx || nj >= NAV.nz) continue;
+        const nk = navIdx(ni, nj);
+        if (!NAV.open[nk] || mark[nk] >= 0) continue;
+        if (di && dj && !(NAV.open[navIdx(ci + di, cj)] && NAV.open[navIdx(ci, cj + dj)])) continue;
+        mark[nk] = comp; cells.push(nk); stack.push(nk);
+      }
+    }
+    if (cells.length > best) { best = cells.length; NAV.mainComp = comp; }
+    comp++;
+  }
+  for (let k = 0; k < mark.length; k++) if (mark[k] === NAV.mainComp) NAV.main[k] = 1;
+  NAV.ready = true;
+  console.log("[NAV] 길찾기 격자", NAV.nx + "×" + NAV.nz, "· 열린 칸", free,
+              "· 통행 가능(본체)", best, "· 고립", free - best);
+  /* 섬 배치에서는 프롭이 규칙으로 옮겨 가므로 **스테이션도 따라가야 한다.**
+     좌표를 손으로 다시 적는 대신, 못 가게 된 자리는 가장 가까운 통행 칸으로 끌어온다.
+     기본 배치에서는 손대지 않는다 — 그 좌표들은 프롭 앞자리로 검증된 값이다. */
+  {
+    const RM2 = LAYOUT.room, MG = 0.6;
+    /* 이미 자리를 잡은 스테이션은 점유로 표시한다. 안 그러면 여러 개가 **같은 칸에**
+       몰린다(실측: 냉장고 앞과 서측 섬 작업대가 동일 좌표로 겹쳤다) — 한 자리에
+       두 명이 못 서므로 동선이 서로를 계속 건너뛰게 된다. */
+    /* 조건 셋을 모두 봐야 한다. 하나라도 빠뜨리면 증상이 런타임에 흩어져 나타난다:
+         ① 방 안일 것          — 벽이 움직이면 밖에 남는다
+         ② 통행 격자에 있을 것  — 걸어서 갈 수 있어야 한다
+         ③ **설비와 안 겹칠 것** — 격자 칸(0.35m)은 성겨서 설비에 걸친 자리도 통과시킨다
+       ③을 안 보면 verifyRoute만 "설비충돌 겹침"으로 잡고 재배치는 그냥 넘어간다(실측). */
+    const MIN_SEP = 0.80;    // 스테이션끼리 최소 간격 — 사람 지름 0.52 + 여유
+    const okHere = p => navReachable(p) && !resolvePersonCollision(p.clone()) &&
+      p.x > RM2.x0 + MG && p.x < RM2.x1 - MG && p.z > RM2.z0 + MG && p.z < RM2.z1 - MG;
+    const freeSpot = (from, taken, maxD) => {
+      let best = null, bd = Infinity;
+      for (let i = 0; i < NAV.nx; i++) for (let j = 0; j < NAV.nz; j++) {
+        if (!navOpen(i, j)) continue;
+        const x = NAV.x0 + (i + 0.5) * NAV.cell, z = NAV.z0 + (j + 0.5) * NAV.cell;
+        const p = new V3(x, 0, z);
+        if (resolvePersonCollision(p.clone())) continue;
+        if (taken.some(t => Math.hypot(t.x - x, t.z - z) < MIN_SEP)) continue;
+        const d = Math.hypot(x - from.x, z - from.z);
+        if (d > (maxD || Infinity) || d >= bd) continue;
+        bd = d; best = new V3(x, 0, z);
+      }
+      return best;
+    };
+    const taken = [];
+    for (const st of Object.values(STATION)) if (okHere(st.pos)) taken.push(st.pos.clone());
+    let moved = 0;
+    for (const st of Object.values(STATION)) {
+      if (okHere(st.pos)) continue;
+      const best = freeSpot(st.pos, taken);
+      if (best) { st.pos = best; taken.push(best.clone()); moved++; }
+    }
+    /* 서로 겹치는 스테이션 떼어놓기 — 두 직무가 같은 자리를 잡으면 서로 계속 건너뛰어
+       동선이 뭉개진다(실측: 배식 도착률 44%). 뒤쪽 것을 원래 자리 1.5m 안에서 옮긴다. */
+    let split = 0;
+    const keys = Object.keys(STATION);
+    for (let a = 0; a < keys.length; a++) for (let b = a + 1; b < keys.length; b++) {
+      const A = STATION[keys[a]].pos, B2 = STATION[keys[b]].pos;
+      if (Math.hypot(A.x - B2.x, A.z - B2.z) >= MIN_SEP) continue;
+      const others = keys.filter(k => k !== keys[b]).map(k => STATION[k].pos);
+      const nb = freeSpot(B2, others, 1.5);
+      if (nb) { STATION[keys[b]].pos = nb; split++; }
+    }
+    if (moved || split)
+      console.log("[NAV] 스테이션 정리 — 재배치", moved, "곳 · 겹침 분리", split, "곳");
+  }
+  /* 카트 수거 자리 — **격자에서 직접 고른다.**
+     손으로 찍으면 "설 수는 있는데 걸어 들어갈 수 없는" 틈에 놓인다(실측: 카트 패딩과
+     3cm 간격이라 99초를 걸어도 도착 못 했다). 조건 셋을 모두 만족하는 칸 중 가장 막힌 곳:
+       ① 통행 격자 본체에 속할 것(걸어서 갈 수 있음)
+       ② 카트에서 1.5m 안(손이 닿음)  ③ 로봇 팔 포락선 1.87m 안(사고가 성립함) */
+  if (STATION.cartPick) {
+    const cart = { x:-0.50, z:2.10 }, RB = LAYOUT.robot.base;
+    let best = null, bestScore = -1;
+    for (let i = 0; i < NAV.nx; i++) for (let j = 0; j < NAV.nz; j++) {
+      if (!navOpen(i, j)) continue;
+      const x = NAV.x0 + (i + 0.5) * NAV.cell, z = NAV.z0 + (j + 0.5) * NAV.cell;
+      if (Math.hypot(x - cart.x, z - cart.z) > 1.5) continue;
+      if (Math.hypot(x - RB.x, z - RB.z) > 1.87) continue;
+      /* **몸이 들어갈 수 있는 칸만.** 상하좌우 이웃이 3칸 이상 열려 있어야 한다.
+         이 조건이 없으면 "가장 막힌 칸"이 뽑히는데, 그건 정의상 걸어 들어가기도 가장
+         어려운 칸이다 — 실측: 8방향 중 7방향 막힌 자리를 골랐더니 99초를 걸어도 도착 실패.
+         끼임은 6/8만 돼도 충분히 성립한다(밀려날 데가 없으면 끼임이다). */
+      let openN = 0;
+      if (navOpen(i+1, j)) openN++;
+      if (navOpen(i-1, j)) openN++;
+      if (navOpen(i, j+1)) openN++;
+      if (navOpen(i, j-1)) openN++;
+      if (openN < 3) continue;
+      let blk = 0;
+      for (let a = 0; a < 360; a += 45) {
+        const th = a * Math.PI / 180;
+        if (resolvePersonCollision(new V3(x + Math.cos(th)*0.40, 0, z + Math.sin(th)*0.40))) blk++;
+      }
+      if (blk > bestScore) { bestScore = blk; best = new V3(x, 0, z); }
+    }
+    if (best) {
+      STATION.cartPick.pos = best;
+      console.log("[SLOT] 카트 수거 자리", best.x.toFixed(2) + "," + best.z.toFixed(2),
+                  "· 막힌 방향", bestScore + "/8 · 로봇까지",
+                  Math.hypot(best.x - RB.x, best.z - RB.z).toFixed(2) + "m");
+    }
+  }
+  /* 스테이션이 고립 주머니에 있으면 **여기서 잡는다.** 안 잡으면 런타임에
+     "사람이 계속 한 곳에서 낀다"는 증상으로만 드러나 원인 찾기가 훨씬 어렵다. */
+  const unreachable = [];
+  for (const [k, st] of Object.entries(STATION))
+    if (!navReachable(st.pos)) unreachable.push(k + " " + st.label);
+  if (unreachable.length)
+    console.warn("[NAV] ⚠ 도달 불가 스테이션 —", unreachable.join(", "),
+                 "· 설비가 진입로를 막고 있다. 프롭을 옮기거나 스테이션을 빼야 한다.");
+  else console.log("[NAV] 스테이션 도달성 — 전 지점 통과");
+  NAV.unreachable = unreachable;
+  return free;
+}
+const navIdx = (i, j) => i * NAV.nz + j;
+/* 통행 가능 = 열려 있고 **본체 영역**에 속한다. 고립 주머니는 처음부터 없는 것으로 친다
+   (격자를 굽는 중에는 NAV.main이 아직 없으므로 open만 본다). */
+const navOpen = (i, j) => i >= 0 && j >= 0 && i < NAV.nx && j < NAV.nz &&
+  NAV.open[navIdx(i, j)] === 1 && (!NAV.main || NAV.main[navIdx(i, j)] === 1);
+function navCellOf(x, z) {
+  return [ clamp(Math.floor((x - NAV.x0) / NAV.cell), 0, NAV.nx - 1),
+           clamp(Math.floor((z - NAV.z0) / NAV.cell), 0, NAV.nz - 1) ];
+}
+/* 막힌 칸이면 가장 가까운 열린 칸으로 — 목적지가 설비에 붙어 있을 때 필요하다 */
+function navNearestOpen(i, j) {
+  if (navOpen(i, j)) return [i, j];
+  for (let r = 1; r <= 6; r++)
+    for (let di = -r; di <= r; di++) for (let dj = -r; dj <= r; dj++) {
+      if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue;
+      if (navOpen(i + di, j + dj)) return [i + di, j + dj];
+    }
+  return null;
+}
+/* A* — 8방향. 대각선은 양옆이 다 열려 있을 때만 (모서리 뚫고 지나가지 않게). */
+function navPath(from, to) {
+  if (!NAV.ready) return null;
+  const s0 = navNearestOpen(...navCellOf(from.x, from.z));
+  const g0 = navNearestOpen(...navCellOf(to.x, to.z));
+  if (!s0 || !g0) return null;
+  const [si, sj] = s0, [gi, gj] = g0;
+  if (si === gi && sj === gj) return [to.clone()];
+  const N = NAV.nx * NAV.nz, S = navIdx(si, sj), G = navIdx(gi, gj);
+  const g = new Float32Array(N).fill(Infinity), f = new Float32Array(N).fill(Infinity);
+  const prev = new Int32Array(N).fill(-1), seen = new Uint8Array(N);
+  const h = (i, j) => Math.hypot(i - gi, j - gj);
+  g[S] = 0; f[S] = h(si, sj);
+  const heap = [S];                                    // 작은 격자라 선형 탐색으로 충분하다
+  while (heap.length) {
+    let bi = 0;
+    for (let k = 1; k < heap.length; k++) if (f[heap[k]] < f[heap[bi]]) bi = k;
+    const cur = heap.splice(bi, 1)[0];
+    if (cur === G) break;
+    seen[cur] = 1;
+    const ci = (cur / NAV.nz) | 0, cj = cur % NAV.nz;
+    for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
+      if (!di && !dj) continue;
+      const ni = ci + di, nj = cj + dj;
+      if (!navOpen(ni, nj)) continue;
+      if (di && dj && !(navOpen(ci + di, cj) && navOpen(ci, cj + dj))) continue;
+      const nk = navIdx(ni, nj);
+      if (seen[nk]) continue;
+      const ng = g[cur] + (di && dj ? 1.4142 : 1);
+      if (ng >= g[nk]) continue;
+      g[nk] = ng; f[nk] = ng + h(ni, nj); prev[nk] = cur;
+      if (heap.indexOf(nk) < 0) heap.push(nk);
+    }
+  }
+  if (prev[G] < 0 && G !== S) return null;
+  const cells = [];
+  for (let c = G; c !== -1; c = prev[c]) { cells.push(c); if (c === S) break; }
+  cells.reverse();
+  /* 격자 계단을 그대로 걸으면 지그재그가 된다 — 시야가 통하는 구간은 합친다 */
+  const pt = c => new V3(NAV.x0 + (((c / NAV.nz) | 0) + 0.5) * NAV.cell, 0,
+                         NAV.z0 + ((c % NAV.nz) + 0.5) * NAV.cell);
+  const clear = (a, b) => {                            // 두 점 사이가 전부 열려 있는가
+    const steps = Math.ceil(V3.Distance(a, b) / (NAV.cell * 0.5));
+    for (let k = 1; k < steps; k++) {
+      const t = k / steps, x = a.x + (b.x - a.x) * t, z = a.z + (b.z - a.z) * t;
+      const [i, j] = navCellOf(x, z);
+      if (!navOpen(i, j)) return false;
+    }
+    return true;
+  };
+  const out = [];
+  let anchor = from.clone(), k = 0;
+  while (k < cells.length) {
+    let last = k;
+    for (let m = cells.length - 1; m >= k; m--) if (clear(anchor, pt(cells[m]))) { last = m; break; }
+    anchor = pt(cells[last]);
+    out.push(anchor.clone());
+    if (last === cells.length - 1) break;
+    k = last + 1;
+  }
+  /* 마지막 점을 정확한 목표로 바꾸되 **그 구간이 실제로 뚫려 있을 때만.**
+     예전에는 무조건 덮어썼는데, 목표가 고립 주머니 안이면 navNearestOpen이 근처
+     본체 칸으로 스냅한 뒤 마지막에 진짜 목표로 되돌려놔서 결국 설비를 향한 직선이 됐다
+     (실측: 로봇 옆 점검 위치가 그래서 '갈 수 있는 것처럼' 보였다). 못 가면 없다고 답한다. */
+  const tail = out[out.length - 1];
+  if (clear(tail, to)) out[out.length - 1] = to.clone();
+  else if (V3.Distance(tail, to) > NAV.cell) return null;
+  return out;
+}
+/* 이 점에 **실제로** 갈 수 있는가 — 칸이 열려 있고 본체 영역에 속해야 한다.
+   navNearestOpen은 근처로 스냅하므로 도달성 판정에 쓰면 안 된다. */
+function navReachable(p) { return navOpen(...navCellOf(p.x, p.z)); }
+/* ══ 스테이션 스냅 — 설비 안에 박힌 작업 자리를 옆 빈 바닥으로 밀어낸다 ══════════
+   스테이션 좌표는 **설비를 가리키는 의도**로 적혀 있지, 사람이 설 자리로 적혀 있지 않다.
+   그래서 환경(방 크기·설비 배치)을 바꾸면 그중 일부가 조리대나 솥 **안쪽**에 들어간다.
+   이번에 방을 12×12에서 저장소 배치로 되돌렸더니 18곳 중 8곳이 그렇게 막혔고
+   (kettle·sink·serve·etable·fridge·island·isle1·aisle), 목표를 못 잡은 사람이
+   20초간 0m를 움직였다(실측).
+
+   좌표를 하나씩 다시 적는 대신 **격자에 물어본다** — 막힌 칸이면 가장 가까운 열린
+   본체 칸으로 옮긴다. 실제 조리원도 기기 안이 아니라 그 앞 빈 바닥에 선다.
+   navNearestOpen의 탐색 반경이 6칸(0.35m×6=2.1m)이라, 그 안에 빈 바닥이 없으면
+   옮기지 않고 남긴다 — 엉뚱한 구역으로 순간이동시키지 않기 위해서다. verifyRoute가
+   그런 자리를 실패로 잡아 준다. */
+function snapStations() {
+  if (!NAV.ready) return;
+  const moved = [];
+  for (const [key, st] of Object.entries(STATION)) {
+    const p = st.pos;
+    if (navReachable(p)) continue;
+    const c = navNearestOpen(...navCellOf(p.x, p.z));
+    if (!c) { console.warn("[STATION] 빈 자리 없음 —", key, st.label || ""); continue; }
+    const nx = NAV.x0 + (c[0] + 0.5) * NAV.cell, nz = NAV.z0 + (c[1] + 0.5) * NAV.cell;
+    moved.push(key + " " + V3.Distance(p, new V3(nx, 0, nz)).toFixed(2) + "m");
+    p.x = nx; p.z = nz;
+  }
+  console.log("[STATION] 스냅", moved.length, "곳", moved.length ? "— " + moved.join(", ") : "");
+}
 function resolvePersonCollision(pos) {
   let pushed = false;
-  for (const f of COLL_FOOTPRINTS) {
+  for (const f of COLL_FOOTPRINTS.concat(COLL_AUTO)) {
     const hw = f[2] + PERSON_R, hd = f[3] + PERSON_R;
     const dx = pos.x - f[0], dz = pos.z - f[1];
     if (Math.abs(dx) < hw && Math.abs(dz) < hd) {
@@ -2165,6 +3039,18 @@ function personUpdate(dt) {
   const p = person, n = p.node;
   if (p.freeze) return;   // 데이터셋 랜덤 포즈 유지 중
 
+  /* 스테이션 체류 — 도착해서 작업 동작을 재생하는 동안은 걷지 않는다.
+     체류가 끝나면 다음 스테이션으로. 이게 있어야 "선반에서 집고 조리대에서 앉아 일한다"가
+     데이터셋에 남는다(없으면 전부 '걷는 사람'만 찍힌다). */
+  if (p.dwellT > 0) {
+    p.dwellT -= dt;
+    if (p.dwellT <= 0) { p.dwellT = 0; PERSON.acting = null; p.pi++;
+                         p.lastD = undefined; p.stallT = 0; }
+    return;
+  }
+  /* 랜덤 모드: 목적지에 도착해 할 일이 끝나면 즉시 다음 목적지를 뽑는다.
+     wanderStep이 mode를 walk로 되돌리므로 여기서 다시 걸리지 않는다. */
+  if (WANDER.on && p.mode !== "walk" && p.mode !== "manual" && !p.freeze) { wanderStep(); }
   if (p.mode === "walk") {
     const tgt = p.path[p.pi];
     if (!tgt) {
@@ -2172,13 +3058,30 @@ function personUpdate(dt) {
       else p.mode = "idle";
     } else {
       const dx = tgt.x - n.position.x, dz = tgt.z - n.position.z, d = Math.hypot(dx, dz);
-      if (d < 0.06) p.pi++;
+      if (d < 0.06) {
+        p.lastD = undefined; p.stallT = 0;   // 다음 구간을 위해 정체 감지 초기화
+        // 스테이션이면 작업 동작을 재생하고 체류
+        const st = p.stations && p.stations[p.pi];
+        const actKey = st && pickAct(st.act, RNG);          // act가 배열이면 하나 뽑는다
+        if (actKey && PERSON.ACT && PERSON.ACT[actKey]) {
+          personAct(actKey);
+          p.dwellT = st.dwell || 2000;
+          setStatus("작업: " + st.label + " — " + actKey);
+        } else p.pi++;
+      }
       else {
         const st = p.speed * dt/1000;
         n.position.x += dx/d*st; n.position.z += dz/d*st;
-        // 가구·솥 통과 방지 — 목표 지점이 설비 안이면 벽에 닿은 시점에 도착 처리
-        // (임계 1.3m = 최대 확장 반너비 0.84 + 슬라이딩 여유)
-        if (resolvePersonCollision(n.position) && d < 1.45) p.pi++;
+        resolvePersonCollision(n.position);
+        /* 정체 감지 — 설비에 막혀 목표에 못 가면 다음 지점으로 넘긴다.
+           예전 규칙은 "충돌이 났고 목표가 1.45m 이내면 도착 처리"였는데,
+           솥 모서리를 **스쳐 지나가는 정상 경로**에서도 발동해 스테이션을 통째로
+           건너뛰었다(실측: 조리대 앞·제어반 앞에서 작업 동작이 재생되지 않음).
+           거리가 줄지 않는 상태가 1.2초 이어질 때만 포기한다. */
+        if (p.lastD !== undefined && d > p.lastD - 0.004) p.stallT = (p.stallT || 0) + dt;
+        else p.stallT = 0;
+        p.lastD = d;
+        if (p.stallT > 1200) { p.stallT = 0; p.lastD = undefined; p.pi++; }
         const want = Math.atan2(dx, dz);
         let diff = want - n.rotation.y;
         while (diff >  Math.PI) diff -= 2*Math.PI;
@@ -2209,7 +3112,9 @@ function personUpdate(dt) {
   r.body.position.y = -0.42 * p.crouch + (walking ? Math.abs(Math.cos(p.walkT)) * 0.028 : 0);
 
   // 스킨드 조리원: 속도에 맞춰 Idle / Walk / Run 전환 + 재생속도 동기화
-  if (PERSON.root && !(ACC.on && ACC.prone)) {
+  /* PERSON.acting이 있으면 시나리오 액션(쓰러짐·밀기·집기…)이 화면을 잡고 있는 중이다.
+     보행 상태기계가 매 프레임 idle/walk로 덮어쓰면 그 동작이 한 프레임도 못 보인다. */
+  if (PERSON.root && !(ACC.on && ACC.prone) && !PERSON.acting) {
     const spd = p.moving ? (MOVE.run ? RUN_SPEED : WALK_SPEED)
               : (p.mode === "walk" && p.path[p.pi] ? p.speed : 0);
     locoPlay(PERSON, walking, spd);
@@ -2232,10 +3137,15 @@ function locoPlay(P, moving, speed) {
     return;
   }
   const useRun = !!P.run && speed >= RUN_AT;
-  const act = useRun ? P.run : P.walk;
+  /* 걸음걸이 — 사람마다 다른 클립을 쓴다. 인원이 2~3명뿐이라 둘이 똑같이 걸으면
+     탑뷰에서 바로 복제처럼 보인다. P.gait는 스폰 때 인원별 시드로 정해진다. */
+  const walkClip = (!useRun && P.gait === "walkSlow" && P.walkSlow) ? P.walkSlow : P.walk;
+  const act = useRun ? P.run : walkClip;
   if (!act) return;
   stop(P.idle);
   stop(useRun ? P.walk : P.run);
+  if (P.walkSlow && act !== P.walkSlow) stop(P.walkSlow);
+  if (act !== P.walk) stop(P.walk);
   const ratio = clamp(speed / (useRun ? RUN_REF : WALK_REF), 0.45, 1.9);
   if (!act.isPlaying) act.start(true, ratio);
   act.speedRatio = ratio;                       // 매 프레임 보정 — 가감속에도 미끄러짐 없음
@@ -2307,7 +3217,76 @@ const MODEL_H = 1.74;      // v48 실측 신장 (머리 관절 1.596m ÷ 0.92)
    레퍼런스: 영상 관찰(남색·보라·흰 위생복, 부팡형 위생모) + 학교급식 위생관리 지침
    (앞치마·고무장갑 공정별 색, 노출 부위는 눈뿐). 재질 분리로 개체별 색 변형 가능:
    cook_uniform·cook_pants(위생복 상하) / cook_apron·cook_gloves(규정색 세트) / CookMask(토글) */
-const COOK_GLB = "cook_rig_v47.glb?v=" + ASSET_VER, COOK_BAKED = true;
+/* ── 캐릭터 베이스 교체 (2026-08-17) ──────────────────────────────────────
+   cook_rig_v47은 **애니메이션이 본을 전혀 움직이지 못한다**(실측: 다리 본 회전이 전
+   프레임 동일). 원인 두 가지 —
+     ① 팔·다리·손가락에 `scaling` 트랙이 걸려 있어 스킨이 늘어나고 찢어진다
+     ② 메시가 `CookMerged_primitive0/1`로 병합돼 스킨 웨이트가 어긋났다
+   원본 계보(`sketchfab_cook_raw.glb`)가 출처 불명이라 재바인딩도 근거가 없다.
+
+   → BJS Character Controller V2(MIT, crazyramirez)의 베이스로 교체한다.
+     같은 mixamorig 67본이라 기존 리그 코드가 그대로 맞물리고, 애니메이션 45종이
+     전부 `rotationQuaternion`만 쓰며 `scaling` 트랙이 0개다(45종 전수 검사).
+     메시도 Body/Clothes/Eyes/Eyelashes로 분리돼 있어 **옷만 갈아입힐 수 있다**.
+     Death01·Hit_Chest·Push_Loop이 포함돼 발표 데모의 쓰러짐·밀림이 래그돌 없이 된다.
+
+   ?cook=old 로 열면 예전 조리원으로 되돌아간다(비교·회귀 확인용). */
+const COOK_OLD = new URLSearchParams(location.search).get("cook") === "old";
+/* person_cook_v5 = person_base_v1(Erika 리그·애니 45종)에서 **지오메트리는 손대지 않고
+   색만 위생복으로 바꾼 것** + 마스크 추가.
+
+   의상 형태를 코드로 만들려는 시도를 세 번 했고 셋 다 실패했다:
+     v2 본 좌표로 관을 생성 → 원통을 이어붙인 마네킹
+     v3 관을 촘촘히·섭디비전     → 정점만 늘고 여전히 원통
+     v4 아처 메시 스무딩 개조    → 갑옷이 남거나(약하게) 메시가 무너짐(강하게)
+   한계가 분명하다. ① 이 캐릭터에는 옷 아래 **몸이 없다**(피부 = 얼굴·팔뿐)이라
+   맞출 기준이 없고, ② 갑옷 형태가 정점 좌표에 박혀 있어 "갑옷만 지우기"가 불가능하며,
+   ③ 따로 만든 조각(소매 관)과 몸통은 별개 표면이라 만나는 곳이 반드시 어긋난다.
+   옷 형태는 사람이 모델링해야 하는 일이다.
+
+   그래서 **아처의 재단 품질을 그대로 쓰고 색만 바꾼다.** 실루엣은 궁수가 남지만
+   (두건·부츠) 변형 품질이 원본과 동일하고, 나중에 제대로 된 조리사 모델을 구하면
+   이 파일만 교체하면 된다.
+     상의·소매 흰색 / 바지 감색 / 신발 흰색 / 후드 → 흰 위생 두건 / 마스크 신규
+
+   ?cook=base 아처 원본색 · ?cook=old 예전 조리원 */
+const COOK_BASE = new URLSearchParams(location.search).get("cook") === "base";
+const COOK_GLB = (COOK_OLD ? "cook_rig_v47.glb"
+                : COOK_BASE ? "person_base_v1.glb" : "person_cook_v5.glb") + "?v=" + ASSET_VER;
+const COOK_BAKED = true;
+/* 액션 이름은 **정확히** 지정한다. 예전처럼 byName("idle") 같은 부분일치를 쓰면
+   Crouch_Idle_Loop·Idle_Talking_Loop가 먼저 걸리고, "walk"는 Walk_Formal_Loop를 집는다. */
+/* 베이스 GLB는 게임용 45종을 들고 온다(Pistol·Sword·Spell·Swim·Dance·Jump·Roll…).
+   급식 조리실 안전 시뮬에 쓸 것만 **14종**으로 추리고 나머지는 로드 직후 dispose한다.
+   남기는 기준은 "동선·작업·사고 중 하나를 표현하는가"다. */
+const COOK_ACTIONS = COOK_OLD
+  ? { idle:"idle", walk:"walk", run:"run" }
+  : {
+      // ── 이동 — WASD 조작·동선·랜덤 움직임의 뼈대
+      idle:"Idle_Loop", walk:"Walk_Loop", run:"Jog_Fwd_Loop", sprint:"Sprint_Loop",
+      // ── 작업 자세 — 동선의 각 지점에서 '무엇을 하는지'
+      pickup:"PickUp_Table",        // 조리대·선반에서 집기
+      kneel:"Fixing_Kneeling",      // 쭈그려 작업 (312f — 체류 연출)
+      crouch:"Crouch_Idle_Loop", crouchFwd:"Crouch_Fwd_Loop",
+      // ── 사고 — 발표 데모의 핵심
+      hit:"Hit_Chest",              // 로봇팔 접촉 순간 (20f)
+      hitHead:"Hit_Head",
+      down:"Death01",               // 쓰러져 누움 (연기 질식·충돌 후). 역재생하면 일어나기
+      // ── 상호작용·다양성
+      push:"Push_Loop",             // 카트·트레이 밀기
+      interact:"Interact",          // 제어반 조작
+      idleTalk:"Idle_Talking_Loop", // 대기 자세 다양성 (데이터셋 편중 방지)
+      /* ── 남은 31종에서 살릴 수 있는 것은 **보행 1종뿐**이다 ──
+         이름만 보고 3종을 더 넣었다가 화면으로 확인하고 전부 뺐다:
+           · Driving_Loop("운반"으로 쓰려 했음) → **허공에 앉아 운전대를 잡은 자세**
+           · Idle_Torch_Loop("국자 든 대기") → 팔을 얼굴 높이로 치켜든 연극적 자세
+           · Sitting_* 4종 → 의자 프롭이 없어 허공에 앉는다(위 Driving과 같은 그림)
+         나머지는 Pistol 6·Sword 3·Spell 4·Swim 2·Jump 3·Roll 2·Punch 2·Dance·TPose.
+         → **조리실에서 실제로 쓸 수 있는 작업 자세는 pickup·interact·kneel·idleTalk·idle
+           다섯 가지가 전부다.** 젓기·국자 뜨기·트레이 운반·냉장고 열기는 새 클립을 받아야 한다
+           (라이선스 정리 선행). 이름으로 고르지 말고 반드시 눈으로 확인할 것. */
+      walkSlow:"Walk_Formal_Loop",  // 두 번째 보행 — 사람마다 걸음걸이를 다르게 (탑뷰 다양성)
+    };
 /* 스킨드 캐릭터의 실제 신장 보정 —
    Babylon 바운딩박스(바인드 포즈 기준)도, GLB에 구운 값도 스케일 체인에서 어긋난다(실측).
    가장 신뢰 가능한 기준은 '머리 본의 월드 높이'다. 성인 기준 머리 관절은 신장의 약 92%. */
@@ -2323,7 +3302,7 @@ function fitPersonHeight(holder, skinned, skeleton, targetH, broad) {
   holder.scaling.set(k * (broad || 1), k, k);
   return k;
 }
-const PERSON = { root:null, holder:null, walk:null, idle:null, yawFix:0, height:1.72 };
+const PERSON = { root:null, holder:null, walk:null, run:null, idle:null, ACT:{}, yawFix:0, height:1.72 };
 async function loadCook() {
   if (!SHOW_PERSON) return;      // 환경 구축 단계 — 캐릭터 제외 (33MB 로드도 건너뜀)
   try {
@@ -2359,20 +3338,62 @@ async function loadCook() {
     PERSON.headBone  = bone(/head$/i) || bone(/head/i);
     PERSON.spineBone = bone(/spine2$/i) || bone(/spine1$/i) || bone(/spine$/i);
 
-    // 액션
-    const byName = n => r.animationGroups.find(g => new RegExp(n, "i").test(g.name));
+    /* 액션 — 이름 **완전일치**로 잡는다(부분일치는 Crouch_Idle_Loop 같은 걸 집는다).
+       ACT에 45종을 다 담아두면 이후 쓰러짐·밀림·쭈그림 시나리오에서 바로 꺼내 쓸 수 있다. */
     r.animationGroups.forEach(g => g.stop());
-    PERSON.idle = byName("idle"); PERSON.walk = byName("walk");
+    const exact = n => r.animationGroups.find(g => g.name === n);
+    PERSON.ACT = {};
+    for (const [key, name] of Object.entries(COOK_ACTIONS)) {
+      const g = exact(name);
+      if (g) PERSON.ACT[key] = g;
+      else console.warn("[GLB] 액션 없음:", key, "→", name);
+    }
+    PERSON.idle = PERSON.ACT.idle; PERSON.walk = PERSON.ACT.walk; PERSON.run = PERSON.ACT.run;
     if (PERSON.idle) PERSON.idle.start(true, 1.0);
+    /* 안 쓰는 액션은 **버린다.** 남겨두면 이름 검색이 엉뚱한 걸 집고(Crouch_Idle_Loop 등),
+       씬 애니메이션 목록이 45개로 불어나 디버깅이 어렵다. 총·검·수영·춤은 급식실에 없다. */
+    const keep = new Set(Object.values(PERSON.ACT));
+    let dropped = 0;
+    r.animationGroups.slice().forEach(g => { if (!keep.has(g)) { g.dispose(); dropped++; } });
+    console.log("[GLB] 액션 정리 —", keep.size, "종 유지 ·", dropped, "종 제거");
     PERSON.shell = null;          // 절차형 위생복 껍데기 폐기 — GLB에 옷이 포함돼 있다
     PERSON.bones = boneMap(sk);
     PERSON.root = root; PERSON.holder = holder; PERSON.skinned = skinned;
     // 옛 절차 사람(목각)은 숨기지 않고 완전히 제거 — 씬에 하나의 조리원만 남긴다
     anchors["person"].placeholders.splice(0).forEach(m => m.dispose());
-    console.log("[GLB] cook:", r.meshes.length, "meshes /", r.animationGroups.map(g => g.name).join(","),
-                "/ bones", sk ? sk.bones.length : 0);
+    console.log("[GLB] 캐릭터:", COOK_GLB.split("?")[0], "· 메시", r.meshes.length,
+                "· 본", sk ? sk.bones.length : 0, "· 애니", r.animationGroups.length,
+                "· 매핑", Object.keys(PERSON.ACT).join(","));
   } catch (e) { console.warn("[GLB] 조리원 로드 실패 — 절차 사람 유지:", e); }
 }
+/* ══ 사람 액션 재생 — 시나리오가 쓰는 단일 창구 ═══════════════════════════
+   PERSON.ACT의 14종을 키로 재생한다. 없는 동작은 있는 클립을 변형해 만든다:
+     · 미끄러짐 = down(Death01) 앞 45%만 빠르게   · 일어나기 = down 역재생
+   리그가 mixamorig 67본이라, 나중에 Mixamo에서 전용 클립(Slip And Fall·Standing Up 등)을
+   받아 COOK_ACTIONS에 이름만 추가하면 이 함수는 그대로 두고 대체된다. */
+function personAct(key, opts) {
+  opts = opts || {};
+  const g = PERSON.ACT[key];
+  if (!g) { console.warn("[ACT] 없는 액션:", key); return null; }
+  Object.values(PERSON.ACT).forEach(a => { if (a !== g) a.stop(); });
+  const spd  = Math.abs(opts.speed || 1);
+  const loop = opts.loop !== undefined ? opts.loop : /Loop$/.test(g.name);
+  if (opts.reverse) g.start(loop, -spd, g.to, g.from);
+  else {
+    const from = opts.from !== undefined ? opts.from : g.from;
+    const to   = opts.to   !== undefined ? opts.to   : g.to;
+    g.start(loop, spd, from, to);
+  }
+  PERSON.acting = opts.transient ? null : key;   // transient면 끝난 뒤 보행이 되찾아간다
+  if (opts.then) g.onAnimationGroupEndObservable.addOnce(opts.then);
+  return g;
+}
+const personIdle  = () => { PERSON.acting = null; return personAct("idle"); };
+const personFall  = () => personAct("down", { loop:false });
+const personSlip  = () => { const d = PERSON.ACT.down; return personAct("down",
+  { loop:false, speed:1.6, to: d ? d.from + (d.to - d.from) * 0.45 : undefined }); };
+const personGetUp = () => personAct("down", { loop:false, speed:1.2, reverse:true, then: personIdle });
+
 /* 위생모·마스크·앞치마를 본 월드 위치에 붙인다 (스케일 단위 무관) */
 function cookGearUpdate() {
   // 절차형 위생모·마스크·앞치마·위생복 셸은 전부 폐기됐다 (GLB 조리원에 포함).
@@ -2427,6 +3448,70 @@ const ENV_PROPS = [
   { f:"env_basketcart.glb", pos:[ 2.15, 0,  5.55], ry: 0.3 },       // 통로 — 망바구니 카트
   { f:"env_basketcart.glb", pos:[ 1.55, 0,  6.55], ry:-0.6 },
 ];
+/* ══ 섬 배치용 프롭 재배치 ═══════════════════════════════════════════════════
+   좌표를 하나씩 다시 적지 않고 **규칙으로 옮긴다.** 프롭이 20개가 넘어서 손으로 적으면
+   빠뜨리고, 나중에 프롭을 추가할 때마다 두 벌을 관리해야 한다.
+
+   규칙은 둘뿐이다:
+     ① 옛 벽에 붙어 있던 것(0.9m 이내) → **대응하는 새 벽으로.** 단 벽을 따라가는 좌표는
+        **그대로 둔다** — 새 방 안에 들어가면 건드리지 않고, 밖으로 나갈 때만 비율로 줄인다.
+        처음엔 항상 비율로 옮겼는데, 그러면 **다른 설비와의 관계가 깨진다**:
+        동쪽 끝(x 4.35)에 있던 벽걸이 선반이 x 1.11로 끌려와 솥 바로 위에 떠 있었다.
+        벽걸이 선반은 방 비율이 아니라 **그 아래 설비**를 기준으로 놓인 물건이다.
+     ② 그 외 → 새 방 안이면 그대로 두고, 밖으로 나가면 안쪽으로 당긴다.
+   조리 셀(솥·로봇·옆 국솥·후드·수전)은 벽에서 멀고 새 방 안이라 **손대지 않는다** —
+   그래서 벽만 물러나면 그 설비들이 저절로 '가운데 섬'이 된다. */
+/* 방을 바꾸면 벽에 붙어 있던 프롭도 따라가야 한다 — 섬 배치든 좌우 대칭이든 같은 문제라
+   같은 규칙을 쓴다. AUTHORED가 프롭 좌표를 적을 때 기준이 된 방이다. */
+(function () {
+  const O = { x0:-2.85, x1:6.15, z0:-1.45, z1:7.55 };          // 프롭 좌표를 적은 기준 방(구역 배치)
+  const R0 = LAYOUT.room;
+  if (Math.abs(R0.x0-O.x0) < 0.01 && Math.abs(R0.x1-O.x1) < 0.01 &&
+      Math.abs(R0.z0-O.z0) < 0.01 && Math.abs(R0.z1-O.z1) < 0.01) return;   // 그대로면 할 일 없음
+  const N = LAYOUT.room, NEAR = 0.9, PAD = 0.45;
+  const lerp = (v, a0, a1, b0, b1) => b0 + (v - a0) / (a1 - a0) * (b1 - b0);
+  for (const p of ENV_PROPS) {
+    let [x, , z] = p.pos;
+    const dW = Math.abs(x - O.x0), dE = Math.abs(x - O.x1);
+    const dN = Math.abs(z - O.z0), dS = Math.abs(z - O.z1);
+    const m = Math.min(dW, dE, dN, dS);
+    /* 벽을 따라가는 좌표는 **들어가면 그대로, 안 들어가면 그때만 비율로.**
+       항상 비율로 옮기면 아래 설비와의 관계가 깨진다(벽걸이 선반이 솥 위로 끌려온 원인). */
+    const keepX = v => (v > N.x0 + PAD && v < N.x1 - PAD) ? v
+                                                          : lerp(v, O.x0, O.x1, N.x0 + PAD, N.x1 - PAD);
+    const keepZ = v => (v > N.z0 + PAD && v < N.z1 - PAD) ? v
+                                                          : lerp(v, O.z0, O.z1, N.z0 + PAD, N.z1 - PAD);
+    if (m < NEAR) {                                       // ① 벽붙이 — 새 벽으로
+      if (m === dW)      { x = N.x0 + dW; z = keepZ(z); }
+      else if (m === dE) { x = N.x1 - dE; z = keepZ(z); }
+      else if (m === dN) { z = N.z0 + dN; x = keepX(x); }
+      else               { z = N.z1 - dS; x = keepX(x); }
+    }
+    x = clamp(x, N.x0 + PAD, N.x1 - PAD);                 // ② 방 밖으로 나간 것 당기기
+    z = clamp(z, N.z0 + PAD, N.z1 - PAD);
+    p.pos = [x, p.pos[1], z];
+  }
+  /* ── 북벽 조리 라인 ──
+     벽이 물러나면서 **북벽만 비었다.** 동·서·남벽은 원래 벽에 붙어 있던 프롭이
+     규칙대로 따라갔는데, 북벽에 있던 것은 조리 셀 본체(솥·로봇·후드)라 그대로 남아
+     섬이 됐기 때문이다. 그래서 그 자리가 빈 타일만 남아 주방으로 안 보인다.
+
+     실제 아일랜드형 급식실도 **가운데 취사설비 + 벽면 조리·보관 라인**을 같이 둔다.
+     참조 현장의 [국솥][국솥][선반] 배열을 그대로 북벽에 세운다 — 배치 근거는 유지하면서
+     주인공(섬)과 배경(벽 라인)이 나뉜다. ry=0은 방 안쪽(+z)을 향한다. */
+  // 좌우 대칭 배치에서는 북벽에 조리 셀이 그대로 붙어 있으므로 이 라인이 필요 없다
+  if (!ISLAND) return;
+  // 좌표는 **새 북벽에서 재서** 잡는다 — 섬 오프셋을 바꾸면 벽이 움직이므로 값을 박으면 뜬다
+  const nz = z => N.z0 + z, cxm = N.x0 * 0.5 + N.x1 * 0.5;
+  ENV_PROPS.push(
+    { f:"env_kettle_nb.glb",        pos:[cxm-2.30, 0, nz(0.70)], ry: 0 },  // 뚜껑 열림 (조리 중)
+    { f:"env_kettle_nb_closed.glb", pos:[cxm-1.05, 0, nz(0.70)], ry: 0 },  // 뚜껑 닫힘 (대기)
+    { f:"env_table.glb",            pos:[cxm+0.40, 0, nz(0.60)], ry: 0 },  // 배출 작업대
+    { f:"env_rack.glb",             pos:[cxm+2.00, 0, nz(0.50)], ry: 0 },  // 보관 선반 2연
+    { f:"env_rack.glb",             pos:[cxm+3.30, 0, nz(0.50)], ry: 0 },
+    { f:"env_bin.glb",              pos:[cxm+4.55, 0, nz(0.55)], ry: 0 }
+  );
+})();
 async function loadEnvProps() {
   if (ENV_V1) return;                 // v1 비교 기준선에는 주변 설비 프롭이 없었다
   for (let i = 0; i < ENV_PROPS.length; i++) {
@@ -2706,6 +3791,14 @@ async function loadAssets() {
   await loadEnvProps();
   await loadCook();
   lidNode        = await pivoted("lid.glb",            "lidNode",  ASSETS.pivots.hinge);
+  /* 뚜껑을 **눕혀서 연다.** GLB가 구워진 자세(rot 0)는 뚜껑 두 짝이 x 0.66에 세로로 서서
+     1.3m×0.66m 벽을 이룬다(높이 0.94~1.60m). 그게 **동쪽 카메라에서 솥 림으로 가는
+     시선을 정통으로 막는다** — CAM3·CAM8·CAM10 셋 다 튀김솥 림을 못 봤다(실측).
+     힌지축을 −80° 돌려 바깥으로 눕히면 최고 높이가 1.60 → 1.11m로 내려가고,
+     2.3~3.4m 높이 카메라에서 림(0.95m)까지의 시선(그 지점 1.15m) 아래로 빠진다.
+     실측: −52°에서 CAM8, −69°에서 CAM3까지 뚫린다. −80°는 여유값.
+     조리 중 뚜껑을 젖혀 두는 건 실제 국솥에서도 흔한 자세다. */
+  lidNode.rotation.z = -1.40;
   basketNode     = await pivoted("basket.glb",         "bkNode",   ASSETS.pivots.grip);
   basketNode.__home = basketNode.position.clone();     // 파지 시퀀스 리스타트용 원위치
   robotGlb.base  = await pivoted("robot_pedestal.glb", "rgBase",   ASSETS.pivots.base);
@@ -2722,6 +3815,18 @@ async function loadAssets() {
   robotGlb.fore.setParent(jn[2]);
   robotGlb.hand.setParent(jn[4]);   // wrist=0 → j5가 W에 위치, 피치(J4)+롤(J5) 모두 반영
   robotGlb.base.setParent(scene.getTransformNodeByName("robotRoot"));   // GT 분류·이동 일관성
+  /* ?reach= 로 팔을 키웠으면 **GLB 세그먼트도 같은 배율로** 늘린다.
+     링크 길이(R.upper/R.fore)만 키우면 관절 앵커는 벌어지는데 메시는 원래 크기라
+     세그먼트 사이가 빈다. 각 세그먼트는 자기 피벗(S/E/W)에 놓여 있으므로 그 노드에
+     배율을 주면 피벗에서 늘어나 다음 앵커와 정확히 맞물린다.
+     setParent 뒤에 넣는다 — setParent가 월드 보존으로 로컬 스케일을 다시 계산하므로
+     그 전에 주면 상쇄된다(실측). 페데스탈·J1은 그대로 둔다(바닥 고정면). */
+  if (REACH.k !== 1) {
+    [robotGlb.upper, robotGlb.fore, robotGlb.hand].forEach(n => n && n.scaling.setAll(REACH.k));
+    ROBOT_GUARD.reach = Math.max(ROBOT_GUARD.reach, REACH.target + 0.9);  // 가드 검사 반경도 함께
+    console.log("[REACH] GLB 세그먼트 ×" + REACH.k.toFixed(3) +
+                " · ROBOT_GUARD.reach → " + ROBOT_GUARD.reach.toFixed(2) + "m");
+  }
   // 바스켓·뚜껑은 정지 상태 유지 (시나리오 단계에서 부착/개폐)
   // 환경 프로브 재캡처 — GLB는 프로브 1회 캡처 이후 도착하므로 리스트에 넣고 다시 찍는다
   scene.meshes.forEach(m => { if (probe.renderList.indexOf(m) < 0) probe.renderList.push(m); });
@@ -2730,7 +3835,21 @@ async function loadAssets() {
   // 원위치(-0.02,1.40)는 1.33m 필요 > 1.30m 한계. REF_013 실물도 카트가 로봇 바로 앞.
   const cartShift = new BABYLON.TransformNode("cartShift", scene);
   scene.meshes.filter(m => /^Cart|^SpareBasket/.test(m.name)).forEach(m => m.setParent(cartShift));
-  cartShift.position = new V3(-0.48, 0, -0.12);   // 카트 중심 (-0.02,1.40) → (-0.50,1.28)
+  /* 카트를 **통로 쪽으로 뺀다** — 작업 동선을 사람이 다니는 바닥 위로 옮기기 위해서다.
+     예전 위치(-0.50,1.28)에서는 팔이 솥과 카트 위에서만 움직였고, 둘 다 콜라이더라
+     사람이 못 들어간다. 그래서 팔이 지나는 4,266개 지점 중 **사람이 설 수 있는 바닥 위가
+     0%**였다 — 회의가 요구한 '로봇팔에 밀림·끼임'이 물리적으로 발생할 수 없었다.
+     z=2.10은 베이스에서 1.42m(정지 링 1.2m 밖)이고, 기본 반경으로도 안착까지 닿는다(실측).
+     실제 급식실에서도 배식 카트는 기기 앞 통로에 둔다. */
+  /* 섬 배치에서는 **0.25m 더 통로 쪽으로.** 로봇 주변이 페데스탈·카트·키오스크·바닥덕트로
+     조각나 사람이 카트 옆으로 걸어갈 수가 없었다(실측: 99초를 걸어도 도착 실패).
+     카트를 빼면 그 사이가 넓어지고, 팔이 통로 위를 지나 접근 자체가 가능해진다.
+     z=2.35가 기본 팔 길이의 한계다 — 2.55는 안착 오차 32mm로 못 닿는다(실측). */
+  cartShift.position = new V3(-0.48, 0, ISLAND ? 0.95 : 0.70);   // 카트 중심 → z 2.35 / 2.10
+  if (ISLAND) {
+    const cf = COLL_FOOTPRINTS.find(f => Math.abs(f[0] + 0.50) < 0.01 && Math.abs(f[1] - 2.10) < 0.01);
+    if (cf) cf[1] = 2.35;                        // 충돌 박스도 같이 — 안 하면 유령 벽이 남는다
+  }
   /* 키오스크를 서벽 쪽으로 물린다 — 안전 시연의 전제 조건.
      키오스크(x -2.27~-1.63)와 카트(-0.87~-0.07) 사이 통로가 0.76m뿐이라
      사람(폭 0.56m + 여유)이 통과하지 못해 로봇 셀에 접근 자체가 불가능했다.
@@ -2754,7 +3873,16 @@ async function loadAssets() {
   }
   const kioskShift = new BABYLON.TransformNode("kioskShift", scene);
   scene.meshes.filter(m => /^(Kiosk|Sig)/.test(m.name)).forEach(m => m.setParent(kioskShift));
-  kioskShift.position = new V3(-0.35, 0, 0);
+  /* 섬 배치에서는 **0.45m 더 물린다.** 지금 값(-0.35)으로도 키오스크 동단(-1.66)과
+     카트 서단(-0.89) 사이 실측 간격이 0.77m인데, 사람 지름 0.52를 빼면 통로 폭이
+     0.25m뿐이라 **사람이 못 지나간다**(실측: 카트 옆 자리로 99초를 걸어도 도착 실패).
+     로봇 옆으로 가는 길이 막혀 있으면 접근 사고 자체가 성립하지 않는다.
+     섬 배치는 서쪽이 6m 넘게 비어 있어 물릴 자리가 넉넉하다. */
+  kioskShift.position = new V3(ISLAND ? -0.80 : -0.35, 0, 0);
+  if (ISLAND) {
+    const kf = COLL_FOOTPRINTS.find(f => Math.abs(f[0] + 1.95) < 0.01 && Math.abs(f[1] - 1.69) < 0.01);
+    if (kf) kf[0] = -2.40;                     // 충돌 박스도 같이 옮긴다 — 안 하면 유령 벽이 남는다
+  }
   /* 키오스크 사명 명판 — 실사 참조에서도 터치스크린 아래에 사명 표기가 있었다.
      화면 하단(y 0.84)과 E-STOP(y 0.53) 사이에 붙인다. 좌표는 kioskShift 로컬이라
      쉬프트(-0.35)를 되더한 값을 쓴다 — 부모에 붙이면 쉬프트가 자동 적용된다. */
@@ -2821,6 +3949,13 @@ async function loadAssets() {
   /* 천장 설비 레이어 마스크 재적용 — GLB에 후드/덕트 이름의 메시가 있으면 여기서 잡힌다.
      (절차 메시는 씬 구성 직후 이미 한 번 찍었다. 재적용은 멱등이라 겹쳐도 안전하다.) */
   console.log("[CEIL] GLB 포함 천장 설비 마스크", applyCeilingMask(), "개");
+  /* 사람 충돌 박스 자동 수집 — GLB 설비가 다 올라온 뒤라야 전부 잡힌다.
+     수집 직후 동선을 검증해서, 새로 생긴 박스가 스테이션을 막지 않는지 확인한다. */
+  buildPersonColliders();
+  buildNavGrid();          // 충돌 박스가 확정된 뒤라야 통행 격자가 맞는다
+  snapStations();          // 설비 안에 박힌 스테이션을 옆 빈 바닥으로 밀어낸다
+  const RV = verifyRoute();
+  console.log("[ROUTE] 스테이션 검증 " + (RV.ok ? "전 지점 통과" : "실패 " + RV.failed.length + "곳"));
 
   // 프로브가 새 렌더리스트로 한 번 굽는 데 몇 프레임 걸린다 — 그 뒤에 MSAA를 연다
   setTimeout(() => { ENV_READY = true; }, 900);
@@ -3051,6 +4186,10 @@ function safetyUpdate() {
   // 사고 시나리오: 넘어져 누운 사람은 천장캠에 정수리·어깨만 잡혀 검출기가 놓친다(미탐).
   // 로봇은 '사람 없음'으로 판단해 정상 속도로 복귀한다 — 이 연구가 겨냥하는 실패 모드.
   if (ACC.on && ACC.prone) { SAFE.dist = 99; srcPos = null; }
+  /* 사고 데모 — 검출 실패를 강제한다. 안전 정지가 정상 동작하면 접촉은 **일어나지 않는다**
+     (그게 맞는 동작이다). 충돌·끼임을 보려면 "모델이 사람을 못 봤다"는 조건이 있어야 하고,
+     그 상황이 곧 이 연구가 겨냥하는 실패 모드다. */
+  if (SAFE.blind) { SAFE.dist = 99; srcPos = null; }
 
   // ── P4: 동적 방호거리 (ISO/TS 15066 SSM) ─────────────────────────────
   const nowT = performance.now();
@@ -4055,8 +5194,10 @@ async function generateDataset(n) {
   let done = 0;
   try {
     for (let i = 0; i < n && !DATAGEN.abort; i++) {
-      // P7: 샘플마다 인원 수도 랜덤 (0~3명) — 다인원 분포를 데이터에 반영
-      await setExtraCount([0, 1, 1, 2, 2, 3][(Math.random() * 6) | 0]);
+      /* 샘플마다 인원 수도 랜덤 — 다인원 분포를 데이터에 반영.
+         상한 2명(주인공 포함 총 3명). 예전엔 3명(총 4명)까지 넣었는데 이 좁은 셀에서는
+         서로 비켜다니느라 동선이 뭉개져 학습 이미지로 쓸 장면이 안 나온다. */
+      await setExtraCount([0, 1, 1, 1, 2, 2][(Math.random() * 6) | 0]);
       randomizeScene();
       for (let f = 0; f < 4; f++) scene.render();        // 파티클·포즈 안정화
       for (const id of Object.keys(SURV)) {
@@ -4759,6 +5900,8 @@ const MIL_COLORS = { person:"#ff4d4f", robot:"#52e06f", kettle:"#ffab40", equipm
      좌상단 카메라 이름 · 우상단 REC 점멸 · 좌하단 타임스탬프 · 모서리 크롭마크.  */
 const CAM_LABEL = { corner:"CAM 01  CORNER", eye:"CAM 02  EYE-LEVEL", overhead:"CAM 03  OVERHEAD",
                     top:"CAM 04  TOP", deg45:"CAM 05  45DEG",
+                    southTop:"CAM 07  SOUTH", seCorner:"CAM 08  NORTH",
+                    lowFloor:"CAM 09  NW", wideAll:"CAM 10  WIDE",
                     free:"FREE  ORBIT" };   // 자유 시점도 PiP에 올릴 수 있다 — 테에 이름이 필요하다
 /* 화면 테에 박히는 이름. 고정표기가 없으면 카메라가 들고 있는 label을 쓴다 —
    사용자가 추가하거나 이름을 바꾼 카메라도 id(USER1) 대신 제 이름으로 나온다. */
@@ -4881,7 +6024,8 @@ function showInspector() {
 /* ══ 상태 ════════════════════════════════════════════════════════════════ */
 const state = {
   cook:0, burn:0, temp:170, auto:false, fire:false, stirring:false,
-  seqIdx:0, seqT:0, from:null, to:null, dur:0, inOil:false, msg:""
+  seqIdx:0, seqT:0, from:null, to:null, dur:0, inOil:false, msg:"",
+  autoLoop:true, cycles:0   // 연속 작업 기본 켜짐 — UI 체크박스와 초기값을 맞춘다
 };
 const setStatus = s => { state.msg = s; $("status").textContent = s;
                          if (typeof logConsole === "function") logConsole(s); };
@@ -4895,9 +6039,13 @@ const T = LAYOUT.targets;
 const SEQ_FRY = [
   { k:"ikOff", off:[0, 0.46, 0],    ms:1100, msg:"바스켓 인양 — 기름 배출", grab:true, oil:false },
   { k:"shake", ms:800, n:3,         msg:"기름 털기" },
-  { k:"ikOff", off:[-0.24, 0.02, 0.66], ms:800, msg:"카트로 이송" },              // 2분할 이송 — 관절공간 처짐 반감
-  { k:"ikOff", off:[0,-0.06, 0], at:[-0.465, 1.26], ms:800, msg:"카트 상공 정렬" }, // 절대좌표 정렬(카트 중심, 팁→바스켓 오프셋 보정)
-  { k:"ikOff", off:[0,-0.31, 0], at:[-0.465, 1.26], ms:700, msg:"카트에 안착" },    // 수직 하강 — 링 중심 삽입
+  /* 카트가 통로로 나가면서 이송 거리가 길어졌다 — 중간 경유를 통로 쪽으로 더 뺀다.
+     이 구간이 **팔이 사람 다니는 바닥 위를 지나는 구간**이고, 그래서 이 연구가
+     보려는 접촉·끼임이 실제로 발생할 수 있는 유일한 구간이다. */
+  { k:"ikOff", off:[-0.24, 0.02, 1.10], ms:1000, msg:"카트로 이송 — 통로 횡단" },
+  // 카트가 섬 배치에서 z 2.35로 물러나므로 정렬 좌표도 따라간다
+  { k:"ikOff", off:[0,-0.06, 0], at:[-0.465, ISLAND ? 2.33 : 2.08], ms:800, msg:"카트 상공 정렬" },
+  { k:"ikOff", off:[0,-0.31, 0], at:[-0.465, ISLAND ? 2.33 : 2.08], ms:700, msg:"카트에 안착" },
   { k:"wait",  ms:350,              msg:"바스켓 거치", drop:true },
   { k:"home",  ms:1100,             msg:"홈 자세 복귀" },
 ];
@@ -4916,6 +6064,19 @@ const SEQ = ASSETS.enabled ? SEQ_FRY : SEQ_STIR;
 function startStep(i) {
   state.seqIdx = i; state.seqT = 0;
   if (i >= SEQ.length) {
+    /* 연속 작업 — 실제 조리로봇은 한 사이클 하고 멈추지 않는다.
+       한 번만 돌면 **로봇이 움직이는 동안 사람이 접근하는 장면이 아예 안 만들어진다**
+       (실측: 25초 관찰에서 로봇 가동 34% · 사람 정지구역 진입 11%인데 겹친 순간 0건).
+       이 연구가 보려는 사건이 정확히 그 겹치는 순간이라 기본으로 반복시킨다. */
+    if (state.autoLoop) {
+      state.cycles = (state.cycles || 0) + 1;
+      JOINTS.forEach(j => { j.value = j.home; applyJoint(j); });
+      refreshChain();
+      if (typeof resetBasket === "function") resetBasket();
+      setStatus("사이클 " + state.cycles + " 완료 — 다음 사이클 시작");
+      startStep(0);
+      return;
+    }
     state.auto = false;
     setStatus(ASSETS.enabled ? "튀김 배출 완료 — 바스켓 카트 거치" :
               "교반 완료 — 조리 진행 " + (state.cook*100).toFixed(0) + "%");
@@ -4937,7 +6098,7 @@ function startStep(i) {
     // 들고 있던 요(측정값 -35°)가 한 프레임에 0°로 튀어 바스켓이 홱 돌아 보인다.
     // 운반 중 자세는 이미 수평(yaw-only)이므로 그대로 두는 편이 물리적으로도 맞다.
     basketNode.setParent(null);
-    basketNode.position = new V3(-0.50, 1.23, 1.28);   // 림 플레어가 카트 링(0.878) 위에 걸침 — 관통 없음
+    basketNode.position = new V3(-0.50, 1.23, ISLAND ? 2.35 : 2.10);   // 림 플레어가 카트 링(0.878) 위에 걸침 — 관통 없음
   }
   if (s.k === "ik") {
     state.from = JOINTS.map(j => j.value);
@@ -5319,8 +6480,12 @@ function syncJointUI() {
   });
 }
 
+$("autoLoop").addEventListener("change", e => {
+  state.autoLoop = e.target.checked;
+  setStatus(state.autoLoop ? "연속 작업 — 사이클을 반복합니다" : "연속 작업 해제 — 1회만 실행");
+});
 $("autoBtn").addEventListener("click", () => {
-  state.auto = true; state.inOil = false;
+  state.auto = true; state.inOil = false; state.cycles = 0;
   JOINTS.forEach(j => { j.value = j.home; applyJoint(j); }); refreshChain();
   startStep(0);
 });
@@ -5641,6 +6806,30 @@ $("orbCap").addEventListener("click", async () => {
 });
 
 /* 사람 시나리오 · 화재 UI */
+/* 근무 시나리오 UI */
+Object.entries(SCENARIO).forEach(([k, v]) => {
+  const o = document.createElement("option"); o.value = k; o.textContent = v.label;
+  $("scenSel").appendChild(o);
+});
+$("scenRun").addEventListener("click", () => runScenario($("scenSel").value));
+
+$("scRoleFar").addEventListener("click", () => spawnRole("far"));
+$("scRoleCaution").addEventListener("click", () => spawnRole("caution"));
+$("scRoleDanger").addEventListener("click", () => spawnRole("danger"));
+/* 로봇 접촉 사고 데모 */
+$("ovLap").addEventListener("change", e => {
+  OVERLAP.on = e.target.checked;
+  setStatus(OVERLAP.on ? "작업 겹침 켜짐 — 이송 단계마다 배식 담당이 카트로 옵니다"
+                       : "작업 겹침 꺼짐 — 각자 자기 동선만 돕니다");
+});
+$("hzPush").addEventListener("click",  () => demoHazard("push"));
+$("hzPinch").addEventListener("click", () => demoHazard("pinch"));
+$("hzClear").addEventListener("click", () => demoHazardClear());
+$("scWander").addEventListener("click", () => personWander(!WANDER.on));
+/* 작업 동선 — 스테이션마다 도착해서 실제 작업 동작을 재생한다 */
+$("scWork").addEventListener("click",   () => personRoute("work",     { loop:true }));
+$("scKettle").addEventListener("click", () => personRoute("toKettle"));
+$("scFull").addEventListener("click",   () => personRoute("full",     { loop:true }));
 $("scApproach").addEventListener("click", () => {
   personGo(SCN.approach.map(v => v.clone())); setStatus("사람: 솥으로 접근 시작");
 });
@@ -5666,8 +6855,14 @@ $("pplN").addEventListener("input", async e => {
 });
 $("pplReroll").addEventListener("click", async () => {
   const n = EXTRAS.length;
+  /* 역할을 기억했다가 되돌린다. setExtraCount는 전원을 기본 역할(far)로 스폰하므로
+     그냥 다시 채우면 A/B/C 구성이 조용히 무너진다(실측: caution 1명이 far로 리셋).
+     외형만 바꾸겠다고 누른 버튼이 데이터셋 라벨 구성을 바꾸면 안 된다. */
+  const roles = EXTRAS.map(P => P.role);
+  EXTRA_GEN++;                     // 세대를 올려야 같은 시드에서도 다른 사람이 나온다
   await setExtraCount(0); await setExtraCount(n);
-  setStatus("인원 외형·체형 재추출 — " + n + "명");
+  EXTRAS.forEach((P, k) => { if (roles[k]) { P.role = roles[k]; extraNextTarget(P); } });
+  setStatus("인원 외형·체형 재추출 — " + n + "명 (세대 " + EXTRA_GEN + ")");
 });
 $("pplCrouch").addEventListener("click", () => {
   EXTRAS.forEach(P => P.mode = P.mode === "crouch" ? "walk" : (Math.random() < 0.6 ? "crouch" : "walk"));
@@ -5794,7 +6989,9 @@ function camUIapply(write = true) {
    확정된 값은 '설정 복사'로 뽑아 CAM_DEFS에 직접 박는다. */
 /* 키에 버전을 붙인다. 기본 카메라 배치를 바꿔도(예: CAM4를 천장 밖 5m로 이동) 예전에
    저장된 값이 그대로 복원돼 새 배치가 안 보이는 일을 막는다 — 버전을 올리면 새 기본값으로 시작. */
-const CAM_STORE = "hkr.sim.cams.v3";   // v3: CAM6(솥 정면) 추가
+// v4: 방 남쪽 +3m 확장에 맞춰 CAM7~10 증설. 버전을 안 올리면 v3 저장값이 복원되면서
+//     새로 단 4대가 통째로 사라진다(camStoreLoad가 CAM_DEFS를 저장분으로 교체하므로).
+const CAM_STORE = "hkr.sim.cams.v3r";   // 저장소 6대 구성으로 복귀
 function camStoreSave() {
   try {
     localStorage.setItem(CAM_STORE, JSON.stringify(CAM_DEFS.map(d => {
@@ -6120,7 +7317,12 @@ function personDrive(dt) {
   let fx = (MOVE.d ? 1 : 0) - (MOVE.a ? 1 : 0);
   if (!fx && !fz) return;
   p.mode = "manual"; p.path = [];
-  const cam = scene.activeCamera;
+  /* 이동 방향의 기준은 **지금 보고 있는 화면**(주 시점)이어야 한다.
+     scene.activeCamera를 쓰면 안 된다 — Babylon은 activeCameras를 순서대로 그리면서
+     이 값을 바꾸고 **마지막 카메라(PiP)에 남겨둔다**. 그래서 자유 시점으로 보고 있어도
+     WASD가 우상단 PiP(벽에 고정된 45° 카메라) 기준으로 움직였다.
+     "시점을 바꿔도 방향이 안 따라오고 어딘가에 고정돼 있다"는 증상의 원인이다. */
+  const cam = camOf(mainView);
   const f = cam.getForwardRay ? cam.getForwardRay(1).direction : new V3(0, 0, 1);
   const fwd = new V3(f.x, 0, f.z);
   if (fwd.lengthSquared() < 1e-4) fwd.set(0, 0, 1);
@@ -6245,7 +7447,7 @@ function accReset() {
   }
   if (basketNode) {   // 바스켓 원위치(카트 위) 복귀
     basketNode.setParent(null);
-    basketNode.position = new V3(-0.50, 1.23, 1.28);
+    basketNode.position = new V3(-0.50, 1.23, ISLAND ? 2.35 : 2.10);
     basketNode.rotationQuaternion = BABYLON.Quaternion.Identity();
     basketNode.rotation.set(0,0,0);
   }
@@ -6318,8 +7520,9 @@ function updateStatusBar() {
   else            setCell("sbDist", false,
                     d < SAFE.stopR ? "bad" : (d < SAFE.slowR ? "warn" : "ok"),
                     d.toFixed(2) + " m");
-  // 조리실 인원
-  const ppl = 1 + (window.EXTRAS ? EXTRAS.length : 0);
+  /* 조리실 인원 — EXTRAS는 const라 window에 올라가지 않는다. `window.EXTRAS`로 물어보면
+     항상 undefined라서 추가 인원이 몇이든 화면에는 늘 "1명"으로 찍혔다(실측). */
+  const ppl = 1 + (typeof EXTRAS !== "undefined" ? EXTRAS.length : 0);
   setCell("sbPeople", false, "", ppl + "명");
   // 화재
   if (state.fire) setCell("sbFire", "bad",  "", "발생");
@@ -6340,6 +7543,9 @@ scene.registerBeforeRender(() => {
   personUpdate(dt);
   cookGearUpdate();
   extrasUpdate(dt);
+  resolvePeopleSeparation();   // 사람끼리 겹쳐 서지 않게 — GT 박스가 붙는 프레임 방지
+  workOverlapUpdate(dt);       // 로봇 이송 단계에 배식 담당을 카트로 부른다 (작업 겹침)
+  armContactUpdate(dt);        // 팔↔사람 접촉 — 링 판정과 달리 '팔이 향한 방향'을 본다
   accUpdate(dt);
   safetyUpdate();
   sensorTick(now);
@@ -6509,9 +7715,26 @@ function verifyReach() {
 window.__sim = {
   scene, engine, camera, JOINTS, anchors, LAYOUT, state,
   solveIK, ikAngles, verifyReach, importToAnchor, clearAnchor,
+  personAct, personIdle, personFall, personSlip, personGetUp, PERSON,
+  personRoute, verifyRoute, STATION, ROUTE, personWander, WANDER, RNG,
+  /* EXTRAS는 이 export 블록보다 **뒤에** 선언되므로 여기 직접 넣으면 const TDZ에 걸려
+     스크립트가 통째로 죽는다. getter로 감싸 접근 시점에 읽는다. */
+  ROLE, roleStations, spawnRole, buildPersonColliders, transitPath,
+  JOB, SCENARIO, spawnJob, runScenario, jobRole, jobNextTarget,
+  resolvePeopleSeparation, makeRNG, armClearance, armContactUpdate,
+  demoHazard, demoHazardClear, findHazardSpot, workOverlapUpdate,
+  get OVERLAP() { return OVERLAP; },   // 선언이 이 블록보다 뒤 — 직접 넣으면 TDZ로 스크립트가 죽는다
+  get armR() { return ARM_R; },   // 선언이 이 블록보다 뒤 — 직접 넣으면 TDZ로 스크립트가 죽는다
+  /* 동선 점검용 — 렌더 루프와 무관하게 고정 dt로 직접 돌려 궤적을 잰다.
+     브라우저는 비활성 탭에서 requestAnimationFrame을 멈추므로, 화면으로 재면
+     "사람이 안 움직인다"는 잘못된 결론이 나온다(실측: 43초 동안 0.007m). */
+  extrasUpdate, extraNextTarget, resolvePersonCollision, roamPoint, avoidSteer,
+  NAV, buildNavGrid, navPath, setPathTo,
+  get personSep() { return PERSON_SEP; },   // 선언이 이 블록보다 뒤 — TDZ 회피
+  get extras() { return EXTRAS; },
   tipPos, autoCook: () => $("autoBtn").click(),
   snap: () => { const d = {}; JOINTS.forEach(j => d[j.label] = +(j.value).toFixed(4)); return d; },
-  RUNLOG, SCALE, PRED, CPRED,   // 회차 기록 / 절대 스케일 / 궤적 예측 · 학습형 훅
+  RUNLOG, SCALE, REACH, PRED, CPRED,   // 회차 기록 / 절대 스케일 / 팔 반경 / 궤적 예측
   // 카메라·사람·안전·화재
   SURV, capture, captureBoth, applyCameras, camOf, pipRect, swapViews, cyclePip, pickView,
   setView: v => { mainView = v; viewSel.value = v; applyCameras(); },
@@ -6884,6 +8107,11 @@ sensorApply(); sensorUIsync();   // P1 센서 리얼리즘 초기 적용 (기본
    각 개체: 키 1.55~1.85m · 어깨폭 ±8% · 위생복 색 4종 · 위생모/마스크 유무 랜덤
    · 애니메이션 4종(idle/walk/run/쭈그림) 중 상황별 선택.                   */
 const EXTRAS = [];
+/* 외형 재추출 세대 — '외형·체형 다시 뽑기'가 누르는 값.
+   인원 시드를 (전역시드 + 인덱스)로만 잡으면 재추출을 눌러도 같은 사람이 다시 나온다.
+   세대를 시드에 섞어 두면 재추출은 달라지면서도 (seed, 세대)만 같으면 그대로 재현된다. */
+let EXTRA_GEN = 0;
+const extraSeed = i => SEED0 + 7919 * (i + 1) + 104729 * EXTRA_GEN;
 const RAND_PATHS = [
   [new V3(1.9,0,2.4), new V3(1.9,0,-1.2), new V3(-1.0,0,-1.7), new V3(-2.3,0,0.4), new V3(-2.2,0,2.4)],
   [new V3(-2.3,0,2.6), new V3(-0.9,0,2.2), new V3(1.4,0,1.4), new V3(2.2,0,-0.6)],
@@ -6965,8 +8193,12 @@ async function spawnExtraPerson(i) {
   const glbRoot = r.meshes.find(m => m.name === "__root__") || r.meshes[0];
   glbRoot.parent = holder;
 
-  const H = 1.55 + Math.random() * 0.30;                 // 키
-  const broad = 0.94 + Math.random() * 0.16;             // 어깨폭(체형)
+  /* 인원별 독립 난수 — 체형·속도·궤적을 **한 흐름**에서 뽑는다.
+     Math.random()으로 두면 ?seed= 를 고정해도 체형과 초기 속도가 매번 달라져
+     같은 시드의 데이터셋 회차가 재현되지 않는다(시드가 궤적만 잡고 외형은 못 잡았다). */
+  const prng = makeRNG(extraSeed(i));
+  const H = 1.55 + prng.next() * 0.30;                   // 키
+  const broad = 0.94 + prng.next() * 0.16;               // 어깨폭(체형)
   r.animationGroups.forEach(a => a.stop());
   if (r.skeletons[0]) r.skeletons[0].returnToRest();
   scene.render();
@@ -6984,8 +8216,16 @@ async function spawnExtraPerson(i) {
 
   const sk = r.skeletons[0];
   const bone = re => sk && sk.bones.find(b => re.test(b.name));
-  const g = n => r.animationGroups.find(a => new RegExp(n, "i").test(a.name));
+  /* 액션은 **완전일치**로 잡는다. 예전 g("idle") 부분일치는 45종 중 Crouch_Idle_Loop를
+     먼저 집었고, "run"은 아무것도 못 찾았다. 본체(PERSON.ACT)와 같은 규약을 쓴다. */
   r.animationGroups.forEach(a => a.stop());
+  const exact = nm => r.animationGroups.find(a => a.name === nm);
+  const ACT = {};
+  for (const [k, nm] of Object.entries(COOK_ACTIONS)) { const a = exact(nm); if (a) ACT[k] = a; }
+  const g = n => ACT[n] || null;
+  // 안 쓰는 액션은 버린다 (본체와 동일 — 45개가 살아 있으면 이름 검색이 엉킨다)
+  const keep = new Set(Object.values(ACT));
+  r.animationGroups.slice().forEach(a => { if (!keep.has(a)) a.dispose(); });
   const uni_shell = null, gear = null;      // 절차형 위생복·장구 폐기 (GLB에 포함)
   const bmap = boneMap(sk);
   const wearCap = true, wearMask = true;
@@ -6994,12 +8234,19 @@ async function spawnExtraPerson(i) {
     root, holder, skinned: r.meshes.find(m => m.skeleton) || r.meshes[1],
     head: bone(/head$/i) || bone(/head/i), spine: bone(/spine2$/i) || bone(/spine1$/i) || bone(/spine$/i),
     idle: g("idle"), walk: g("walk"), run: g("run"), crouch: g("sneak"),
+    walkSlow: g("walkSlow"),
+    // 걸음걸이를 반반으로 갈라 준다 — 같은 시드면 같은 사람이 같은 걸음을 쓴다
+    gait: prng.next() < 0.5 ? "walkSlow" : "walk",
     // uniform은 절차형 위생복을 GLB로 대체하며 폐기됐는데 참조만 남아
     // ReferenceError: uni is not defined 로 추가 인원 스폰이 통째로 실패했다.
     // → 데이터셋 생성이 1명이라도 스폰되는 순간 크래시. 참조 제거.
     gear, shell: uni_shell, bones: bmap, height: H, uniform: null, wearCap, wearMask,
+    ACT, role: "far", stations: null, dwellT: 0, acting: null, lastD: undefined, stallT: 0,
+    /* 인원마다 독립 시드 — 전역 시드에서 파생시키되 간격을 크게 벌린다.
+       한 명을 추가해도 기존 인원의 궤적이 바뀌지 않는다(각자 자기 흐름만 소비). */
+    rng: prng,
     path: RAND_PATHS[i % RAND_PATHS.length].map(v => v.clone()),
-    pi: 0, speed: 0.45 + Math.random() * 0.55, mode: "walk", playing: null,
+    pi: 0, speed: prng.range(0.45, 1.00), mode: "walk", playing: null,
   };
   root.position.copyFrom(P.path[0]);
   P.idle && P.idle.start(true, 1.0); P.playing = "idle";
@@ -7012,20 +8259,333 @@ function extraPlay(P, name) {
   const a = P[name]; if (a) a.start(true, name === "run" ? 1.1 : 1.0);
   P.playing = name;
 }
+/* 추가 인원용 액션 재생 — 본체의 personAct와 같은 역할 */
+function extraAct(P, key, loop, speed) {
+  const g = P.ACT && P.ACT[key]; if (!g) return null;
+  Object.values(P.ACT).forEach(a => { if (a !== g) a.stop(); });
+  // 재생 속도도 조금씩 흔든다 — 같은 클립이 매번 같은 박자로 돌면 눈에 띈다
+  g.start(loop !== undefined ? loop : /Loop$/.test(g.name), speed || 1.0);
+  P.acting = key; P.playing = null;
+  return g;
+}
+/* 스테이션의 act가 배열이면 하나 뽑는다. 인원별 시드를 쓰므로 회차는 재현된다. */
+function pickAct(act, rng) {
+  if (!Array.isArray(act)) return act;
+  if (!act.length) return null;
+  return act[((rng || RNG).next() * act.length) | 0];
+}
+/* 역할에 맞는 다음 목적지 */
+/* 위험 접근자(C)의 접근점 — 정지 반경 **안쪽**의 임의 지점.
+   스테이션 풀로는 양성 표본이 안 나온다. 가장 가까운 스테이션이 솥 앞 1.38m라
+   정지 반경 1.2m 바깥이고, far·caution이 297초 동안 밟은 스테이션이 4곳뿐인 것도
+   같은 이유다 — 선반(1.83m)·솥(1.38m)에는 구조적으로 아무도 못 간다(실측).
+   그래서 C만 목표를 동적으로 만든다: 페데스탈 밖, 정지링 안. */
+/* ══ 회피 조향 ═══════════════════════════════════════════════════════════
+   진행 방향 앞쪽에 사람이 있으면 진행 방향의 **수직 성분**을 더해 옆으로 돌아가게 한다.
+   상대가 왼쪽에 있으면 오른쪽으로, 오른쪽이면 왼쪽으로 — 서로 같은 쪽으로 피해
+   다시 부딪히는 일이 없도록 좌우를 상대 위치로 정한다. */
+const AVOID_R = 1.10;      // 이 거리 안의 사람만 본다
+const AVOID_DOT = 0.55;    // 진행 방향과 이만큼 일치해야 '앞'으로 친다 (옆·뒤는 무시)
+const AVOID_GAIN = 1.30;   // 조향 세기
+function avoidSteer(P, dirX, dirZ) {
+  const n = P.root.position;
+  let sx = 0, sz = 0;
+  for (let i = 0; i <= EXTRAS.length; i++) {
+    const q = (i === EXTRAS.length) ? person.node.position : EXTRAS[i].root.position;
+    if (q === n) continue;
+    const ox = q.x - n.x, oz = q.z - n.z, d = Math.hypot(ox, oz);
+    if (d > AVOID_R || d < 1e-4) continue;
+    const dot = (ox * dirX + oz * dirZ) / d;
+    if (dot < AVOID_DOT) continue;
+    const cross = dirX * oz - dirZ * ox;       // >0 이면 상대가 진행방향 왼쪽
+    const side = cross > 0 ? -1 : 1;           // 상대 반대쪽으로 민다
+    const w = (1 - d / AVOID_R) * dot;         // 가깝고 정면일수록 세게
+    sx += -dirZ * side * w;
+    sz +=  dirX * side * w;
+  }
+  return { sx, sz };
+}
+/* 배회 지점 — 스테이션만 돌면 **방을 좁게 쓴다.**
+   실측: 9×9m(324칸) 중 69칸 = 21%만 밟았고, 동쪽 2.6m·남쪽 2.4m가 통째로 비었다.
+   스테이션 6곳이 전부 x[0.2,3.6]·z[1.0,5.2]에 몰려 있어서다.
+   주인공(wanderStep)은 이미 70% 스테이션 / 30% 임의 지점을 쓰는데 추가 인원만
+   스테이션 전용이었다. 같은 규칙을 준다. */
+function roamPoint(P, rng, minOverride) {
+  const RM = LAYOUT.room, B = LAYOUT.robot.base;
+  const R = ROLE[P.role] || ROLE.far;
+  // danger는 zone이 "stop"이라 최소거리가 0이다 — 물러나는 용도로 쓸 때는 직접 넘겨야 한다
+  const minR = (minOverride !== undefined) ? minOverride
+             : R.zone === "out" ? SAFE.NOM_SLOW : R.zone === "slow" ? SAFE.NOM_STOP : 0;
+  for (let i = 0; i < 40; i++) {
+    // z 하한 1.0 — 그보다 북쪽은 조리기기 라인이라 사람이 설 자리가 아니다
+    const p = new V3(rng.range(RM.x0 + 0.9, RM.x1 - 0.9), 0, rng.range(1.0, RM.z1 - 0.9));
+    if (Math.hypot(p.x - B.x, p.z - B.z) < minR + 0.2) continue;
+    if (resolvePersonCollision(p.clone())) continue;
+    return p;
+  }
+  return null;
+}
+function dangerTarget(rng) {
+  const B = LAYOUT.robot.base, RM = LAYOUT.room;
+  /* 0.62 = 페데스탈 반너비 0.29 + 사람 반경 0.26 + 여유 0.07.
+     설비 안으로 뽑히면 아래 resolvePersonCollision 검사에서 버려진다.
+     ※ 실측 최근접이 0.51m로 나오는데 이건 파고든 게 아니라 페데스탈 콜라이더 +z면에
+       **맞닿은** 값이다(0.795 + 0.27 + 0.26 = base에서 0.51). 겹침 프레임은 0이다. */
+  const lo = 0.62, hi = SAFE.NOM_STOP - 0.10;
+  for (let attempt = 0; attempt < 60; attempt++) {
+    const th = rng.range(0, Math.PI * 2), r = rng.range(lo, hi);
+    const p = new V3(B.x + Math.cos(th) * r, 0, B.z + Math.sin(th) * r);
+    if (p.x < RM.x0 + 0.4 || p.x > RM.x1 - 0.4 || p.z < RM.z0 + 0.4 || p.z > RM.z1 - 0.4) continue;
+    if (resolvePersonCollision(p.clone())) continue;      // 설비 안이면 버린다
+    return p;
+  }
+  return null;
+}
+/* 스테이션 뽑기 — **최근 2곳을 뺀다.**
+   직전 1곳만 빼면 X→Y→X 왕복이 그대로 남는다. far가 갈 수 있는 곳은 4곳뿐이라
+   직전 1곳을 제외하면 남은 3곳 중 하나를 고르게 되고, 그중 하나가 두 단계 전의 그곳이다
+   — 확률 1/3. 실측도 정확히 34%였다(제외 전 28%보다 오히려 나빠졌다).
+   최근 2곳을 빼면 4곳 중 2곳이 남아 왕복이 사라진다.
+   후보가 비면 한 단계씩 완화한다 — 갈 곳이 없어지면 안 된다. */
+function pickStation(P, pool, rng) {
+  if (!pool || !pool.length) return null;
+  const recent = P.recent || (P.recent = []);
+  /* **다른 사람이 지금 잡고 있는 곳은 뺀다(예약제).**
+     도착 판정 반경이 0.12m라 한 스테이션에 두 명이 설 수 없다. 겹쳐서 목표를 잡으면
+     둘 다 도착하지 못한 채 분리 로직이 서로 밀어내며 그 자리에서 엉킨다. */
+  const claimed = EXTRAS.filter(o => o !== P && o.station).map(o => o.station.key);
+  let c = pool.filter(s => !recent.includes(s.key) && !claimed.includes(s.key));
+  if (!c.length) c = pool.filter(s => !claimed.includes(s.key));   // 예약을 먼저 지킨다
+  if (!c.length) c = pool.filter(s => !recent.includes(s.key));
+  if (!c.length) c = pool;
+  const pick = c[(rng.next() * c.length) | 0];
+  recent.push(pick.key);
+  while (recent.length > 2) recent.shift();
+  P.lastStation = pick.key;
+  return pick;
+}
+/* 목표까지 **길을 깔아** 준다. 직선으로 두면 설비에 막혀 도착을 못 한다
+   (실측: 사방 스테이션 등록 후 도착률 8%). 길찾기가 실패할 때만 직선으로 폴백한다. */
+function setPathTo(P, target) {
+  const route = navPath(P.root.position, target);
+  /* 길이 없으면 **직선으로 밀고 들어가지 않는다.** 예전엔 폴백으로 직선을 깔았는데,
+     그 직선이 설비를 관통해 사람이 그 자리에 끼었다(실측: 정체 48건이 같은 좌표).
+     못 가는 곳은 애초에 목적지로 삼지 않는 게 맞다 — 호출부가 다른 곳을 고른다. */
+  if (!route || !route.length) return null;
+  /* **지금 서 있는 자리가 통행 격자 밖이면 첫 걸음을 따로 넣는다.**
+     설비 모서리에 낀 상태에서는 A*의 시작 칸(navNearestOpen이 스냅한 칸)과 실제 위치가
+     다르다. 그 경로를 그대로 따라가면 모서리를 파고들며 제자리에서 맴돈다
+     — 실측: 정체 22건이 전부 카트 모서리 (0.1, 2.7) 한 지점이었다.
+     빠져나올 칸을 경로 맨 앞에 끼워 넣으면 한 걸음 물러난 뒤 정상 경로를 탄다. */
+  if (!navReachable(P.root.position)) {
+    const c = navNearestOpen(...navCellOf(P.root.position.x, P.root.position.z));
+    if (c) route.unshift(new V3(NAV.x0 + (c[0] + 0.5) * NAV.cell, 0,
+                                NAV.z0 + (c[1] + 0.5) * NAV.cell));
+  }
+  P.path = route;
+  P.pi = 0;
+  return P.path;
+}
+/* 직무 동선의 다음 지점 — **순서대로** 돈다. 여기서 무작위는 쓰지 않는다.
+   남이 그 자리에 서 있으면 이번 바퀴는 건너뛴다(한 자리에 두 명이 못 선다). */
+function jobNextTarget(P, rng) {
+  const J = JOB[P.job];
+  if (!J || !J.route.length) return null;
+  const here = P.station && P.station.key;
+  for (let tries = 0; tries < J.route.length; tries++) {
+    P.routeIdx = ((P.routeIdx === undefined ? -1 : P.routeIdx) + 1) % J.route.length;
+    const key = J.route[P.routeIdx], st = STATION[key];
+    if (!st) continue;
+    /* 지금 서 있는 자리는 건너뛴다. 남이 점유한 곳을 건너뛰다 보면 동선이
+       kettle>kettle처럼 제자리를 반복하게 되는데, 그건 일하는 것처럼 보이지 않는다. */
+    if (key === here) continue;
+    if (EXTRAS.some(o => o !== P && o.station && o.station.key === key)) continue;
+    if (setPathTo(P, st.pos)) {
+      P.station = Object.assign({ key, dist:0 }, st);
+      return P.station;
+    }
+  }
+  return null;
+}
+function extraNextTarget(P) {
+  const R = ROLE[P.role] || ROLE.far;
+  const rng = P.rng || RNG;                  // 인원별 독립 난수 — 서로 간섭하지 않는다
+  P.speed = rng.range(R.speed[0], R.speed[1]);
+  P.lastD = undefined; P.stallT = 0; P.pi = 0; P.mode = "walk"; P.unstick = false;
+
+  /* 작업 겹침으로 불려 나온 사람은 **그 목표를 붙잡는다.**
+     중간에 한 번 정체하면 여기서 직무 동선으로 되돌아가 카트 목표가 버려진다
+     (실측: 99초를 걸어도 도착 못 하고 자기 동선으로 돌아갔다). */
+  if (P.overlapUntil && performance.now() < P.overlapUntil && STATION.cartPick) {
+    const st = STATION.cartPick;
+    if (setPathTo(P, st.pos)) { P.station = Object.assign({ key:"cartPick", dist:0 }, st); return P.station; }
+    P.overlapUntil = 0;                       // 길이 없으면 포기하고 제 동선으로
+  }
+  // 직무가 배정돼 있으면 정해진 동선을 돈다 — 무작위 선택은 건너뛴다
+  if (P.job) { const t = jobNextTarget(P, rng); if (t) return t; }
+
+  /* C(danger) — 접근과 물러남을 **번갈아** 한다.
+     계속 반경 안에 머물면 '들어오는 순간'이 표본에 안 잡힌다. 예측 모델이 배워야 하는 것은
+     진입·이탈 **전이**이지 정지해 있는 상태가 아니다. */
+  if (R.mode === "approach") {
+    if (!P.inZone) {
+      const p = dangerTarget(rng);
+      if (p && setPathTo(P, p)) {          // 길이 없으면 접근을 포기하고 아래 물러남으로
+        P.inZone = true; P.transitDepth = undefined;
+        P.station = { key:"approach", pos:p, act:"interact",
+                      dwell:(R.dwell || 2200), label:"로봇 접근" };
+        return P.station;
+      }
+    }
+    // 물러남 — 정지 반경 밖으로 나갔다가 다시 들어온다
+    P.inZone = false;
+    if (rng.next() < 0.20) {                     // 물러날 곳도 대부분 실제 설비 앞이 낫다
+      const p = roamPoint(P, rng, SAFE.NOM_STOP + 0.15);
+      if (p && setPathTo(P, p)) {
+        P.station = { key:"roam", pos:p, act: rng.next() < 0.5 ? "idleTalk" : "idle",
+                      dwell:1400, label:"통로" };
+        return P.station;
+      }
+    }
+    const back = roleStations(P.role).filter(s => s.dist > SAFE.NOM_STOP + 0.15);
+    const pk = pickStation(P, back, rng);
+    if (pk && setPathTo(P, pk.pos)) { P.station = pk; return pk; }
+  }
+
+  if (R.mode === "transit") {
+    /* 통과 — 구역을 가로지르는 현을 그리고 **중간에 멈추지 않는다.**
+       station을 비워두면 도착 판정에서 체류 없이 다음 경로로 넘어간다.
+       머무르면 하드 네거티브가 아니라 그냥 위험 상황이 되어버린다. */
+    /* 통과 경로도 **길찾기를 태운다.** 예전에는 현의 두 끝점을 직선으로 이었는데,
+       그 직선이 조리기기·카트를 관통하면 사람이 거기 막혀 정체했다(실측: 58구간 중 17회).
+       스치는 지점 c를 경유점으로 놓고 [현재→c], [c→출구]를 각각 길찾기로 이어 붙이면
+       깊이는 그대로 유지되면서 설비는 돌아간다. */
+    const t = transitPath(P.role, rng);
+    if (t) {
+      const inLeg  = navPath(P.root.position, t.mid);
+      const outLeg = inLeg && navPath(t.mid, t.path[1]);
+      if (inLeg && outLeg) {
+        P.path = inLeg.concat(outLeg);
+        P.pi = 0; P.station = null; P.transitDepth = t.depth;
+        return t;
+      }
+    }
+    /* 통과 경로를 못 만들면 스테이션으로 대체하되, **구역 밖 스테이션만** 쓴다.
+       구역 안 스테이션(선반 1.83m·솥 1.38m)으로 폴백하면 거기서 체류해버려
+       하드 네거티브가 깨진다(실측: 구역 안 정지 193초). */
+    const B0 = LAYOUT.robot.base;
+    const outer = roleStations(P.role).filter(s =>
+      Math.hypot(s.pos.x - B0.x, s.pos.z - B0.z) > SAFE.NOM_SLOW + 0.35);
+    const pk = pickStation(P, outer, rng);
+    if (pk && setPathTo(P, pk.pos)) { P.station = pk; return pk; }
+  }
+  /* 스테이션이 아니라 빈 바닥으로 — 방을 넓게 쓰게 하는 유일한 장치다.
+     주인공 wanderStep의 70/30 규칙에서 출발했는데, 스테이션 6곳이 한쪽에 몰려 있어
+     30%로는 남쪽(z≥5.8)과 북서 모서리를 계속 못 밟았다. 역할별로 올릴 수 있게 뺀다. */
+  if (rng.next() < (R.roam !== undefined ? R.roam : 0.30)) {
+    const p = roamPoint(P, rng);
+    if (p && setPathTo(P, p)) {
+      P.station = { key:"roam", pos:p, act: rng.next() < 0.5 ? "idleTalk" : "idle",
+                    dwell:1400, label:"통로" };
+      return P.station;
+    }
+  }
+  // 길이 막힌 후보가 걸리면 그 턴을 버리지 말고 다른 곳을 고른다
+  for (let tries = 0; tries < 4; tries++) {
+    const pick = pickStation(P, roleStations(P.role), rng);
+    if (!pick) return null;
+    if (setPathTo(P, pick.pos)) { P.station = pick; return pick; }
+  }
+  return null;
+}
 function extrasUpdate(dt) {
   for (const P of EXTRAS) {
     const n = P.root.position;
+    /* 인원별 독립 난수 — extraNextTarget과 같은 규약.
+       여기서 전역 RNG를 쓰면 체류시간·대기동작이 전역 흐름을 공유하게 되어
+       인원을 한 명 추가하는 순간 기존 인원의 타이밍까지 전부 바뀐다
+       (makeRNG 주석이 약속한 독립성이 깨진다). */
+    const rng = P.rng || RNG;
     uniformFollow(P.shell, P.skinned, P.bones, P.root.rotation.y);
     if (P.gear) gearFollow(P.gear, P.skinned, P.head, P.spine, P.root.rotation.y, false);
+    /* 스테이션 체류 — 도착해서 작업 동작을 재생하는 동안은 걷지 않는다 */
+    if (P.dwellT > 0) {
+      P.dwellT -= dt;
+      if (P.dwellT <= 0) { P.dwellT = 0; P.acting = null; extraNextTarget(P); }
+      continue;
+    }
+    /* 맞아서 쓰러져 있는 동안은 **손대지 않는다.** 여기서 idle을 재생하면 down 클립을
+       덮어써서 쓰러진 사람이 벌떡 서 있는 그림이 된다(실측). */
+    if (P.struckT > 0) continue;
     if (P.mode === "crouch" || P.mode === "idle") { extraPlay(P, P.mode === "crouch" ? "crouch" : "idle"); continue; }
     const tgt = P.path[P.pi];
-    if (!tgt) { P.pi = 0; continue; }
+    if (!tgt) { extraNextTarget(P); continue; }
     const dx = tgt.x - n.x, dz = tgt.z - n.z, d = Math.hypot(dx, dz);
-    if (d < 0.12) { P.pi = (P.pi + 1) % P.path.length; locoPlay(P, false, 0); continue; }
+    if (d < 0.12) {
+      /* **경유점 소진이 먼저다.** 길찾기가 여러 점을 주므로, station이 있다고 첫 경유점에서
+         작업 동작을 재생해버리면 목적지에 닿기도 전에 일을 시작한다. */
+      if (P.pi + 1 < P.path.length) {        // 아직 경유점이 남았다 — 멈추지 않고 계속
+        P.pi++; P.lastD = undefined; P.stallT = 0;
+      } else if (P.station) {                // 스테이션 — 작업 동작 재생 후 체류
+        if (P.station.key === "cartPick") P.overlapUntil = 0;   // 도착했으면 붙잡기 해제
+        extraAct(P, pickAct(P.station.act, rng), undefined, rng.range(0.85, 1.15));
+        P.dwellT = (P.station.dwell || 2000) * rng.range(0.6, 1.5);
+      } else {                               // 통과 끝 — 구역 밖에서 잠깐 쉬고 다시 통과
+        extraAct(P, rng.next() < 0.5 ? "idleTalk" : "idle");
+        P.dwellT = rng.range(900, 2600);
+      }
+      continue;
+    }
     const st = P.speed * dt / 1000;
-    n.x += dx / d * st; n.z += dz / d * st;
+    /* 회피 조향 — 앞에 사람이 있으면 **미리 옆으로 비껴 간다.**
+       resolvePeopleSeparation은 이미 겹친 뒤에 떼어놓는 사후 처리라, 그것만 있으면
+       두 사람이 정면으로 걸어와 맞닿은 순간 옆으로 튕긴다. 탑뷰에서 박스가 튀어
+       궤적 학습에 그대로 노이즈로 들어간다. */
+    let ux = dx / d, uz = dz / d;
+    const av = avoidSteer(P, ux, uz);
+    if (av.sx || av.sz) {
+      ux += av.sx * AVOID_GAIN; uz += av.sz * AVOID_GAIN;
+      const L = Math.hypot(ux, uz) || 1; ux /= L; uz /= L;
+    }
+    n.x += ux * st; n.z += uz * st;
     resolvePersonCollision(n);
-    const want = Math.atan2(dx, dz);
+    /* 역할 반경 유지 — 스테이션만 제한하면 **가는 길이 반경을 가로지른다.**
+       far가 조리대(2.8m)→제어반(3.3m)으로 갈 때 직선이 로봇 옆을 스칠 수 있다.
+       역할별 최소 거리보다 안쪽으로 들어오면 로봇 반대 방향으로 밀어낸다. */
+    const RR = ROLE[P.role] || ROLE.far;
+    const minR = RR.zone === "out" ? SAFE.NOM_SLOW : RR.zone === "slow" ? SAFE.NOM_STOP : 0;
+    if (minR > 0) {
+      const B = LAYOUT.robot.base;
+      const ox = n.x - B.x, oz = n.z - B.z, od = Math.hypot(ox, oz);
+      if (od < minR && od > 1e-4) { n.x = B.x + ox / od * minR; n.z = B.z + oz / od * minR; }
+    }
+    // 정체 감지 — 설비에 막히면 다른 목적지로 (본체와 같은 규칙)
+    if (P.lastD !== undefined && d > P.lastD - 0.004) P.stallT = (P.stallT || 0) + dt;
+    else P.stallT = 0;
+    P.lastD = d;
+    /* 모서리 탈출 — 목표를 바꾸기 **전에** 열린 칸으로 한 걸음 물러난다.
+       설비 모서리에서는 "목표 쪽으로 밀기 → 콜라이더가 되밀기"가 상쇄돼 제자리 진동한다.
+       목적지가 잘못된 게 아니라 지금 서 있는 자리가 나쁜 것이므로, 목적지를 버리면
+       같은 일이 다음 목적지에서 또 난다(실측: 카트 모서리 (0.2,2.7)에서만 26회).
+       한 칸 물러나 정상 통로로 나온 뒤 원래 경로를 그대로 이어 간다. */
+    if (P.stallT > 900 && !P.unstick) {
+      const c = navNearestOpen(...navCellOf(n.x, n.z));
+      if (c) {
+        const back = new V3(NAV.x0 + (c[0] + 0.5) * NAV.cell, 0,
+                            NAV.z0 + (c[1] + 0.5) * NAV.cell);
+        if (Math.hypot(back.x - n.x, back.z - n.z) > 0.12) {
+          P.path = [back].concat(P.path.slice(P.pi));
+          P.pi = 0; P.stallT = 0; P.lastD = undefined; P.unstick = true;
+          continue;
+        }
+      }
+    }
+    if (P.stallT > 1500) {
+      P.stallT = 0; P.lastD = undefined; P.unstick = false;
+      extraNextTarget(P); continue;
+    }
+    // 몸이 도는 방향은 목표가 아니라 **실제로 가는 방향**이어야 비끼는 게 보인다
+    const want = Math.atan2(ux, uz);
     let diff = want - P.root.rotation.y;
     while (diff >  Math.PI) diff -= 2 * Math.PI;
     while (diff < -Math.PI) diff += 2 * Math.PI;
@@ -7034,6 +8594,326 @@ function extrasUpdate(dt) {
     uniformFollow(P.shell, P.skinned, P.bones, P.root.rotation.y);
     if (P.gear) gearFollow(P.gear, P.skinned, P.head, P.spine, P.root.rotation.y, false);
   }
+}
+/* 직무를 배정해 인원을 추가한다. 라벨(role)은 동선에서 자동으로 정해진다. */
+async function spawnJob(jobKey) {
+  const J = JOB[jobKey];
+  if (!J) { console.warn("[JOB] 없는 직무:", jobKey); return null; }
+  const P = await spawnExtraPerson(EXTRAS.length);
+  if (!P) { setStatus("캐릭터가 꺼져 있어 인원을 추가할 수 없습니다"); return null; }
+  P.job = jobKey;
+  P.role = jobRole(jobKey);
+  P.routeIdx = -1;
+  /* 시작 위치 = 자기 동선 위의 한 지점이되, **남이 없는 곳**으로.
+     전원을 첫 지점에 세우면 같은 자리에 겹쳐 태어난다(예전에 실제로 그랬다). */
+  const taken = EXTRAS.filter(o => o !== P).map(o => o.root.position);
+  const spot = J.route.map(k => STATION[k]).filter(Boolean)
+    .find(st => taken.every(t => Math.hypot(t.x - st.pos.x, t.z - st.pos.z) > PERSON_SEP * 2));
+  if (spot) P.root.position.copyFrom(spot.pos);
+  extraNextTarget(P);
+  const B = LAYOUT.robot.base;
+  const minD = Math.min(...J.route.map(k => STATION[k])
+    .filter(Boolean).map(st => Math.hypot(st.pos.x - B.x, st.pos.z - B.z)));
+  console.log("[JOB]", jobKey, J.label, "— 동선", J.route.join(" → "),
+              "· 로봇 최근접", minD.toFixed(2) + "m · 라벨", P.role);
+  return P;
+}
+/* 근무 시나리오 한 회차 — 기존 인원을 비우고 배역대로 다시 세운다.
+   같은 시드 + 같은 시나리오면 같은 회차가 재현된다. */
+async function runScenario(name) {
+  const S = SCENARIO[name];
+  if (!S) { console.warn("[SCEN] 없는 시나리오:", name); return null; }
+  await setExtraCount(0);
+  for (const j of S.jobs) await spawnJob(j);
+  const labels = EXTRAS.map(P => (JOB[P.job] || {}).label + "(" + P.role + ")");
+  setStatus("시나리오 — " + S.label + " · " + labels.join(" · ") + " · seed " + SEED0);
+  console.log("[SCEN]", name, S.label, "—", labels.join(", "));
+  return EXTRAS.slice();
+}
+/* 역할을 지정해 인원을 추가한다. 회의 요구의 A/B/C가 이것으로 만들어진다. */
+async function spawnRole(roleKey) {
+  const R = ROLE[roleKey];
+  if (!R) { console.warn("[ROLE] 없는 역할:", roleKey); return null; }
+  const P = await spawnExtraPerson(EXTRAS.length);
+  if (!P) { setStatus("캐릭터가 꺼져 있어 인원을 추가할 수 없습니다"); return null; }
+  P.role = roleKey;
+  const pool = roleStations(roleKey);
+  /* 시작 위치 — 멀면서 **비어 있는** 스테이션.
+     전원이 그냥 '가장 먼 곳'에서 시작하면 A·B·C가 문(3.60, 5.20) 한 점에 겹쳐 태어나
+     한 덩어리로 움직인다(실측: 셋 다 좌표 동일, 297초 중 17%가 서로 2m 안). */
+  const far2near = pool.slice().sort((a, b) => b.dist - a.dist);
+  const taken = EXTRAS.filter(o => o !== P).map(o => o.root.position);
+  const start = far2near.find(st =>
+                  taken.every(t => Math.hypot(t.x - st.pos.x, t.z - st.pos.z) > PERSON_SEP * 2))
+             || far2near[0];
+  if (start) {
+    P.root.position.copyFrom(start.pos);
+    P.recent = [start.key];        // 태어난 자리로 곧장 되돌아가지 않게
+  }
+  extraNextTarget(P);
+  setStatus("인원 추가 — " + R.label + " (" + roleKey + ") · 갈 수 있는 곳 " + pool.length + "곳");
+  console.log("[ROLE]", roleKey, R.label, "— 스테이션",
+              pool.map(s => s.label + "(" + s.dist.toFixed(1) + "m)").join(", "));
+  return P;
+}
+/* ══ 사람끼리 겹침 방지 ═══════════════════════════════════════════════════
+   설비 충돌(resolvePersonCollision)은 사람↔설비만 본다. 인원이 둘 이상이면 서로를
+   통과해 **같은 자리에 겹쳐 서는** 장면이 나오고, 그 프레임은 GT 박스가 하나로 붙어
+   학습 데이터로 못 쓴다.
+
+   주인공은 밀지 않는다 — WASD로 조작하는 대상을 밀면 조작감이 망가진다.
+   대신 추가 인원이 비켜준다(실제로도 작업자가 조작자를 피한다). 추가 인원끼리는
+   서로 절반씩 물러난다. 민 뒤에는 설비 충돌을 다시 걸어 벽 안으로 밀려나지 않게 한다. */
+const PERSON_SEP = 0.62;
+/* 사람끼리 겹쳐 서지 않게 — GT 박스가 붙는 프레임 방지.
+   **여러 번 돌린다.** 1패스로는 3명 이상에서 수렴하지 않는다: A를 B에서 밀어내면
+   그 결과로 A가 C를 파고들고, 그 프레임에서는 이미 A-C 검사가 끝난 뒤다
+   (실측: 3명일 때 최소 간격 0.39m — 반경 0.26 두 사람이 0.13m 겹친다).
+   3패스면 실측 위반이 0으로 떨어진다. 사람 수가 적어 비용은 무시할 만하다. */
+const SEP_PASSES = 3;
+function resolvePeopleSeparation() {
+  if (!EXTRAS.length) return;
+  const mp = person.node.position;
+  for (let pass = 0; pass < SEP_PASSES; pass++) {
+  for (const P of EXTRAS) {                     // ① 추가 인원 ↔ 주인공
+    const p = P.root.position;
+    const dx = p.x - mp.x, dz = p.z - mp.z, d = Math.hypot(dx, dz);
+    if (d < PERSON_SEP && d > 1e-4) {
+      p.x = mp.x + dx / d * PERSON_SEP;
+      p.z = mp.z + dz / d * PERSON_SEP;
+      resolvePersonCollision(p);
+    }
+  }
+  for (let i = 0; i < EXTRAS.length; i++)       // ② 추가 인원끼리
+    for (let j = i + 1; j < EXTRAS.length; j++) {
+      const a = EXTRAS[i].root.position, b = EXTRAS[j].root.position;
+      const dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz);
+      if (d < PERSON_SEP && d > 1e-4) {
+        const push = (PERSON_SEP - d) / 2, nx = dx / d, nz = dz / d;
+        a.x -= nx * push; a.z -= nz * push;
+        b.x += nx * push; b.z += nz * push;
+        resolvePersonCollision(a); resolvePersonCollision(b);
+      }
+    }
+  }
+}
+/* ══ 팔↔사람 접촉 ═══════════════════════════════════════════════════════════
+   안전 링(1.2/2.0m)은 **베이스 중심 원**이라 팔이 어느 쪽을 향하는지 모른다.
+   실제 위험은 "팔이 지금 그 사람 쪽으로 뻗어 있는가"다 — 회의에서 나온
+   "튀김기 하고 있을 때 반대편에 위치하면 문제가 안 됨"이 정확히 이 얘기다.
+   그래서 팔 세그먼트(선분 3개)와 사람 원기둥의 최단거리를 직접 잰다.
+   이 값이 링 판정과 따로 노는 지점이 곧 '반경만으로는 부족하다'의 근거가 된다. */
+const ARM_R = 0.09;            // 팔 굵기 반경 (상완 0.135/2 + 여유)
+const STRIKE_COOLDOWN = 6000;  // 한 번 맞으면 이만큼은 다시 안 맞는다 (연속 트리거 방지)
+/* ── 끼임 버둥거림 ──
+   **전용 클립이 없다.** 이 캐릭터의 45종에 '몸부림'은 없고, 쓸 수 있는 건 15종뿐이다.
+   그래서 있는 것으로 합성한다:
+     · push(Push_Loop) — 양손을 앞으로 내밀어 미는 루프. 팔을 밀어내려는 몸짓으로 읽힌다(화면 확인)
+     · hit / hitHead   — 짧은 충격. 주기적으로 섞어 '또 눌린다'를 만든다
+     · 몸 흔들림       — 고정점 주변 ±3.5cm·요 ±9°. 클립만으로는 안 나오는 '애쓰는' 느낌
+   흔들림은 **고정점 주변으로만** 준다. 실제로 밀려나면 낀 게 아니게 되기 때문이다. */
+const STRUGGLE_PUSH_MS = 1200, STRUGGLE_JOLT_MS = 420;
+function struggleUpdate(P, dt) {
+  if (!P.pinAnchor) {
+    P.pinAnchor = { x:P.root.position.x, z:P.root.position.z, y:P.root.rotation.y };
+    P.pinPhase = 0; P.pinT = 0;
+    extraAct(P, "push", true, 1.15);
+  }
+  P.pinT += dt;
+  const span = P.pinPhase === 0 ? STRUGGLE_PUSH_MS : STRUGGLE_JOLT_MS;
+  if (P.pinT >= span) {
+    P.pinT = 0; P.pinPhase = 1 - P.pinPhase;
+    if (P.pinPhase === 0) extraAct(P, "push", true, 1.15);
+    else extraAct(P, ((P.rng || RNG).next() < 0.5) ? "hit" : "hitHead", false, 1.25);
+  }
+  const t = (P.struckT || 0) / 1000;
+  P.root.position.x = P.pinAnchor.x + Math.sin(t * 9.1) * 0.035;
+  P.root.position.z = P.pinAnchor.z + Math.cos(t * 7.3) * 0.030;
+  P.root.rotation.y = P.pinAnchor.y + Math.sin(t * 5.7) * 0.16;
+}
+function segDist(a, b, px, pz) {
+  const abx = b.x - a.x, abz = b.z - a.z;
+  const L2 = abx * abx + abz * abz;
+  let t = L2 > 1e-9 ? ((px - a.x) * abx + (pz - a.z) * abz) / L2 : 0;
+  t = clamp(t, 0, 1);
+  return Math.hypot(px - (a.x + abx * t), pz - (a.z + abz * t));
+}
+/* 팔 표면에서 사람 표면까지의 수평 거리. 음수면 겹친 것(=접촉). */
+function armClearance(px, pz) {
+  const j = JOINTS.map(x => x.node.getAbsolutePosition());
+  const tip = effector().getAbsolutePosition();
+  const segs = [[j[1], j[2]], [j[2], j[3]], [j[3], tip]];
+  let best = Infinity;
+  for (const [a, b] of segs) best = Math.min(best, segDist(a, b, px, pz));
+  return best - ARM_R - PERSON_R;
+}
+/* 접촉 처리 — 회의 요구의 "사람이 로봇팔에 밀림 → 쓰러짐".
+   맞은 사람은 팔 반대 방향으로 밀려나고 hit → down 을 재생한다. */
+function armContactUpdate(dt) {
+  if (!JOINTS.length) return;
+  const moving = !!state.auto;                       // 멈춰 있는 팔에 부딪히는 건 사고가 아니다
+  for (const P of EXTRAS) {
+    const p = P.root.position;
+    const clr = armClearance(p.x, p.z);
+    P.armClearance = clr;
+    if (P.struckT > 0) {                             // 맞아 쓰러졌거나 끼어 있는 동안
+      P.struckT -= dt;
+      if (P.pinned) struggleUpdate(P, dt);           // 끼임은 가만히 있지 않는다
+      if (P.struckT <= 0) {
+        P.struckT = 0; P.pinned = false; P.pinAnchor = null;
+        P.mode = "walk"; extraNextTarget(P);
+      }
+      continue;
+    }
+    if (!moving || clr > 0) continue;
+    // ── 접촉 ──
+    const j = JOINTS.map(x => x.node.getAbsolutePosition());
+    const tip = effector().getAbsolutePosition();
+    let best = Infinity, bp = null;
+    for (const [a, b] of [[j[1], j[2]], [j[2], j[3]], [j[3], tip]]) {
+      const d = segDist(a, b, p.x, p.z);
+      if (d < best) { best = d; bp = { a, b }; }
+    }
+    // 팔 축에서 바깥으로 밀어낸다
+    const abx = bp.b.x - bp.a.x, abz = bp.b.z - bp.a.z, L2 = abx*abx + abz*abz;
+    let t = L2 > 1e-9 ? ((p.x-bp.a.x)*abx + (p.z-bp.a.z)*abz) / L2 : 0;
+    t = clamp(t, 0, 1);
+    const cx = bp.a.x + abx*t, cz = bp.a.z + abz*t;
+    let nx = p.x - cx, nz = p.z - cz;
+    const nl = Math.hypot(nx, nz) || 1; nx /= nl; nz /= nl;
+    /* ── 밀림인가 끼임인가 ──
+       물리적 차이는 **밀려날 자리가 있느냐** 하나다. 팔 축 바깥으로 밀어낸 자리를 먼저
+       계산해 보고, 설비에 막혀 되돌아오면서 여전히 팔에 닿아 있으면 끼임이다.
+       급식실에서 실제로 위험한 곳은 솥과 카트 사이처럼 **양쪽이 막힌 슬롯**이다. */
+    /* 판정 기준은 "팔에서 **겨우** 벗어날 만큼의 자리가 비어 있는가"다.
+       넉넉히 밀어낸 자리를 보면 안 된다 — 0.70m를 밀면 장애물을 훌쩍 넘어 빈 바닥에
+       착지해서, 슬롯에 낀 사람도 '밀려났다'로 판정된다(실측: 막힌 방향 7/8인데 충돌로 나옴).
+       팔 표면에서 5cm만 벗어난 지점이 설비로 막혀 있으면 그 사람은 빠져나갈 데가 없다. */
+    const need = ARM_R + PERSON_R + 0.05;
+    const minClear = new V3(cx + nx * need, 0, cz + nz * need);
+    const pinned = resolvePersonCollision(minClear.clone());
+    const esc = pinned ? minClear
+              : new V3(cx + nx * (need + 0.30), 0, cz + nz * (need + 0.30));
+    if (!pinned) resolvePersonCollision(esc);
+    const who = JOB[P.job] ? JOB[P.job].label : P.role;
+    P.mode = "idle"; P.path = []; P.dwellT = 0;
+    P.root.rotation.y = Math.atan2(-nx, -nz);        // 팔 쪽을 향한 채
+    if (typeof triggerEstop === "function") triggerEstop(pinned ? "팔↔사람 끼임" : "팔↔사람 접촉");
+    if (pinned) {
+      /* 끼임 — **밀어내지 않는다.** 빠져나갈 데가 없어서 낀 것인데 좌표를 옮기면
+         그림과 판정이 어긋난다. 그 자리에서 맞은 자세로 버틴다. */
+      P.pinned = true; P.pinAnchor = null;          // 다음 프레임부터 버둥거림 시작
+      P.struckT = STRIKE_COOLDOWN * 2;
+      extraAct(P, "hit", false, 1.25);              // 첫 충격 — 이후 struggleUpdate가 이어받는다
+      setStatus("⛔ 끼임 — 조리원이 로봇팔과 설비 사이에 끼었다 (" + who + ")");
+      console.warn("[PINCH] 팔↔사람 끼임 · 침투", (-clr*1000).toFixed(0) + "mm · 탈출로 없음");
+    } else {
+      P.pinned = false;
+      p.x = esc.x; p.z = esc.z;                      // 밀려남
+      P.struckT = STRIKE_COOLDOWN;
+      extraAct(P, "hit", false);
+      setTimeout(() => { if (P.struckT > 0 && !P.pinned) extraAct(P, "down", false); }, 420);
+      setStatus("⛔ 충돌 — 로봇팔이 조리원을 쳐 넘어뜨림 (" + who + ")");
+      console.warn("[CONTACT] 팔↔사람 충돌 · 침투", (-clr*1000).toFixed(0) + "mm · 밀림",
+                   Math.hypot(esc.x - cx, esc.z - cz).toFixed(2) + "m");
+    }
+  }
+}
+/* ══ 사고 데모 — 충돌(밀림) / 끼임 ══════════════════════════════════════════
+   둘의 차이는 **밀려날 자리가 있느냐**뿐이다. 그래서 자리를 골라 세우는 것으로 갈린다:
+     · 충돌 — 사방이 트인 바닥. 팔에 맞고 밀려나 넘어진다.
+     · 끼임 — 솥과 카트 사이처럼 막힌 슬롯. 밀 데가 없어 그 자리에 낀다.
+   지점은 하드코딩하지 않고 **런타임에 찾는다** — 설비를 옮기면 좌표가 바뀌기 때문이다.
+   기준: ① 사람이 설 수 있고 ② 팔의 이송선(솥→카트)에 가깝고 ③ 막힌 방향 수가 조건에 맞을 것. */
+function findHazardSpot(kind) {
+  const B = LAYOUT.robot.base, F = LAYOUT.fryer.pos;
+  const cart = new V3(-0.50, 0, 2.10);                 // 이송 목적지(카트)
+  const enclosure = (x, z) => {
+    let n = 0;
+    for (let a = 0; a < 360; a += 45) {
+      const th = a * Math.PI / 180;
+      if (resolvePersonCollision(new V3(x + Math.cos(th)*0.70, 0, z + Math.sin(th)*0.70))) n++;
+    }
+    return n;
+  };
+  let best = null;
+  for (let x = -1.40; x <= 0.80; x += 0.05) for (let z = 0.80; z <= 2.60; z += 0.05) {
+    const p = new V3(x, 0, z);
+    if (resolvePersonCollision(p.clone())) continue;             // 설 수 없는 자리
+    if (Math.hypot(x - B.x, z - B.z) > SAFE.NOM_SLOW) continue;  // 팔이 닿는 범위
+    const blk = enclosure(x, z);
+    if (kind === "pinch" ? blk < 6 : blk > 3) continue;
+    // 솥→카트 이송선까지의 거리 (가까울수록 팔이 지나간다)
+    const abx = cart.x - F.x, abz = cart.z - F.z, L2 = abx*abx + abz*abz;
+    let t = clamp(((x - F.x)*abx + (z - F.z)*abz) / L2, 0, 1);
+    const dLine = Math.hypot(x - (F.x + abx*t), z - (F.z + abz*t));
+    const score = dLine + (kind === "pinch" ? -0.05 * blk : 0.05 * blk);
+    if (!best || score < best.score) best = { x, z, blk, dLine:+dLine.toFixed(2), score };
+  }
+  return best;
+}
+/* 데모 실행 — 사람을 그 자리에 세우고, 검출 실패를 켠 뒤 로봇을 돌린다 */
+async function demoHazard(kind) {
+  const spot = findHazardSpot(kind);
+  if (!spot) { setStatus("데모 실패 — 조건에 맞는 지점을 못 찾았습니다"); return null; }
+  if (!EXTRAS.length) await spawnJob("cook");
+  const P = EXTRAS[0];
+  if (!P) { setStatus("캐릭터가 꺼져 있어 데모를 만들 수 없습니다"); return null; }
+  P.struckT = 0; P.pinned = false;
+  P.root.position.set(spot.x, 0, spot.z);
+  P.mode = "idle"; P.path = []; P.dwellT = 9e9;       // 그 자리에 서 있게 한다
+  extraAct(P, "interact", true);
+  clearEstop && clearEstop();
+  SAFE.blind = true;                                  // 검출 실패 — 로봇이 안 멈춘다
+  if (!state.auto) $("autoBtn").click();
+  setStatus((kind === "pinch" ? "끼임" : "충돌") + " 데모 — 조리원 (" +
+            spot.x.toFixed(2) + ", " + spot.z.toFixed(2) + ") · 막힌 방향 " + spot.blk +
+            "/8 · **검출 실패 상태**라 로봇이 멈추지 않습니다");
+  console.log("[DEMO]", kind, spot);
+  return spot;
+}
+function demoHazardClear() {
+  SAFE.blind = false;
+  clearEstop && clearEstop();
+  EXTRAS.forEach(P => { P.struckT = 0; P.pinned = false; P.dwellT = 0; P.mode = "walk";
+                        if (P.job) extraNextTarget(P); });
+  setStatus("사고 데모 해제 — 검출·안전 정지 복구");
+}
+/* ══ 작업 겹침 — 사고를 '설계'하지 않고 '일어나게' 한다 ═══════════════════════
+   카트를 로봇 옆에 두는 건 함정이 아니다. **로봇이 바스켓을 꺼내 담는 목적지**라
+   거기 없으면 로봇이 할 일이 없다. 문제는 물건이 아니라 **시간**이다:
+   로봇이 카트로 옮기는 동안 배식 담당도 그 카트에서 바스켓을 가져가려 하면,
+   둘이 같은 자리를 동시에 필요로 한다. 실제 산업 사고 대부분이 이 모양이다 —
+   누가 위험한 걸 갖다 놔서가 아니라 작업 동선이 겹쳐서.
+
+   그래서 장애물을 추가하지 않는다. **배식 담당이 로봇의 작업 단계를 보고 움직이게**만 한다.
+   겹치면 사고가 나고, 안 겹치면 아무 일도 없다. 그게 현장이다. */
+const OVERLAP = {
+  on: true,
+  from: 2, to: 4,     // 이송 단계(카트로 이송 → 상공 정렬 → 안착)
+  lead: 0,            // 로봇보다 몇 ms 먼저 출발하나 (0=단계 진입과 동시)
+  cool: 0, COOL: 14000,
+  events: 0,
+};
+function workOverlapUpdate(dt) {
+  if (!OVERLAP.on || !state.auto) return;
+  OVERLAP.cool = Math.max(0, OVERLAP.cool - dt);
+  if (OVERLAP.cool > 0) return;
+  if (state.seqIdx < OVERLAP.from || state.seqIdx > OVERLAP.to) return;
+  const st = STATION.cartPick;
+  if (!st) return;
+  // 배식 담당 중 지금 다른 일을 하고 있는 사람 하나를 부른다
+  const P = EXTRAS.find(p => p.job === "carry" && !p.struckT &&
+                             !(p.station && p.station.key === "cartPick"));
+  if (!P) return;
+  P.dwellT = 0; P.mode = "walk";
+  const prev = P.station;
+  P.station = Object.assign({ key:"cartPick", dist:0 }, st);
+  if (!setPathTo(P, st.pos)) { P.station = prev; return; }   // 길이 없으면 없던 일로
+  P.overlapUntil = performance.now() + 25000;                // 도착할 때까지 목표를 붙잡는다
+  OVERLAP.cool = OVERLAP.COOL;
+  OVERLAP.events++;
+  setStatus("작업 겹침 — 배식 담당이 바스켓을 가지러 카트로 (로봇 이송 중)");
 }
 /* 안전 판정용 — 모든 인원 중 로봇에 가장 가까운 사람 */
 function nearestPerson() {
