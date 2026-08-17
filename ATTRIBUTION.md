@@ -22,5 +22,10 @@ env_table  env_rack  env_sink  env_bin  env_pancart  env_wallrack
 env_kettle_nb  env_kettle_nb_closed  env_fridge  env_serve  env_basketcart
 ```
 
-`cook_rig_v47.glb`(조리원 캐릭터)는 외부 소스 기반 파생 에셋이다.
-리깅 스펙은 `character-manifest.json`을 참조.
+사람 캐릭터는 외부 소스 기반 파생 에셋이다.
+
+| 파일 | 용도 |
+|---|---|
+| `person_cook_v5.glb` | 기본 조리원 — 본 67개, 애니메이션 45종 |
+| `person_base_v1.glb` | `?cook=base` 비교용 원본 리그 |
+| `cook_rig_v47.glb` | `?cook=old` 이전 캐릭터 |
