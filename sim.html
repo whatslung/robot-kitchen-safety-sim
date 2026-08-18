@@ -2897,7 +2897,7 @@ function kfStep(f, z, dt, sa2, sm2) {
   f.P10 = P10 - K1*P00; f.P11 = P11 - K1*P01;
 }
 const PRED = { horizon:1.6, steps:12, vel:new V3(0,0,0), lastPos:null, lastT:0,
-               tStop:Infinity, tSlow:Infinity, line:null, band:null, level:0,
+               tStop:Infinity, tSlow:Infinity, line:null, band:null, showBand:true, level:0,
                /* sigA = 사람 가감속 불확실성(㎧²). 이 값이 곧 지평선 끝 위치 불확실성을 지배한다.
                   실측(2026-08-13) — 사람이 **가만히 서 있을 때** 예측 정지가 오발동하는지:
                     1.2 → sigma 2.19m → 2.5m에서 오탐 ✗   (계획서의 "고정물 지속 오탐=영구정지")
@@ -3022,30 +3022,31 @@ function predictionUpdate(srcPos, now) {
     PRED.line = BABYLON.MeshBuilder.CreateLines("predLine", { points: pts, instance: PRED.line });
   }
   PRED.line.setEnabled(SCALE.m(speed) > 0.08);   // 0.08㎧ 이상 이동 중일 때만
-  PRED.line.color = PRED.tStop < Infinity ? C3.FromHexString("#f85149")
-                  : PRED.tSlow < Infinity ? C3.FromHexString("#e3b341")
-                  : C3.FromHexString("#2ea043");
-  // 3D σ 밴드 — 예측 경로를 따라 (t/horizon)·σ 만큼 좌우로 벌린 반투명 리본
-  const bandCol = PRED.tStop < Infinity ? C3.FromHexString("#f85149")
+  const predCol = PRED.tStop < Infinity ? C3.FromHexString("#f85149")
                 : PRED.tSlow < Infinity ? C3.FromHexString("#e3b341")
                 : C3.FromHexString("#2ea043");
-  const sAU = SCALE.au(PRED.sigma), np = pts.length, left = [], right = [];
-  for (let k = 0; k < np; k++) {
-    const a = pts[Math.max(0,k-1)], b = pts[Math.min(np-1,k+1)];
-    const dx = b.x-a.x, dz = b.z-a.z, len = Math.hypot(dx,dz)||1;
-    const nx = -dz/len, nz = dx/len, w = sAU * (k/(np-1));
-    left.push(new V3(pts[k].x+nx*w, 0.05, pts[k].z+nz*w));
-    right.push(new V3(pts[k].x-nx*w, 0.05, pts[k].z-nz*w));
+  PRED.line.color = predCol;
+  // 3D σ 밴드 — 예측 경로를 따라 (t/horizon)·σ 만큼 좌우로 벌린 반투명 리본
+  const np = pts.length;
+  if (np > 1) {
+    const sAU = SCALE.au(PRED.sigma), left = [], right = [];
+    for (let k = 0; k < np; k++) {
+      const a = pts[Math.max(0,k-1)], b = pts[Math.min(np-1,k+1)];
+      const dx = b.x-a.x, dz = b.z-a.z, len = Math.hypot(dx,dz)||1;
+      const nx = -dz/len, nz = dx/len, w = sAU * (k/(np-1));
+      left.push(new V3(pts[k].x+nx*w, 0.05, pts[k].z+nz*w));
+      right.push(new V3(pts[k].x-nx*w, 0.05, pts[k].z-nz*w));
+    }
+    PRED.band = BABYLON.MeshBuilder.CreateRibbon("predBand",
+        { pathArray:[left, right], updatable:true, instance: PRED.band || undefined }, scene);
+    if (!PRED.band.material) {
+      const bm = new BABYLON.StandardMaterial("predBandMat", scene);
+      bm.backFaceCulling = false; bm.alpha = 0.22; bm.disableLighting = true;
+      PRED.band.material = bm; PRED.band.isPickable = false;
+    }
+    PRED.band.material.emissiveColor = predCol; PRED.band.material.diffuseColor = predCol;
+    PRED.band.setEnabled(PRED.moving && PRED.showBand);   // 독립 토글 PRED.showBand
   }
-  PRED.band = BABYLON.MeshBuilder.CreateRibbon("predBand",
-      { pathArray:[left, right], updatable:true, instance: PRED.band || undefined }, scene);
-  if (!PRED.band.material) {
-    const bm = new BABYLON.StandardMaterial("predBandMat", scene);
-    bm.backFaceCulling = false; bm.alpha = 0.22; bm.disableLighting = true;
-    PRED.band.material = bm; PRED.band.isPickable = false;
-  }
-  PRED.band.material.emissiveColor = bandCol; PRED.band.material.diffuseColor = bandCol;
-  PRED.band.setEnabled(PRED.moving);
 }
 
 /* 경고등 3단계 — 키오스크 시그널타워(GLB) 램프에 연동 */
@@ -4998,11 +4999,11 @@ function drawBirdseye(ctx, W, H) {
   }
   ctx.lineWidth = 2;                                // 감속·정지 원
   ctx.strokeStyle = "#2ea043"; ctx.beginPath(); ctx.arc(cx, cy, SAFE.slowR*pxPerM, 0, 7); ctx.stroke();
-  ctx.strokeStyle = "#e3b341"; ctx.beginPath(); ctx.arc(cx, cy, SAFE.stopR*pxPerM, 0, 7); ctx.stroke();
+  ctx.strokeStyle = SAFE.dist < SAFE.stopR ? "#f85149" : "#e3b341";   // 정지 발동 시 빨강
+  ctx.beginPath(); ctx.arc(cx, cy, SAFE.stopR*pxPerM, 0, 7); ctx.stroke();
   ctx.fillStyle = "#e6edf3"; ctx.beginPath(); ctx.arc(cx, cy, 4, 0, 7); ctx.fill();   // 로봇
   ctx.fillStyle = "#8b949e"; ctx.font = "10px ui-monospace,monospace"; ctx.textBaseline="top";
   ctx.fillText(BE.viewR.toFixed(1)+"m", x0+4, y0+4);
-  ctx._beCtx = { cx, cy, half, pxPerM };            // Task3 재사용
   const LVL = ["#2ea043","#e3b341","#f85149"];
   // 추적 사람 점 (MIL 켜짐이면 트랙, 아니면 GT 사람)
   if (MIL.on && MIL.tracks && Object.keys(MIL.tracks).length) {
