@@ -4982,6 +4982,41 @@ function drawBirdseye(ctx, W, H) {
   ctx.fillStyle = "#8b949e"; ctx.font = "10px ui-monospace,monospace"; ctx.textBaseline="top";
   ctx.fillText(BE.viewR.toFixed(1)+"m", x0+4, y0+4);
   ctx._beCtx = { cx, cy, half, pxPerM };            // Task3 재사용
+  const LVL = ["#2ea043","#e3b341","#f85149"];
+  // 추적 사람 점 (MIL 켜짐이면 트랙, 아니면 GT 사람)
+  if (MIL.on && MIL.tracks && Object.keys(MIL.tracks).length) {
+    for (const id in MIL.tracks) {
+      const p = MIL.tracks[id].pos; if (!p) continue;
+      const [px, py] = beMap(p.x, p.z, cx, cy, half);
+      ctx.fillStyle = BE_IDCOL[(+id) % BE_IDCOL.length] || "#e6edf3";
+      ctx.beginPath(); ctx.arc(px, py, 4, 0, 7); ctx.fill();
+      ctx.font = "9px ui-monospace,monospace"; ctx.textBaseline="bottom";
+      ctx.fillText("#"+id, px+5, py-2);
+    }
+  } else {
+    const p = person.node.position;
+    const [px, py] = beMap(p.x, p.z, cx, cy, half);
+    ctx.fillStyle = "#e6edf3"; ctx.beginPath(); ctx.arc(px, py, 4, 0, 7); ctx.fill();
+  }
+  // 위협 트랙 예측 경로 + σ 음영 (이동 중일 때만)
+  if (PRED.moving && PRED.pathPts && PRED.pathPts.length > 1) {
+    const col = LVL[PRED.level || 0];
+    const pp = PRED.pathPts.map(q => beMap(q.x, q.z, cx, cy, half));
+    const sigPx = PRED.sigma * pxPerM;              // σ[m]→px
+    const n = pp.length, L = [], R = [];            // 경로 좌우로 (t/horizon)·σ 만큼 벌린 폴리곤
+    for (let k = 0; k < n; k++) {
+      const a = pp[Math.max(0,k-1)], b = pp[Math.min(n-1,k+1)];
+      const dx = b[0]-a[0], dy = b[1]-a[1], len = Math.hypot(dx,dy)||1;
+      const nx = -dy/len, ny = dx/len, w = sigPx * (k/(n-1));
+      L.push([pp[k][0]+nx*w, pp[k][1]+ny*w]); R.push([pp[k][0]-nx*w, pp[k][1]-ny*w]);
+    }
+    ctx.beginPath(); ctx.moveTo(L[0][0], L[0][1]);
+    for (const q of L) ctx.lineTo(q[0], q[1]);
+    for (let k = R.length-1; k >= 0; k--) ctx.lineTo(R[k][0], R[k][1]);
+    ctx.closePath(); ctx.fillStyle = col + "33"; ctx.fill();     // 반투명 σ 음영
+    ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.beginPath();   // 예측 경로 선
+    ctx.moveTo(pp[0][0], pp[0][1]); for (const q of pp) ctx.lineTo(q[0], q[1]); ctx.stroke();
+  }
   ctx.restore();
 }
 function drawMilBoxes(ctx, W, H, camId) {
