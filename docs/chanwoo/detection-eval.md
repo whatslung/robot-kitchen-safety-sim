@@ -182,9 +182,9 @@ uv run python train/eval_real.py dataset/3way/real_sim.yaml  --split test --weig
 | | params | 체크포인트 | GPU(RTX 5070) | CPU |
 |---|---|---|---|---|
 | YOLO11s | 9.4M | 19M(.pt)/37M(onnx) | 6.3 ms | 29 ms |
-| RF-DETR-Nano | 30.5M | 116M | 10.1 ms | (ViT — 훨씬 느림) |
+| RF-DETR-Nano | 30.5M | 116M | 10.1 ms | 94 ms |
 
-→ GPU에선 둘 다 실시간(RF-DETR ~1.6× 느림·~3× 큼). **불리함은 CPU/브라우저(onnxruntime-web)에서 큼** — ViT/어텐션이 무겁고 ort-web 배포가 까다로움. YOLO는 브라우저 배포가 가볍고 빠름.
+→ GPU에선 둘 다 실시간(RF-DETR ~1.6× 느림·~3× 큼). **CPU는 RF-DETR ~3.2× 느림**(94 vs 29ms, ~10fps). 불리함은 **CPU/브라우저(onnxruntime-web)에서 큼** — ViT/어텐션이 무겁고 ort-web(wasm) 배포는 더 느리고 까다로움. YOLO는 브라우저 배포가 가볍고 빠름.
 
 ### 5-4. 라이선스
 YOLO11/26·YOLO-Master = **AGPL-3.0**(상용 시 소스공개 의무). RF-DETR·YOLOX = **Apache-2.0**(상용 클린). DINOv3 = 커스텀 라이선스(상용 허용).
@@ -194,4 +194,16 @@ YOLO11/26·YOLO-Master = **AGPL-3.0**(상용 시 소스공개 의무). RF-DETR·
 - **배포 경량성 = YOLO 우위**(특히 브라우저).
 - **권고**: (a) 정확도 필요한 **서버(detect_server, GPU)엔 RF-DETR**, 브라우저 데모엔 YOLO **하이브리드**; 또는 (b) **RF-DETR(교사)→YOLO(학생) 지식 증류**로 "파운데이션 품질 + 엣지 속도" 결합.
 - **YOLOX**: 2021 코드로 최신 스택(py3.12/torch2.11) 설치 실패 + 정확도 열위 → 스킵.
+
+### 5-6. 지식 증류 — RF-DETR 교사 → YOLO 학생 (실사 GT 0장)
+`train/distill_pseudo.py`: RF-DETR(sim-only, 실사 전이 0.411)로 실사 이미지에 pseudo-label(conf 0.5) 생성 → 그 라벨로만 YOLO11s 학생 학습 → 실사 test(GT) 평가.
+
+| 학습 | mAP50 | Recall | Precision |
+|---|---|---|---|
+| YOLO sim-only | 0.048 | 0.270 | 0.072 |
+| **YOLO 증류 (교사 pseudo, 실사 GT 0)** | **0.233** | 0.327 | 0.473 |
+| RF-DETR 교사(sim-only) | 0.411 | 0.479 | 0.455 |
+| YOLO real-GT(500) 참고 | 0.879 | 0.829 | 0.848 |
+
+→ **실사 라벨 0장으로 YOLO가 0.048→0.233(~5×).** 파운데이션의 sim-to-real 능력을 경량·빠른 학생으로 이식 성공. 상한은 교사 pseudo 품질(교사의 57%)이며, 실사 GT가 있으면 GT가 우위. **증류는 실사 라벨이 부족한 배포 시나리오(급식실)에서 "빠른 YOLO + 파운데이션 전이"를 얻는 실전 레버.**
 
