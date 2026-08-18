@@ -4949,10 +4949,41 @@ function drawOverlay() {
     }
   }
   drawMilBoxes(ctx, overlayCv.width, overlayCv.height, SURV[mainView] ? mainView : MIL.cam);
+  drawBirdseye(ctx, overlayCv.width, overlayCv.height);
 }
 /* 모델 출력 박스 — 화면 오버레이와 캡처가 **같은 그림**을 쓰도록 떼어냈다.
    캡처는 3D만 렌더하므로 이걸 얹지 않으면 저장된 PNG에 박스가 없다.
    s는 해상도 배율 — 1280px 캡처에서도 글씨가 읽히게 한다. */
+/* 조감(bird's-eye) 예측 패널 — 위에서 내려다본 미니맵. 로봇 중심, 정지/감속 원,
+   추적 사람 점, 위협 트랙의 예측 경로 + σ 음영. 월드(x,z)[AU]→패널px 선형 매핑. */
+const BE = { on:true, size:220, viewR:3.5 };   // viewR = 패널 반폭이 담는 반경(m)
+const BE_IDCOL = ["#2ecc71","#3498db","#e67e22","#9b59b6","#1abc9c","#f39c12"];
+function beMap(wx, wz, cx, cy, half) {          // 월드 AU → 패널 px
+  const dxm = SCALE.m(wx - LAYOUT.robot.base.x), dzm = SCALE.m(wz - LAYOUT.robot.base.z);
+  return [cx + dxm / BE.viewR * half, cy - dzm / BE.viewR * half];  // 위=+Z
+}
+function drawBirdseye(ctx, W, H) {
+  if (!BE.on) return;
+  const sz = BE.size, pad = 12, x0 = W - sz - pad, y0 = H - sz - pad;
+  const cx = x0 + sz/2, cy = y0 + sz/2, half = sz/2, pxPerM = half / BE.viewR;
+  ctx.save();
+  ctx.fillStyle = "rgba(13,17,23,0.82)"; ctx.fillRect(x0, y0, sz, sz);
+  ctx.strokeStyle = "#30363d"; ctx.lineWidth = 1; ctx.strokeRect(x0, y0, sz, sz);
+  ctx.strokeStyle = "rgba(120,130,140,0.18)";      // 1m 격자
+  for (let m = -Math.floor(BE.viewR); m <= BE.viewR; m++) {
+    const gx = cx + m*pxPerM, gy = cy + m*pxPerM;
+    ctx.beginPath(); ctx.moveTo(gx, y0); ctx.lineTo(gx, y0+sz); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x0, gy); ctx.lineTo(x0+sz, gy); ctx.stroke();
+  }
+  ctx.lineWidth = 2;                                // 감속·정지 원
+  ctx.strokeStyle = "#2ea043"; ctx.beginPath(); ctx.arc(cx, cy, SAFE.slowR*pxPerM, 0, 7); ctx.stroke();
+  ctx.strokeStyle = "#e3b341"; ctx.beginPath(); ctx.arc(cx, cy, SAFE.stopR*pxPerM, 0, 7); ctx.stroke();
+  ctx.fillStyle = "#e6edf3"; ctx.beginPath(); ctx.arc(cx, cy, 4, 0, 7); ctx.fill();   // 로봇
+  ctx.fillStyle = "#8b949e"; ctx.font = "10px ui-monospace,monospace"; ctx.textBaseline="top";
+  ctx.fillText(BE.viewR.toFixed(1)+"m", x0+4, y0+4);
+  ctx._beCtx = { cx, cy, half, pxPerM };            // Task3 재사용
+  ctx.restore();
+}
 function drawMilBoxes(ctx, W, H, camId) {
   if (!MIL.on || !MIL.lastBoxes) return;
   if (camId !== MIL.lastBoxes.camId) return;   // 다른 시점이면 표시 안 함
@@ -6658,7 +6689,7 @@ window.__sim = {
   // 물리 · 안전
   PHYS, ROBOT_GUARD, buildRobotGuard, resetBasket, ONNX, onnxLoadModel, onnxInfer, PRED, ENV_RAND, randomizeEnvironment, placeOccluder, setExtraCount, spawnDebris, triggerEstop, clearEstop,
   // 모델 검증
-  MIL, milCapture, milMaskBoxes, drawOverlay, effector,
+  MIL, milCapture, milMaskBoxes, drawOverlay, effector, BE, drawBirdseye,
 };
 
 /* ══ Isaac풍 도킹 UI — 콘솔 · 스테이지 트리 · 메뉴바 ═════════════════════ */
