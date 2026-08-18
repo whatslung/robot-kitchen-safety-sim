@@ -9,6 +9,7 @@
 
     C:/Users/chanwoo/rfdetr-env/Scripts/python.exe train/distill_pseudo.py
 """
+import argparse
 import shutil
 from pathlib import Path
 
@@ -17,8 +18,12 @@ from rfdetr import RFDETRNano
 
 ROOT = Path(__file__).resolve().parent.parent
 TEACHER = str(ROOT / "training" / "rfdetr_nano" / "checkpoint_best_ema.pth")  # sim-only 교사
-OUT = ROOT / "dataset" / "distill"
-CONF = 0.5   # pseudo-label 신뢰도 하한
+_ap = argparse.ArgumentParser()
+_ap.add_argument("--conf", type=float, default=0.5)   # pseudo-label 신뢰도 하한
+_ap.add_argument("--out", default="dataset/distill")
+_a, _ = _ap.parse_known_args()
+OUT = (ROOT / _a.out) if not Path(_a.out).is_absolute() else Path(_a.out)
+CONF = _a.conf
 SPLITS = {"train": ROOT / "dataset/3way/real_train.txt",   # 실사 이미지(라벨은 무시)
           "val":   ROOT / "dataset/3way/real_val.txt"}
 

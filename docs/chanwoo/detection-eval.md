@@ -165,13 +165,16 @@ uv run python train/eval_real.py dataset/3way/real_sim.yaml  --split test --weig
 
 → YOLO26 ≈ YOLO11s (무승부). STAL(소객체 라벨할당)이 소규모 합성엔 이득 없음 → **YOLO 계열 안에선 아키텍처가 병목 아님**.
 
-### 5-2. 3-way sim-to-real (실사 test 137장, mAP50 / Recall)
-| 학습 | YOLO11s | RF-DETR-Nano |
-|---|---|---|
-| sim-only | 0.048 / 0.270 | **0.411 / 0.479** |
-| real-only (500) | 0.879 / 0.829 | **0.943 / 0.917** |
-| real+sim (700) | 0.898 / 0.844 | 0.905 / 0.900 |
-| real-full (YOLO ~3,406) | 0.980 / — | — |
+### 5-2. 3-way sim-to-real (실사 test 137장) — Recall / Precision / mAP50
+| 학습 | 모델 | Recall | Precision | mAP50 |
+|---|---|---|---|---|
+| sim-only | YOLO11s | 0.270 | 0.072 | 0.048 |
+| sim-only | **RF-DETR** | **0.479** | **0.455** | **0.411** |
+| real-only(500) | YOLO11s | 0.829 | 0.848 | 0.879 |
+| real-only(500) | **RF-DETR** | **0.917** | **0.931** | **0.943** |
+| real+sim(700) | YOLO11s | 0.844 | 0.860 | 0.898 |
+| real+sim(700) | RF-DETR | 0.900 | 0.877 | 0.905 |
+| real-full(~3,406) | YOLO11s | — | — | 0.980 |
 
 **핵심**:
 1. **sim→real 전이는 RF-DETR 압승**(0.411 vs 0.048). 원인 = RF-DETR의 **DINOv2 자기지도 백본** — 라벨 없이 실사 17억 장으로 배운 도메인 불변 특징이 합성 과적합을 막음. YOLO는 합성 표면에 과적합(sim val 0.688 ↔ 실사 0.048).
@@ -196,14 +199,18 @@ YOLO11/26·YOLO-Master = **AGPL-3.0**(상용 시 소스공개 의무). RF-DETR·
 - **YOLOX**: 2021 코드로 최신 스택(py3.12/torch2.11) 설치 실패 + 정확도 열위 → 스킵.
 
 ### 5-6. 지식 증류 — RF-DETR 교사 → YOLO 학생 (실사 GT 0장)
-`train/distill_pseudo.py`: RF-DETR(sim-only, 실사 전이 0.411)로 실사 이미지에 pseudo-label(conf 0.5) 생성 → 그 라벨로만 YOLO11s 학생 학습 → 실사 test(GT) 평가.
+`train/distill_pseudo.py`: RF-DETR(sim-only, 실사 전이 0.411)로 실사 이미지에 pseudo-label 생성 → 그 라벨로만 YOLO11s 학생 학습 → 실사 test(GT) 평가. 교사 conf(pseudo 채택 하한)로 pseudo 밀도 조절.
 
-| 학습 | mAP50 | Recall | Precision |
-|---|---|---|---|
-| YOLO sim-only | 0.048 | 0.270 | 0.072 |
-| **YOLO 증류 (교사 pseudo, 실사 GT 0)** | **0.233** | 0.327 | 0.473 |
-| RF-DETR 교사(sim-only) | 0.411 | 0.479 | 0.455 |
-| YOLO real-GT(500) 참고 | 0.879 | 0.829 | 0.848 |
+| 학습 | Recall | Precision | mAP50 | pseudo 박스 |
+|---|---|---|---|---|
+| YOLO sim-only | 0.270 | 0.072 | 0.048 | — |
+| YOLO 증류 conf 0.5 | 0.327 | 0.473 | 0.233 | ~1,600 |
+| **YOLO 증류 conf 0.25** | **0.533** | **0.568** | **0.491** | ~3,900 |
+| RF-DETR 교사(sim-only) | 0.479 | 0.455 | 0.411 | — |
+| YOLO real-GT(500) 참고 | 0.829 | 0.848 | 0.879 | — |
 
-→ **실사 라벨 0장으로 YOLO가 0.048→0.233(~5×).** 파운데이션의 sim-to-real 능력을 경량·빠른 학생으로 이식 성공. 상한은 교사 pseudo 품질(교사의 57%)이며, 실사 GT가 있으면 GT가 우위. **증류는 실사 라벨이 부족한 배포 시나리오(급식실)에서 "빠른 YOLO + 파운데이션 전이"를 얻는 실전 레버.**
+→ **실사 라벨 0장으로 YOLO가 0.048 → 0.491 (~10×).** 파운데이션의 sim-to-real 능력을 경량·빠른 학생으로 이식.
+- **교사 conf↓(pseudo 밀도↑)가 recall·precision·mAP50 전부 개선** (0.5→0.25에서 pseudo 2.4배). 노이즈보다 커버리지 이득이 큼.
+- **학생(0.491) > 교사(0.411)** — 노이즈 pseudo를 500장에 평균 학습하면 개별 교사 추론보다 깨끗한 신호가 되는 student-beats-teacher.
+- 단 real-GT(0.879)엔 못 미침 → **실사 GT가 있으면 GT가 최선**. 증류의 값어치는 **실사 라벨이 없을 때**(급식실 배포). "빠른 YOLO + 파운데이션 전이"를 라벨 없이 얻는 실전 레버.
 
