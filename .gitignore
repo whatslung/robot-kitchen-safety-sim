@@ -40,3 +40,8 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# 시크릿 — 절대 커밋 금지 (.env.example만 커밋)
+.env
+.env.local
+.env.*.local
