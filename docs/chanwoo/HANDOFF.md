@@ -1,12 +1,23 @@
 # 핸드오프 — 조리로봇 안전: 검출 학습 루프
 
-> 정식 작업 레포: `E:\VsCodeProjects\robot-kitchen-safety-sim`
-> 최종 갱신: 2026-08-17
+> 최종 갱신: 2026-08-18
 
 ## 한 줄 요약
 
-시뮬레이터에서 **합성 데이터를 만들어 YOLO를 학습 → 시뮬에서 검출이 되는지** 검증하는 루프를 구축 중.
-파이프라인은 검증됨(kettle mAP50 0.995), **person 검출만 데이터 부족으로 약함**. 다음 할 일은 **overhead(천장) 전용으로 데이터를 더 뽑아 재학습**.
+시뮬에서 합성 데이터를 만들어 YOLO를 학습 → 시뮬에서 검출을 검증하는 루프.
+**2026-08-18: 직교 나디르(top-down) 데이터로 파인튜닝해 person 검출 make-or-break PASS**
+— recall **0.688** / precision **0.797** (stock 0.175 / 0.374 대비). 설비 오탐이 잡혀
+**나디르 top-down 채택 근거 확보**. 다음은 데이터 증량으로 recall↑ + sim-to-real.
+
+## 🟢 2026-08-18 결과 (핵심)
+
+- **직교 나디르 카메라(CAM7 `orthotop`) 추가** — 원근 0, 사람 크기가 프레임 전역 균일(112.5px/m).
+  `sim.html` 콘솔에서 `__sim.DATAGEN.cams=['orthotop']`로 생성. 미검출 사각 없음.
+- **YOLO11s 파인튜닝**(sim-person 200장, 6클래스) → person recall 0.688 · precision 0.797 ·
+  mAP50 0.747, 전 클래스 mAP50 0.922. 산출물 `training/yolo11s_orthotop/weights/best.pt`(+`.onnx`).
+- **환경/구조**: uv 프로젝트(`pyproject.toml`·`uv.lock`, torch **cu128**, RTX 5070 sm_120 검증).
+  검출서버 `backend/`, 학습 스크립트 `train/`(prepare_yolo_split·train_sim·eval_stock)로 분리.
+- **판정**: 나디르 top-down = **검출 축 통과**. 단 합성 val 기준이라 **sim-to-real은 다음 축**.
 
 ---
 
@@ -39,7 +50,7 @@ CCTV(천장) → 검출(YOLO) → 추적(ByteTrack, ID) → 사람별 x,y 궤적
 - `sim.html`에 **overhead 전용 생성 옵션** 추가(아래).
 
 **🔴 남은 것 / 막힌 것**
-- **person 검출 약함**: 37장(3~6시점 혼합)에서 person mAP50 0.11, **Recall 0**. 안전의 핵심인데 최악. → 데이터 부족 문제(방법론 아님).
+- ~~**person 검출 약함**~~ → **해결(2026-08-18, 위 결과 참조)**: 직교 나디르 200장 파인튜닝으로 recall 0.688 달성. 옛 37장(3~6시점 혼합) mAP50 0.11·Recall 0은 데이터 부족·시점 혼합 탓이었음(방법론 아님).
 - **헤드리스 대량 생성 불가**: 브라우저 백그라운드 탭은 GPU 렌더가 멈춤(90초에 0샘플). **데이터 생성은 반드시 실제 브라우저 포그라운드**에서. 학습은 순수 Python으로 가능.
 
 ---
@@ -57,7 +68,7 @@ CCTV(천장) → 검출(YOLO) → 추적(ByteTrack, ID) → 사람별 x,y 궤적
 | 항목 | 경로 |
 |---|---|
 | 시뮬 (편집됨) | `robot-kitchen-safety-sim/sim.html` |
-| 검출 서버 | `robot-kitchen-safety-sim/tools/detect_server.py` |
+| 검출 서버 | `robot-kitchen-safety-sim/backend/detect_server.py` |
 | 옛 데이터셋(3~6시점 혼합, 37장, **참고용**) | `E:\다운로드\dataset` |
 | 학습 워크스페이스(분할·data.yaml·runs) | `E:\VsCodeProjects\cooking-robot-safety\train_sim` |
 | 학습된 가중치 | `...\train_sim\runs\detect\runs\sim6\weights\best.pt` |
@@ -96,10 +107,10 @@ KMP_DUPLICATE_LIB_OK=TRUE yolo detect train model=yolo11n.pt data=data.yaml \
 > 환경: anaconda python, **CPU only**, ultralytics 설치됨. `KMP_DUPLICATE_LIB_OK=TRUE` 필수(OMP 충돌 회피). names: `0 person 1 fire 2 smoke 3 robot 4 kettle 5 equipment`.
 
 ### 3. detect_server에 모델 물리기 & 검증
-`tools/detect_server.py`는 이미 **v2.0(FastAPI + ByteTrack + track id + 속도 vx/vy)** 로 업그레이드돼 있음(워킹카피, 미커밋). 검출→추적→속도까지 서버가 처리.
+`backend/detect_server.py`는 이미 **v2.0(FastAPI + ByteTrack + track id + 속도 vx/vy)** 로 업그레이드돼 있음(워킹카피, 미커밋). 검출→추적→속도까지 서버가 처리.
 ```bash
 pip install fastapi uvicorn ultralytics trackers supervision pillow numpy
-python tools/detect_server.py     # http://127.0.0.1:8000/detect  (/health로 상태 확인)
+python backend/detect_server.py     # http://127.0.0.1:8000/detect  (/health로 상태 확인)
 ```
 우리 모델 연결:
 - **49행** `MODEL = YOLO("yolov8n.pt")` → `YOLO(".../best.pt")`
