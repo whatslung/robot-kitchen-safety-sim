@@ -2986,7 +2986,7 @@ function predictionUpdate(srcPos, now) {
 
   const bx = LAYOUT.robot.base.x, bz = LAYOUT.robot.base.z;
   PRED.tStop = PRED.tSlow = Infinity;
-  const pts = [];
+  const pts = [], flat = [];
   const speed = Math.hypot(PRED.vel.x, PRED.vel.z);
   // 학습형 예측기가 등록돼 있고 응답이 신선하면 그 경로로 판정한다
   const useCustom = PRED.model === "custom" && customPredictTick(srcPos, now, dtMs);
@@ -3004,13 +3004,16 @@ function predictionUpdate(srcPos, now) {
     } else {
       px = srcPos.x + PRED.vel.x * t; pz = srcPos.z + PRED.vel.z * t;
     }
-    pts.push(new V3(px, 0.06, pz));
+    pts.push(new V3(px, 0.06, pz)); flat.push({ x:px, z:pz });
     // 보수적 판정 — 예측이 멀수록 불확실하므로 그만큼 '더 가까이 있을 수 있다'고 본다.
     // (등속 모델에는 불확실성 추정이 없어 sigma=0 → 종전과 동일하게 동작)
     const d = SCALE.m(Math.hypot(px - bx, pz - bz) - sigmaEff * (t / PRED.horizon));
     if (d < SAFE.stopR && PRED.tStop === Infinity) PRED.tStop = t;
     if (d < SAFE.slowR && PRED.tSlow === Infinity) PRED.tSlow = t;
   }
+  PRED.pathPts = flat;
+  PRED.moving = SCALE.m(speed) > 0.08;
+  PRED.level = PRED.tStop < Infinity ? 2 : PRED.tSlow < Infinity ? 1 : 0;
   // 예측 경로 폴리라인 — 이동 중일 때만 표시
   if (!PRED.line) {
     PRED.line = BABYLON.MeshBuilder.CreateLines("predLine", { points: pts, updatable: true }, scene);
