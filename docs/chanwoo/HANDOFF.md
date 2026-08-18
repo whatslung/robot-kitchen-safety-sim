@@ -18,6 +18,7 @@
 - **환경/구조**: uv 프로젝트(`pyproject.toml`·`uv.lock`, torch **cu128**, RTX 5070 sm_120 검증).
   검출서버 `backend/`, 학습 스크립트 `train/`(prepare_yolo_split·train_sim·eval_stock)로 분리.
 - **판정**: 나디르 top-down = **검출 축 통과**. 단 합성 val 기준이라 **sim-to-real은 다음 축**.
+- **예측 시각화 완료**: 라이브 (x,z) 트랙 → 칼만 예측 + σ 불확실성. **2D 조감 패널**(로봇·정지/감속 원·트랙 점·예측 경로·σ 음영) + **3D 씬 σ 밴드**. `검출→추적→예측` 사슬 시각적 완성. 소스는 `MIL.safety` 켜면 라이브 검출 트랙, 아니면 GT. 스펙·계획 `docs/chanwoo/{specs,plans}/2026-08-18-*`.
 
 ---
 
