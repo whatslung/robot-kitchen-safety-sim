@@ -1821,6 +1821,22 @@ const CAM_DEFS = [
      결과: 정지링 72/72 · 감속링 72/72 · 동선 9/12 · 증기 기둥 회피 유지. */
   { id:"front", label:"CAM6 솥 정면(통로 감시)", pos:new V3(1.50,2.15,-0.95),
     tgt:new V3(-0.80,0.35,1.60), fov:1.60 },
+  /* ── CAM7 직교 상부(나디르 GT) — ds_top(top-down 검출 파인튜닝) 생성 전용 ──────
+     top(CAM4)은 5m 원근 나디르라 프레임 중심에서 멀수록 사람이 원근으로 작아진다.
+     직교(orthographic) 투영은 원근이 0 → 사람 크기가 프레임 전체에서 **균일**하다.
+     → 구석까지 검출 가능한 크기가 보장돼 미검출 사각이 없고, 궤적이 잘리지 않는다.
+     이게 top-down 파인튜닝(make-or-break)의 데이터 조건이다.
+
+     실측(2026-08-17, §3-3): 전 동선 8곳 person 1600~2000px 균일, 박스 ~70×50 균일,
+     접근5+순회6 웨이포인트 11/11 전부 보임(person 1699~1999px).
+
+     center (1.45,3.21) = 전 동선(x[-2.2,5.1]·z[0,6.4])을 담는 중심.
+     ortho span = X 8.533 × Z 6.4 (960:720 = 4:3에 맞춰 X를 6.4×4/3로) → 112.5px/m 균일.
+     fov는 직교에서 무시된다(placeholder). ortho:{w,h}가 실제 프러스텀을 정한다.
+     noCeil: 5m는 천장 밖 가상 시점 — 후드/천장을 빼 조리라인 위를 직시(GT·데모 전용).
+     z축 +0.001 오프셋은 top과 같은 이유(수직 시점 yaw를 계약으로 고정: 세로=+Z, 가로=+X). */
+  { id:"orthotop", label:"CAM7 직교 상부(나디르 GT)", pos:new V3(1.450,5.00,3.210),
+    tgt:new V3(1.450,0,3.211), fov:1.30, noCeil:true, ortho:{ w:8.533, h:6.4 } },
 ];
 const SURV = {};
 /* 붙박이 카메라는 **항상 같은 비트**를 쓴다. 풀에서 뽑게 두면 저장/복원을 한 번 할 때마다
@@ -1853,6 +1869,14 @@ function makeSurvCam(d) {
   const bit = allocBit(d.id);
   const c = new BABYLON.UniversalCamera("cam_" + d.id, d.pos.clone(), scene);
   c.setTarget(d.tgt.clone()); c.fov = d.fov; c.minZ = 0.05; c.maxZ = 40;
+  /* 직교(orthographic) 투영 — 원근 0이라 사람 크기가 프레임 전체에서 균일.
+     ortho:{w,h}는 월드 프러스텀 폭(m). 나디르 요 고정(세로=+Z,가로=+X)이라
+     w↔월드X, h↔월드Z. 네 경계를 모두 명시해 뷰포트 종횡비에 흔들리지 않게 못박는다. */
+  if (d.ortho) {
+    c.mode = BABYLON.Camera.ORTHOGRAPHIC_CAMERA;
+    const hw = d.ortho.w / 2, hh = d.ortho.h / 2;
+    c.orthoLeft = -hw; c.orthoRight = hw; c.orthoBottom = -hh; c.orthoTop = hh;
+  }
   // 자기 하우징은 자기 시점에서 제외 · noCeil이면 천장 설비(CEIL_BIT)도 같이 뺀다
   c.layerMask = 0x0FFFFFFF & ~(bit | (d.noCeil ? CEIL_BIT : 0));
   const prop = new BABYLON.TransformNode("camProp_" + d.id, scene);
@@ -3487,6 +3511,20 @@ function instanceOfMesh(mesh) {
    Babylon 기본 fovMode = VERTICAL_FIXED → fov는 수직각.
    fy = H/2 / tan(fov/2), 정사각 픽셀이므로 fx = fy. 주점은 영상 중심. */
 function camIntrinsics(cam, w, h) {
+  /* 직교(orthographic)는 핀홀 초점거리가 없다 — 픽셀↔미터는 순수 스케일(px/m).
+     이걸로 이미지(x,y)→바닥(x,z)를 호모그래피 없이 바로 역산할 수 있다(나디르 GT의 핵심 이점). */
+  if (cam.mode === BABYLON.Camera.ORTHOGRAPHIC_CAMERA) {
+    const spanX = cam.orthoRight - cam.orthoLeft, spanZ = cam.orthoTop - cam.orthoBottom;
+    const wm = cam.getWorldMatrix();
+    return {
+      width: w, height: h, model: "orthographic",
+      ortho_span_m: [ +spanX.toFixed(4), +spanZ.toFixed(4) ],   // 프레임이 담는 월드 X·Z 폭(m)
+      px_per_m: [ +(w / spanX).toFixed(3), +(h / spanZ).toFixed(3) ],
+      cx: w / 2, cy: h / 2,
+      position: cam.position.asArray().map(v => +v.toFixed(4)),
+      world_matrix_row_major: Array.from(wm.m).map(v => +v.toFixed(6)),
+    };
+  }
   const fy = (h / 2) / Math.tan(cam.fov / 2);
   const wm = cam.getWorldMatrix();
   return {
@@ -5623,7 +5661,7 @@ function camSelectsRebuild() {
    영영 나타나지 않았다 — 이제 CAM_DEFS에서 만들어 추가·삭제·이름변경이 그대로 반영된다. */
 const CAM_SHORT = { free:"자유 시점", overhead:"CAM1 부감", corner:"CAM2 코너",
                     eye:"CAM3 눈높이", top:"CAM4 상부 GT", deg45:"CAM5 45°",
-                    front:"CAM6 솥 정면" };
+                    front:"CAM6 솥 정면", orthotop:"CAM7 직교 상부" };
 function camShort(id, label) {
   return CAM_SHORT[id] || (label || id).replace(/\s*\([^)]*\)\s*$/, "");
 }
@@ -5880,12 +5918,14 @@ function camUIapply(write = true) {
    확정된 값은 '설정 복사'로 뽑아 CAM_DEFS에 직접 박는다. */
 /* 키에 버전을 붙인다. 기본 카메라 배치를 바꿔도(예: CAM4를 천장 밖 5m로 이동) 예전에
    저장된 값이 그대로 복원돼 새 배치가 안 보이는 일을 막는다 — 버전을 올리면 새 기본값으로 시작. */
-const CAM_STORE = "hkr.sim.cams.v3";   // v3: CAM6(솥 정면) 추가
+const CAM_STORE = "hkr.sim.cams.v4";   // v4: CAM7(직교 상부 나디르 GT, ortho) 추가
 function camStoreSave() {
   try {
     localStorage.setItem(CAM_STORE, JSON.stringify(CAM_DEFS.map(d => {
       const r3 = v => +v.toFixed(4);      // 정본은 def — 카메라의 getTarget()은 쓰지 않는다
       return { id:d.id, label:d.label, noCeil:!!d.noCeil, fov:+d.fov.toFixed(4),
+               // ortho는 직교 카메라만 가진다. 빠뜨리면 복원 시 원근으로 되돌아가 GT가 왜곡된다.
+               ortho:d.ortho ? { w:+d.ortho.w.toFixed(4), h:+d.ortho.h.toFixed(4) } : null,
                pos:[r3(d.pos.x), r3(d.pos.y), r3(d.pos.z)],
                tgt:[r3(d.tgt.x), r3(d.tgt.y), r3(d.tgt.z)] };
     })));
@@ -5903,8 +5943,12 @@ function camStoreLoad() {
     if (!s || typeof s.id !== "string" || !Array.isArray(s.pos) || s.pos.length !== 3
         || !Array.isArray(s.tgt) || s.tgt.length !== 3) continue;
     if (![...s.pos, ...s.tgt, s.fov].every(v => typeof v === "number" && isFinite(v))) continue;
-    defs.push({ id:s.id, label:s.label || s.id, noCeil:!!s.noCeil, fov:s.fov,
-                pos:V3.FromArray(s.pos), tgt:V3.FromArray(s.tgt) });
+    const d = { id:s.id, label:s.label || s.id, noCeil:!!s.noCeil, fov:s.fov,
+                pos:V3.FromArray(s.pos), tgt:V3.FromArray(s.tgt) };
+    if (s.ortho && typeof s.ortho.w === "number" && typeof s.ortho.h === "number"
+        && isFinite(s.ortho.w) && isFinite(s.ortho.h))
+      d.ortho = { w:s.ortho.w, h:s.ortho.h };
+    defs.push(d);
   }
   if (!defs.length) return false;
   CAM_DEFS.slice().forEach(d => disposeSurvCam(d.id));
@@ -5932,7 +5976,9 @@ function camConfigText() {
     + (d.noCeil ? " noCeil:true," : "")
     + " pos:new V3(" + f(d.pos.x) + "," + f(d.pos.y) + "," + f(d.pos.z) + "),"
     + " tgt:new V3(" + f(d.tgt.x) + "," + f(d.tgt.y) + "," + f(d.tgt.z) + "),"
-    + " fov:" + d.fov.toFixed(3) + " },   // 부각 " + camDip(SURV[d.id]).toFixed(1) + "°"
+    + " fov:" + d.fov.toFixed(3)
+    + (d.ortho ? ", ortho:{ w:" + f(d.ortho.w) + ", h:" + f(d.ortho.h) + " }" : "")
+    + " },   // 부각 " + camDip(SURV[d.id]).toFixed(1) + "°"
   ).join("\n");
 }
 
