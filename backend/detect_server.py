@@ -8,10 +8,12 @@ detect_server.py — 시뮬레이터 '모델 검증(http 모드)'용 어댑터 �
 
 팀원 모델을 꽂는 자리는 run_detect() 하나다. 추적·속도·서버 배선은 건드릴 필요 없음.
 
-실행:
-    pip install fastapi uvicorn ultralytics trackers supervision pillow numpy
-    python detect_server.py            # http://127.0.0.1:8000/detect
-    # (또는)  uvicorn detect_server:app --host 127.0.0.1 --port 8000
+실행 (이 서버 하나가 시뮬 정적 파일 + 검출 API를 모두 서빙):
+    uv sync --group serve
+    uv run python backend/detect_server.py --port 8001
+    # → 시뮬:  http://127.0.0.1:8001/sim.html?person=1
+    # → 검출:  http://127.0.0.1:8001/detect   (시뮬과 동일 출처라 CORS 불필요)
+    # 모델 교체:  DETECT_MODEL=training/real_sim/weights/best.pt uv run python backend/detect_server.py --port 8001
 
 시뮬 쪽 계약 (하위호환 — 기존 필드는 그대로, id·vx·vy 만 추가):
     요청  POST /detect  {"camera": "corner", "image": "data:image/png;base64,...", "t": 1699...}
@@ -33,8 +35,10 @@ detect_server.py — 시뮬레이터 '모델 검증(http 모드)'용 어댑터 �
 """
 import base64
 import io
+import os
 import time
 import argparse
+from pathlib import Path
 
 import numpy as np
 
@@ -44,12 +48,18 @@ TRACKER_CLS = None
 sv = None
 MODE = "dummy"
 
+# 모델 경로: env DETECT_MODEL 로 교체 가능. 기본 = 시뮬 파인튜닝(orthotop) best.pt.
+#   real+sim 모델로 스왑:  DETECT_MODEL=training/real_sim/weights/best.pt
+_ROOT = Path(__file__).resolve().parent.parent
+_MODEL_PATH = os.environ.get(
+    "DETECT_MODEL", str(_ROOT / "training" / "yolo11s_orthotop" / "weights" / "best.pt"))
 try:
     from ultralytics import YOLO          # pip install ultralytics
-    MODEL = YOLO("yolov8n.pt")            # ← 팀원 가중치 경로로 교체 (예: "best.pt")
+    MODEL = YOLO(_MODEL_PATH)
     MODE = "yolo"
+    print(f"[detect_server] 모델 로드: {_MODEL_PATH} · 클래스 {list(MODEL.names.values())}")
 except Exception as e:                    # noqa: BLE001
-    print(f"[detect_server] ultralytics 없음 → 검출 DUMMY ({e})")
+    print(f"[detect_server] 모델 로드 실패 → 검출 DUMMY ({_MODEL_PATH}: {e})")
 
 try:
     import supervision as sv              # pip install supervision
@@ -258,6 +268,16 @@ async def detect(req: Request):
         return {"boxes": boxes, "mode": MODE, "camera": camera_id}
     except Exception as e:                # noqa: BLE001
         return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+# 시뮬 정적 파일(sim.html·assets·vendor…)도 같은 FastAPI가 서빙한다 →
+# 서버 하나로 시뮬 + 검출을 모두 처리(별도 http.server 불필요, 동일 출처라 CORS도 불필요).
+# 라우트(/detect·/health)를 먼저 등록한 뒤 마운트하므로 그 경로들이 우선한다.
+try:
+    from fastapi.staticfiles import StaticFiles
+    app.mount("/", StaticFiles(directory=str(_ROOT), html=True), name="sim")
+except Exception as e:                    # noqa: BLE001
+    print(f"[detect_server] 정적 서빙 비활성 ({e}) — 시뮬은 별도 http.server로 여세요")
 
 
 if __name__ == "__main__":
