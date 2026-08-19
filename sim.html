@@ -3760,29 +3760,61 @@ function personUpdate(dt) {
 /* ══ 보행 애니메이션 동기화 ══════════════════════════════════════════════
    원본 액션은 고유 이동속도(보행 ~1.35m/s, 달리기 ~3.2m/s)로 제작돼 있다.
    실제 이동속도에 맞춰 재생 속도를 조절해야 발이 미끄러지지 않는다.        */
-// 애니메이션 원저작 속도 — Blender에서 보폭/주기로 실측한 값 (audit_character.py).
-// walk: 보폭 1.452m ÷ 주기 0.958s = 1.515㎧ · run: 1.640m ÷ 0.667s = 2.459㎧
-// 이 값과 이동속도를 일치시켜야 발이 미끄러지지 않는다(speedRatio = 이동속도 / 원저작속도).
-const WALK_REF = 1.515, RUN_REF = 2.459, RUN_AT = 1.9;
+/* 애니메이션 원저작 속도 — 이 값과 이동속도를 맞춰야 발이 미끄러지지 않는다
+   (speedRatio = 이동속도 / 원저작속도).
+
+   **2026-08-19 — 캐릭터에서 직접 재서 고쳤다.** 종전 값(1.515 / 2.459)은
+   character-manifest.json에서 온 것인데, 그 매니페스트는 **옛 리그(cook_rig_v39) 기준**이다.
+   캐릭터를 person_cook_v5로 교체하면서 클립이 통째로 바뀌었는데 이 상수는 그대로였다.
+   그래서 걷기 클립이 필요한 것보다 35% 느리게 돌아 **발이 계속 미끄러지고 있었다**
+   (실측: 이동 0.80㎧에서 디딘 발이 0.55㎧로 끌림 = 보행거리의 69%).
+
+   재는 방법 — 좌우 발의 앞뒤 좌표차를 클립 전체에 걸쳐 표본하면
+     · 부호가 바뀐 횟수 ÷ 2 = 클립에 담긴 걸음 사이클 수
+     · 그 신호의 최대−최소 = 보폭(stride)
+     · 원저작속도 = 보폭 ÷ (클립길이 ÷ 사이클수)
+   실측값(person_cook_v5, 표본 96):
+     Walk_Loop        1.333초 · 1사이클 · 보폭 1.305 → **0.979㎧**  (종전 1.515, +55% 과대)
+     Walk_Formal_Loop 1.333초 · 1사이클 · 보폭 1.304 → 0.978㎧      (walk와 사실상 동일)
+     Jog_Fwd_Loop     0.917초 · 1사이클 · 보폭 2.491 → **2.717㎧**  (종전 2.459, −9.5%)
+     Push_Loop        2.667초 · 1사이클 · 보폭 0.931 → **0.349㎧**
+   캐릭터를 다시 바꾸면 이 표를 다시 재야 한다 — __sim으로 잴 수 있다. */
+const WALK_REF = 0.979, RUN_REF = 2.717, RUN_AT = 1.9;
+/* ── 밀기 자세 ──────────────────────────────────────────────────────────────
+   회의 요구: 카트가 움직이는데 사람은 그냥 걷고 있으면 미는 걸로 안 보인다.
+   `Push_Loop`은 COOK_ACTIONS에 "카트·트레이 밀기"로 **이미 매핑돼 있었는데 아무도
+   부르지 않았다** — 끼임 버둥거림에서만 쓰이고 있었다. 여기서 보행과 이어 붙인다.
+
+   **제자리 동작이 아니라 걸으면서 미는 클립이다**(실측: 좌우 발 앞뒤차 진폭 0.93 —
+   idle 0.005와 달리 발이 실제로 스텝한다). 그래서 보행 클립 자리에 그대로 갈아끼우면 된다.
+
+   PUSH_REF는 위 WALK_REF 표와 **같은 방법으로 직접 잰 값**이다(0.349㎧).
+   걷기의 0.357배로, 카트에 몸을 실어 미는 만큼 걸음이 짧고 느리다. */
+const PUSH_REF = 0.349;                            // 실측 — 위 표 참조
+const PUSH_ANIM_HOLD = 220;                        // 접촉이 끊겨도 이만큼은 밀기 자세 유지(ms)
 function locoPlay(P, moving, speed) {
   if (!P) return;
   const stop = a => { if (a && a.isPlaying) a.stop(); };
+  const pushClip = P.ACT && P.ACT.push;
   if (!moving || speed < 0.03) {
-    stop(P.walk); stop(P.run);
+    stop(P.walk); stop(P.run); stop(P.walkSlow); stop(pushClip);
     if (P.idle && !P.idle.isPlaying) P.idle.start(true, 1.0);
     return;
   }
-  const useRun = !!P.run && speed >= RUN_AT;
+  /* 밀고 있으면 달리기보다 우선한다 — 카트를 밀면서 뛰는 그림은 나오지 않는다 */
+  const pushing = (P.pushT || 0) > 0 && !!pushClip;
+  const useRun = !pushing && !!P.run && speed >= RUN_AT;
   /* 걸음걸이 — 사람마다 다른 클립을 쓴다. 인원이 2~3명뿐이라 둘이 똑같이 걸으면
      탑뷰에서 바로 복제처럼 보인다. P.gait는 스폰 때 인원별 시드로 정해진다. */
   const walkClip = (!useRun && P.gait === "walkSlow" && P.walkSlow) ? P.walkSlow : P.walk;
-  const act = useRun ? P.run : walkClip;
+  const act = pushing ? pushClip : (useRun ? P.run : walkClip);
   if (!act) return;
   stop(P.idle);
-  stop(useRun ? P.walk : P.run);
-  if (P.walkSlow && act !== P.walkSlow) stop(P.walkSlow);
-  if (act !== P.walk) stop(P.walk);
-  const ratio = clamp(speed / (useRun ? RUN_REF : WALK_REF), 0.45, 1.9);
+  for (const a of [P.walk, P.run, P.walkSlow, pushClip]) if (a && a !== act) stop(a);
+  const ref = pushing ? PUSH_REF : (useRun ? RUN_REF : WALK_REF);
+  /* 하한 0.45 → 0.35. 직무 동선의 느린 보행이 0.42㎧까지 내려가는데, WALK_REF를
+     0.979로 바로잡고 나니 그 속도의 배속이 0.43이라 종전 하한에 걸려 다시 미끄러졌다. */
+  const ratio = clamp(speed / ref, 0.35, 1.9);
   if (!act.isPlaying) act.start(true, ratio);
   act.speedRatio = ratio;                       // 매 프레임 보정 — 가감속에도 미끄러짐 없음
 }
@@ -6279,20 +6311,25 @@ const PUSH_GAIN = 14.0;
    0.06m는 사람 반경(0.26)의 23%로, 어깨가 살짝 닿는 정도는 무시하고 몸으로 밀고 들어갈
    때만 물건이 움직인다. 이 값을 0으로 두면 종전 동작(스쳐도 밀림)으로 돌아간다. */
 const PUSH_DEADZONE = 0.06;
-function pushUpdate() {
+function pushUpdate(dt) {
   if (!PUSH.active) return;
   // 리셋으로 열어 둔 메시→바디 동기화를 되돌린다 (열어 두면 매 프레임 비용)
   for (const b of PUSH.bodies)
     if (b.restore && --b.restore === 0) b.ag.body.disablePreStep = true;
-  const movers = [person.node];
-  for (const e of EXTRAS) if (e && e.node) movers.push(e.node);
+  /* **위치를 옮기는 노드와 애니메이션을 가진 리그가 서로 다르다.** 주인공은 person.node로
+     걷고 PERSON이 클립을 갖는다. 추가 인원은 **.root로 걷는다 — .node가 없다.**
+     처음에 e.node로 적어 두는 바람에 추가 인원은 카트를 아예 못 밀었다(조건이 늘 거짓). */
+  const movers = [{ pos: person.node, rig: PERSON }];
+  for (const e of EXTRAS) if (e && e.root) movers.push({ pos: e.root, rig: e });
+  for (const mv of movers)                       // 밀기 자세 유지시간 소진
+    if (mv.rig && mv.rig.pushT > 0) mv.rig.pushT -= (dt || 16.7);
   for (const b of PUSH.bodies) {
     const bp = b.box.position;
     const yaw = b.box.rotationQuaternion ? b.box.rotationQuaternion.toEulerAngles().y
                                          : b.box.rotation.y;
     const cs = Math.cos(-yaw), sn = Math.sin(-yaw);
     for (const mv of movers) {
-      const dx = mv.position.x - bp.x, dz = mv.position.z - bp.z;
+      const dx = mv.pos.position.x - bp.x, dz = mv.pos.position.z - bp.z;
       if (Math.abs(dx) > 1.6 || Math.abs(dz) > 1.6) continue;      // 멀면 건너뛴다
       // 카트 로컬좌표로 옮겨 상자 위 최근접점을 구한다
       const lx = dx*cs - dz*sn, lz = dx*sn + dz*cs;
@@ -6311,6 +6348,10 @@ function pushUpdate() {
       const cur = v.x*wx + v.z*wz;                                 // 이미 그 방향으로 가는 속도
       if (cur < want)
         b.ag.body.setLinearVelocity(new V3(v.x + (want-cur)*wx, v.y, v.z + (want-cur)*wz));
+      /* 밀고 있다는 표식 — locoPlay가 보행 클립 대신 밀기 클립을 튼다.
+         매 프레임 갱신되므로, 손을 떼면 PUSH_ANIM_HOLD 뒤에 저절로 보행으로 돌아간다.
+         값이 너무 짧으면 접촉이 한 프레임 끊길 때마다 자세가 깜빡인다. */
+      if (mv.rig) mv.rig.pushT = PUSH_ANIM_HOLD;
     }
   }
 }
@@ -8636,7 +8677,7 @@ scene.registerBeforeRender(() => {
   personUpdate(dt);
   cookGearUpdate();
   extrasUpdate(dt);
-  pushUpdate();                // 사람이 카트에 파고든 만큼 카트를 밀어낸다 (사람 이동 뒤)
+  pushUpdate(dt);              // 사람이 카트에 파고든 만큼 카트를 밀어낸다 (사람 이동 뒤)
   resolvePeopleSeparation();   // 사람끼리 겹쳐 서지 않게 — GT 박스가 붙는 프레임 방지
   workOverlapUpdate(dt);       // 로봇 이송 단계에 배식 담당을 카트로 부른다 (작업 겹침)
   armContactUpdate(dt);        // 팔↔사람 접촉 — 링 판정과 달리 '팔이 향한 방향'을 본다
