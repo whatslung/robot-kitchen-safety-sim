@@ -9,6 +9,7 @@
 | `babylon.js`, `babylonjs.loaders.min.js`, `babylon.inspector.bundle.js` | Babylon.js 9.20.0 | Apache-2.0 |
 | `HavokPhysics_umd.js`, `HavokPhysics.wasm.js` | Havok Physics for Babylon.js (`@babylonjs/havok`) | MIT |
 | `vendor/ort/*` | ONNX Runtime Web 1.20.1 (Microsoft) | MIT |
+| `assets/person_cook_v5.glb` 의 베이스 리그·애니메이션 | [BJS Character Controller V2](https://github.com/crazyramirez/BJS_Character_Controller_V2) (crazyramirez) | MIT |
 
 ## 3D 에셋
 
@@ -22,5 +23,6 @@ env_table  env_rack  env_sink  env_bin  env_pancart  env_wallrack
 env_kettle_nb  env_kettle_nb_closed  env_fridge  env_serve  env_basketcart
 ```
 
-`cook_rig_v47.glb`(조리원 캐릭터)는 외부 소스 기반 파생 에셋이다.
-리깅 스펙은 `character-manifest.json`을 참조.
+사람 캐릭터 `person_cook_v5.glb` 는 위 BJS Character Controller V2(MIT)의 베이스에서
+파생했다. 지오메트리와 mixamorig 67본 스켈레톤·애니메이션 45종은 그대로 두고,
+재질을 위생복(상의·바지·신발·위생 두건)으로 바꾸고 마스크 메시를 추가했다.
