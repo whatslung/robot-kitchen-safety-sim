@@ -2957,6 +2957,88 @@ function customPredictTick(srcPos, now, dtMs) {
   // 1초 넘게 갱신이 없으면 신뢰하지 않는다 (모델이 멈춘 채 옛 경로로 판정하면 위험)
   return !!(CPRED.path && performance.now() - CPRED.at < 1000);
 }
+/* ── 바닥 확률밀도 음영 (Trajectron++ 논문 그림 스타일) ──────────────────────
+   PRED.mix(가우시안 혼합)를 바닥에 눕힌 평면의 DynamicTexture에 부드러운 색 구름으로 그린다.
+   orthotop(수직 나디르)에서 보면 논문 그림과 같은 화면이 된다.
+
+   저해상도(res) 격자로 그려도 텍스처 이중선형 보간이 부드럽게 퍼뜨려 주므로 굳이 고해상도로
+   갈 필요가 없다. 대부분의 바닥은 밀도 0이라 **3σ 바운딩박스 안만** 계산한다.
+
+   ⚠️ 데이터셋 캡처에서는 gtOff()가 이 평면을 숨긴다. 음영은 사람을 따라다니므로 학습
+      이미지에 남으면 검출기가 "바닥 색번짐 = 사람"이라는 허위 상관을 배운다(라벨엔 없는 단서). */
+const DENS = { on:true, res:128, hz:10, acc:0, alpha:0.6, gamma:0.7,
+               plane:null, tex:null, img:null,
+               cx:1.0, cz:2.0, size:16 };      // 평면 중심·한 변(AU) — 방 전체를 넉넉히 덮는다
+function densInit() {
+  const p = BABYLON.MeshBuilder.CreatePlane("predDens", { size:DENS.size }, scene);
+  p.rotation.x = Math.PI/2;                    // 바닥에 눕힌다 (local +Y → world +Z)
+  p.position.set(DENS.cx, 0.03, DENS.cz);
+  p.isPickable = false;
+  const tex = new BABYLON.DynamicTexture("predDensTex", { width:DENS.res, height:DENS.res }, scene, true);
+  tex.hasAlpha = true;
+  const m = new BABYLON.StandardMaterial("predDensMat", scene);
+  // 조명과 무관하게 색이 그대로 나오도록 emissive + 알파는 opacity 채널로
+  m.emissiveTexture = tex; m.opacityTexture = tex;
+  m.diffuseColor = new C3(0,0,0); m.specularColor = new C3(0,0,0);
+  m.disableLighting = true; m.backFaceCulling = false;
+  p.material = m;
+  DENS.plane = p; DENS.tex = tex;
+}
+function densUpdate(dtMs) {
+  const live = DENS.on && PRED.moving && PRED.mix && PRED.mix.length > 1;
+  if (!live) { if (DENS.plane) DENS.plane.setEnabled(false); return; }
+  if (!DENS.plane) densInit();
+  DENS.plane.setEnabled(true);
+  DENS.acc += dtMs;
+  if (DENS.acc < 1000 / DENS.hz) return;       // 텍스처는 hz로만 다시 그린다
+  DENS.acc = 0;
+
+  const R = DENS.res, half = DENS.size / 2, per = DENS.size / R;
+  const ctx = DENS.tex.getContext();
+  if (!DENS.img || DENS.img.width !== R) DENS.img = ctx.createImageData(R, R);
+  const d = DENS.img.data; d.fill(0);
+  const col = PRED.level === 2 ? [248, 81, 73] : PRED.level === 1 ? [227, 179, 65] : [46, 160, 67];
+
+  // 3σ 바운딩박스 → 계산할 텍셀 범위 (밖은 알파 0으로 남긴다)
+  let mnX = 1e9, mxX = -1e9, mnZ = 1e9, mxZ = -1e9;
+  for (const g of PRED.mix) {
+    mnX = Math.min(mnX, g.x - 3*g.sx); mxX = Math.max(mxX, g.x + 3*g.sx);
+    mnZ = Math.min(mnZ, g.z - 3*g.sz); mxZ = Math.max(mxZ, g.z + 3*g.sz);
+  }
+  const x0 = DENS.cx - half, z1 = DENS.cz + half;   // 텍셀 (0,0) = 좌상단 = (minX, maxZ)
+  const i0 = Math.max(0, Math.floor((mnX - x0)/per)), i1 = Math.min(R-1, Math.ceil((mxX - x0)/per));
+  const j0 = Math.max(0, Math.floor((z1 - mxZ)/per)), j1 = Math.min(R-1, Math.ceil((z1 - mnZ)/per));
+
+  const f = new Float32Array((i1-i0+1) * (j1-j0+1));
+  let peak = 0, n = 0;
+  for (let j = j0; j <= j1; j++) {
+    const wz = z1 - (j + 0.5)*per;
+    for (let i = i0; i <= i1; i++, n++) {
+      const wx = x0 + (i + 0.5)*per;
+      let s = 0;
+      /* 합이 아니라 **최댓값(합집합)** 으로 섞는다. 합으로 하면 σ가 큰 먼 시점의 밀도가 낮아,
+         전체를 peak로 정규화하는 순간 먼 쪽이 사라져 "사람 옆 작은 얼룩"만 남는다(실측:
+         화면의 1.1%만 채워짐). 최댓값이면 시점별 타원이 제 밝기를 지켜 길고 넓은 부채꼴이 된다. */
+      for (const g of PRED.mix) {
+        const ax = (wx - g.x)/g.sx, az = (wz - g.z)/g.sz, q = ax*ax + az*az;
+        if (q < 18) { const v = g.w * Math.exp(-0.5*q); if (v > s) s = v; }   // 3σ 밖은 무시(exp가 비싸다)
+      }
+      f[n] = s; if (s > peak) peak = s;
+    }
+  }
+  if (peak > 0) {
+    n = 0;
+    for (let j = j0; j <= j1; j++)
+      for (let i = i0; i <= i1; i++, n++) {
+        const a = Math.pow(f[n]/peak, DENS.gamma) * DENS.alpha;
+        if (a <= 0.004) continue;
+        const o = (j*R + i) * 4;
+        d[o] = col[0]; d[o+1] = col[1]; d[o+2] = col[2]; d[o+3] = (a*255)|0;
+      }
+  }
+  ctx.putImageData(DENS.img, 0, 0);
+  DENS.tex.update();
+}
 function predictionUpdate(srcPos, now) {
   if (PRED.lastPos) {
     const dt = (now - PRED.lastT) / 1000;
@@ -3039,10 +3121,12 @@ function predictionUpdate(srcPos, now) {
       sx = Math.sqrt(Math.max(0, PRED.kx.P00 + 2*t*PRED.kx.P01 + t2*PRED.kx.P11 + sa2v*t4/4));
       sz = Math.sqrt(Math.max(0, PRED.kz.P00 + 2*t*PRED.kz.P01 + t2*PRED.kz.P11 + sa2v*t4/4));
     }
-    mix.push({ x:px, z:pz, w:1,
+    // w: 먼 시점을 살짝 흐리게 — 시간 깊이감(논문 그림). 0으로 죽이지는 않는다.
+    mix.push({ x:px, z:pz, w:1 - 0.35*(k/PRED.vizSteps),
                sx:Math.max(sx, PRED.minSigma), sz:Math.max(sz, PRED.minSigma) });
   }
   PRED.mix = mix;
+  densUpdate(dtMs);                  // 바닥 확률밀도 음영 (논문 그림)
   // 예측 경로 폴리라인 — 이동 중일 때만 표시
   if (!PRED.line) {
     PRED.line = BABYLON.MeshBuilder.CreateLines("predLine", { points: pts, updatable: true }, scene);
@@ -3192,7 +3276,11 @@ function safetyUpdate() {
     predictionUpdate(srcPos, performance.now());
     if (PRED.tStop < PRED.horizon) predictive = clamp(PRED.tStop / PRED.horizon, 0.15, 1) * 0.5;
     else if (PRED.tSlow < PRED.horizon) predictive = 0.75;
-  } else { if (PRED.line) PRED.line.setEnabled(false); if (PRED.band) PRED.band.setEnabled(false); }
+  } else {   // 검출 없음/미탐 — 예측 시각화 전부 숨긴다
+    if (PRED.line) PRED.line.setEnabled(false);
+    if (PRED.band) PRED.band.setEnabled(false);
+    if (DENS.plane) DENS.plane.setEnabled(false);
+  }
   SAFE.factor = Math.min(reactive, predictive);
 
   // 3단계: 0 정상 / 1 감속(선제 포함) / 2 정지
@@ -6775,7 +6863,7 @@ window.__sim = {
   // 물리 · 안전
   PHYS, ROBOT_GUARD, buildRobotGuard, resetBasket, ONNX, onnxLoadModel, onnxInfer, PRED, ENV_RAND, randomizeEnvironment, placeOccluder, setExtraCount, spawnDebris, triggerEstop, clearEstop,
   // 모델 검증
-  MIL, milCapture, milMaskBoxes, drawOverlay, effector, BE, drawBirdseye,
+  MIL, milCapture, milMaskBoxes, drawOverlay, effector, BE, drawBirdseye, DENS,
 };
 
 /* ══ Isaac풍 도킹 UI — 콘솔 · 스테이지 트리 · 메뉴바 ═════════════════════ */
