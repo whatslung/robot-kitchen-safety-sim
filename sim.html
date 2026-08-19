@@ -3071,6 +3071,95 @@ if (ISLAND) {
   JOB.wash.route  = ["sink","wrack","nrack","isle2","sink","store"];
   JOB.lead.route  = ["door","aisle","robotside","ntable","aisle","nrack"];
 }
+/* ══ 스테이션 전이 모델 (WORKFLOW) ══════════════════════════════════════════
+   `wanderTarget`은 21개 스테이션을 균등 랜덤으로 뽑는다 — 엔트로피가 최대라
+   **학습할 구조가 없다**(실측 평균 이동 5.51m vs 실제 동선 0.98~2.8m).
+   `JOB.route`는 반대쪽 극단이다 — 완전히 결정적이라 예측할 게 없다.
+
+   그 중간을 만든다: 직무 사이클을 **기준선**으로 두고 확률적으로 벗어난다.
+   같은 스테이션에 서 있어도 직무와 사이클 진행도에 따라 다음 목표의 확률이
+   달라지는 것 — 그게 학습형 예측기가 스테이션 휴리스틱을 이길 수 있는 유일한 여지다.
+
+   `JOB.route`와 따로 두는 이유: `JOB`은 추가 인원의 **재현 가능한 결정적 순회**이고
+   기존 데이터셋 생성이 그것에 의존한다. 여기에 확률을 섞으면 그 회차들이 깨진다. */
+const WF = { on:false, P_NEXT:0.65, P_NEAR:0.30, TAU:2.0 };
+/* 사이클의 한 단계는 **키 배열**이다. 길이가 2 이상이면 그 단계에서 택일한다
+   (전처리 담당이 중앙 준비대 두 자리 중 가까운 쪽으로 가는 것 — 실제로 그렇게 일한다). */
+const WORKFLOW = {
+  prep : { cycle:[["fridge"], ["wrack"], ["island"], ["isle1","isle2"], ["prep"]] },
+  cook : { cycle:[["prep"], ["kettle"], ["panel"], ["nkettle"], ["ntable"]] },
+  wash : { cycle:[["sink"], ["store"], ["nrack"]] },
+  carry: { cycle:[["serve"], ["isle3"], ["etable"], ["cartPick"], ["door"]] },
+  lead : { cycle:[["panel"], ["robotside"], ["aisle"], ["prep"]] },
+};
+/* 직무 계획 해석 — 없는 스테이션은 버린다.
+   `nkettle`·`ntable`·`nrack`은 ISLAND 배치에서만 STATION에 들어오므로
+   테이블을 그대로 믿으면 조리·세정 담당이 undefined를 향해 걷는다. */
+const WF_PLAN = {};
+function wfPlan(job) {
+  if (WF_PLAN[job]) return WF_PLAN[job];
+  const W = WORKFLOW[job];
+  if (!W) return null;
+  const steps = W.cycle.map(s => s.filter(k => STATION[k])).filter(s => s.length);
+  if (!steps.length) return null;
+  const set = steps.flat(), inSet = new Set(set);
+  const outside = Object.keys(STATION).filter(k => !inSet.has(k));
+  return (WF_PLAN[job] = { steps, set, outside });
+}
+/* 길이 막힌 스테이션은 후보에서 뺀다 — roleStations와 같은 규약.
+   고르고 나서 실패하면 그 턴을 버리게 되고, 사람이 제자리에 서 있는 프레임이 남는다. */
+const wfReach = k => !NAV.ready || navReachable(STATION[k].pos);
+/* 거리 가중 — w(s) = exp(-d/τ), τ=2m. 가까운 곳을 선호하되 먼 곳도 가끔 간다.
+   최근접 하나로 고정하면 결정적이 되고, 균등으로 두면 구조가 사라진다. */
+function wfWeightedPick(keys, from, rng) {
+  if (!keys.length) return null;
+  if (keys.length === 1) return keys[0];
+  const w = keys.map(k => Math.exp(
+    -Math.hypot(STATION[k].pos.x - from.x, STATION[k].pos.z - from.z) / WF.TAU));
+  const sum = w.reduce((a, b) => a + b, 0);
+  if (!(sum > 0)) return rng.pick(keys);
+  let r = rng.next() * sum;
+  for (let i = 0; i < keys.length; i++) { r -= w[i]; if (r <= 0) return keys[i]; }
+  return keys[keys.length - 1];
+}
+/* 현재 사이클 단계 — 사이클 밖에 서 있으면(모드 시작 직후·이탈 후) **가장 가까운 단계**로
+   붙인다. 못 찾았다고 넘기면 65% 분기가 죽어 구조 없는 근거리 랜덤으로 퇴화한다. */
+function wfStepIndex(plan, curKey, from) {
+  for (let i = 0; i < plan.steps.length; i++)
+    if (plan.steps[i].indexOf(curKey) >= 0) return i;
+  let best = 0, bd = Infinity;
+  for (let i = 0; i < plan.steps.length; i++) for (const k of plan.steps[i]) {
+    const d = Math.hypot(STATION[k].pos.x - from.x, STATION[k].pos.z - from.z);
+    if (d < bd) { bd = d; best = i; }
+  }
+  return best;
+}
+/* 다음 목표 — 반환 형태를 wanderTarget과 같게 맞춘다(+ 추적용 key).
+     p=0.65  사이클의 다음 단계          ← 구조(학습 가능)
+     p=0.30  직무 집합 안 거리 가중       ← 현실성
+     p=0.05  직무 밖 이탈                ← 예외
+   확률은 WF에 있다 — 3단계 베이스라인이 같은 값을 읽어야 한다. */
+function workflowTarget(job, curKey, from, rng) {
+  const plan = wfPlan(job);
+  if (!plan) return null;
+  const R = rng || RNG;
+  const ok = pool => pool.filter(k => k !== curKey && wfReach(k));
+  const i = wfStepIndex(plan, curKey, from);
+  const u = R.next();
+  let key = null;
+  if (u < WF.P_NEXT) {
+    key = wfWeightedPick(ok(plan.steps[(i + 1) % plan.steps.length]), from, R);
+  } else if (u < WF.P_NEXT + WF.P_NEAR) {
+    key = wfWeightedPick(ok(plan.set), from, R);
+  } else {
+    key = wfWeightedPick(ok(plan.outside), from, R);
+  }
+  if (!key) key = wfWeightedPick(ok(plan.set), from, R);   // 세 분기 다 비면 집합 전체
+  if (!key) return null;
+  const s = STATION[key];
+  return { key, pos:s.pos.clone(), act:s.act,
+           dwell:s.dwell * R.range(0.6, 1.5), label:s.label };
+}
 /* 동선이 로봇에 가장 가까이 가는 거리로 데이터셋 라벨을 정한다 */
 function jobRole(jobKey) {
   const J = JOB[jobKey];
@@ -9737,6 +9826,7 @@ window.__sim = {
      스크립트가 통째로 죽는다. getter로 감싸 접근 시점에 읽는다. */
   ROLE, roleStations, spawnRole, buildPersonColliders, transitPath,
   JOB, SCENARIO, spawnJob, runScenario, jobRole, jobNextTarget,
+  WF, WORKFLOW, wfPlan, workflowTarget,
   resolvePeopleSeparation, makeRNG, armClearance, armContactUpdate,
   demoHazard, demoHazardClear, findHazardSpot, workOverlapUpdate,
   get OVERLAP() { return OVERLAP; },   // 선언이 이 블록보다 뒤 — 직접 넣으면 TDZ로 스크립트가 죽는다
