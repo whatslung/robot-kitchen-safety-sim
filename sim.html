@@ -3195,8 +3195,13 @@ function jobRole(jobKey) {
   const J = JOB[jobKey];
   if (!J) return "far";
   const B = LAYOUT.robot.base;
+  /* **실제로 걷는 곳**을 봐야 한다. WF 모드에서는 JOB.route가 아니라 WORKFLOW 사이클을
+     도는데, route로 라벨을 붙이면 어긋난다 — 실측: 세정 담당이 WF에서 로봇에 6.16m까지만
+     가는데도 route 기준으로는 1.49m라 danger가 붙었다. 라벨은 동선을 따라가야 한다. */
+  const plan = WF.on && wfPlan(jobKey);
+  const keys = plan ? plan.set : J.route;
   let min = Infinity;
-  for (const k of J.route) {
+  for (const k of keys) {
     const st = STATION[k];
     if (st) min = Math.min(min, Math.hypot(st.pos.x - B.x, st.pos.z - B.z));
   }
@@ -10420,6 +10425,7 @@ async function spawnExtraPerson(i) {
     // → 데이터셋 생성이 1명이라도 스폰되는 순간 크래시. 참조 제거.
     gear, shell: uni_shell, bones: bmap, height: H, uniform: null, wearCap, wearMask,
     ACT, role: "far", stations: null, dwellT: 0, acting: null, lastD: undefined, stallT: 0,
+    wfStep: null,                 // 직무 사이클 진행도 (WF 모드) — 키로 되짚으면 왕복이 죽는다
     /* 인원마다 독립 시드 — 전역 시드에서 파생시키되 간격을 크게 벌린다.
        한 명을 추가해도 기존 인원의 궤적이 바뀌지 않는다(각자 자기 흐름만 소비). */
     rng: prng,
@@ -10600,6 +10606,22 @@ function extraNextTarget(P) {
     P.overlapUntil = 0;                       // 길이 없으면 포기하고 제 동선으로
   }
   // 직무가 배정돼 있으면 정해진 동선을 돈다 — 무작위 선택은 건너뛴다
+  /* WF 모드면 결정적 순회 대신 확률 전이를 쓴다. 꺼져 있으면 기존 경로 그대로 —
+     기존 데이터셋 회차가 jobNextTarget의 결정적 순서에 의존한다. */
+  if (P.job && WF.on) {
+    const cur = { key: P.station && P.station.key, step: P.wfStep };
+    for (let tries = 0; tries < 4; tries++) {
+      const t = workflowTarget(P.job, cur, P.root.position, rng);
+      if (!t) break;
+      /* 한 자리에 두 명은 못 선다 — jobNextTarget과 같은 규약. 다시 뽑는다. */
+      if (EXTRAS.some(o => o !== P && o.station && o.station.key === t.key)) continue;
+      if (setPathTo(P, t.pos)) {
+        P.wfStep = t.step;
+        P.station = Object.assign({ dist:0 }, STATION[t.key], { key:t.key, dwell:t.dwell });
+        return P.station;
+      }
+    }
+  }
   if (P.job) { const t = jobNextTarget(P, rng); if (t) return t; }
 
   /* C(danger) — 접근과 물러남을 **번갈아** 한다.
