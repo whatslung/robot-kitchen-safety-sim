@@ -18,6 +18,7 @@
 - **환경/구조**: uv 프로젝트(`pyproject.toml`·`uv.lock`, torch **cu128**, RTX 5070 sm_120 검증).
   검출서버 `backend/`, 학습 스크립트 `train/`(prepare_yolo_split·train_sim·eval_stock)로 분리.
 - **판정**: 나디르 top-down = **검출 축 통과**. 단 합성 val 기준이라 **sim-to-real은 다음 축**.
+- **바닥 확률밀도 음영 완료(8/19)**: 미래 위치 분포를 가우시안 혼합(`PRED.mix`)으로 만들어 바닥 `DynamicTexture`에 부드러운 색 구름으로 렌더 + 예측선을 `GreasedLine`(두께)으로. orthotop에서 보면 Trajectron++ 논문 그림. 그림용 지평선 3.5s(안전 판정 1.6s와 분리), σ 하한=사람 반폭(0.24). **데이터셋 캡처 중 시각화 억제(`vizSuppressed`)로 학습 데이터 오염 차단**. 설계 `docs/chanwoo/specs/2026-08-19-density-floor-design.md`, 그림 `docs/chanwoo/assets/density_floor_demo.png`.
 - **예측 시각화 완료**: 라이브 (x,z) 트랙 → 칼만 예측 + σ 불확실성. **2D 조감 패널**(로봇·정지/감속 원·트랙 점·예측 경로·σ 음영) + **3D 씬 σ 밴드**. `검출→추적→예측` 사슬 시각적 완성. 소스는 `MIL.safety` 켜면 라이브 검출 트랙, 아니면 GT. 스펙·계획 `docs/chanwoo/{specs,plans}/2026-08-18-*`.
 
 ---
