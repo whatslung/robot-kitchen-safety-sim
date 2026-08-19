@@ -3300,10 +3300,27 @@ const COLL_AUTO = [];
    작업대·선반·냉장고·싱크는 고정으로 둔다 — 실제로도 안 밀린다.
 
    아래 표에 줄을 추가하면 그 GLB가 밀리는 물건이 된다. 2순위를 열 때는 주석만 풀면 된다. */
+/* roll:true = 캐스터가 달린 것. 마찰을 낮추고 감쇠를 약하게 줘서 **구른다**.
+   roll:false = 바퀴 없이 바닥에 놓인 것. 마찰을 높이고 감쇠를 세게 줘서 **끌린다** —
+   밀면 조금 밀렸다 바로 서고, 손을 떼면 그 자리에 남는다.
+   같은 물성을 다 주면 쓰레기통이 카트처럼 방을 가로질러 굴러간다. */
 const PUSHABLE_DEF = {
-  "env_pancart.glb":     { mass: 28, label: "팬 카트" },
-  // "env_basketcart.glb": { mass: 16, label: "바스켓 카트" },   // 2순위
-  // "env_bin.glb":        { mass:  9, label: "쓰레기통" },       // 3순위
+  "env_pancart.glb":    { mass: 28, label: "팬 카트",     roll: true  },
+  "env_basketcart.glb": { mass: 16, label: "바스켓 카트", roll: true  },
+  "env_bin.glb":        { mass:  9, label: "쓰레기통",     roll: false },
+};
+/* 구르는 것 / 끌리는 것의 물성. Havok의 박스-바닥 마찰은 미끄러짐이지 구름이 아니라,
+   캐스터를 흉내내려면 마찰을 낮추고 감쇠로 세우는 쪽이 맞다(마찰을 높이면 밀어도 안
+   가다가 갑자기 튀어나간다). 끌리는 쪽은 반대로 마찰을 높여 바로 서게 한다. */
+/* maxV — 사람이 밀어서 낼 수 있는 최고 속도. **이게 없으면 종류를 갈라도 티가 안 난다.**
+   pushUpdate는 파고든 깊이에 비례해 속도를 주는데, 그 값이 질량·마찰과 무관해서
+   쓰레기통도 카트와 같은 속도로 나갔다(실측: 미는 동안 카트 0.62m · 통 0.52m로 거의 동일).
+   마찰은 손을 뗀 뒤에만 작용하니 미는 중에는 차이가 안 보인다.
+   바퀴 없는 것은 최고 속도를 보행 속도(0.85 m/s)보다 낮게 잘라야 "끌린다"가 된다 —
+   사람이 계속 걸어가면 물건이 뒤로 밀려나는 게 아니라 사람이 물건을 지나쳐 간다. */
+const PUSH_PHYS = {
+  roll:  { friction: 0.32, damp: 0.55, maxV: 1.60 },   // 캐스터 — 보행 속도보다 빠르게도 굴러간다
+  drag:  { friction: 0.75, damp: 2.20, maxV: 0.45 },   // 바닥에 놓인 것 — 조금 밀리고 선다
 };
 /* 밀 수 있는 물건의 발자국 — **A* 통행 격자에는 장애물로 남기고, 사람의 실제 이동에서만 뺀다.**
    둘 다 빼면 사람이 온 방을 돌아다니며 카트를 들이받아 장면이 난장판이 된다. 둘 다 넣으면
@@ -3322,6 +3339,21 @@ function buildPersonColliders() {
       if (n.metadata && n.metadata.pushable) return true;
     return false;
   };
+  /* 밀 수 있는 물건은 **프롭 전체**의 발자국으로 넣는다. 아래 메시 단위 수집은 못 쓴다 —
+     바스켓 카트가 얇은 철망이라 개별 메시가 전부 크기 필터(w·d 0.20 / h 0.35)에 걸러져
+     **통행 격자에 빈 바닥으로 잡혔다**(실측: 카트 자리 칸이 통행가능=1). 그래서 사람이
+     그 자리를 지나는 경로를 잡고, 지나가며 카트를 0.5m씩 밀어냈다.
+     ※ 이건 밀기를 넣기 전부터 있던 구멍이다 — 예전에는 사람이 바스켓 카트를 그냥
+       통과해 걸었고, 아무것도 안 움직이니 눈에 안 띄었을 뿐이다.
+     회전한 상자의 AABB 반너비로 넣는다(yaw를 반영하지 않으면 비스듬한 카트가 덜 막힌다). */
+  for (const b of PUSH.bodies) {
+    const yaw = b.box.rotationQuaternion ? b.box.rotationQuaternion.toEulerAngles().y
+                                         : b.box.rotation.y;
+    const ca = Math.abs(Math.cos(yaw)), sa = Math.abs(Math.sin(yaw));
+    COLL_PUSH.push([b.box.position.x, b.box.position.z,
+                    b.half[0]*ca + b.half[1]*sa,
+                    b.half[0]*sa + b.half[1]*ca]);
+  }
   for (const m of scene.meshes) {
     if (!m.getTotalVertices || !m.getTotalVertices() || !m.isVisible) continue;
     if (SKIP.test(m.name || "")) continue;
@@ -3333,12 +3365,13 @@ function buildPersonColliders() {
     const h = b.maximumWorld.y - b.minimumWorld.y;
     if (w < 0.20 || d < 0.20 || h < 0.35) continue;              // 너무 작으면 넘어간다
     if (w > 4.0 || d > 4.0) continue;                            // 벽·바닥 같은 거대 면 제외
-    /* 물리가 준비돼 실제로 밀리는 상태일 때만 분리한다. Havok 로드가 실패하면
-       밀리지도 않는데 통과까지 되어 카트가 유령이 된다 — 그때는 그냥 막는 게 맞다. */
-    (PUSH.active && isPushable(m) ? COLL_PUSH : COLL_AUTO)
-      .push([(b.minimumWorld.x + b.maximumWorld.x) / 2,
-             (b.minimumWorld.z + b.maximumWorld.z) / 2,
-             w / 2, d / 2]);
+    /* 밀 수 있는 물건은 위에서 프롭 전체로 이미 넣었다 — 여기서 또 넣으면 안 된다.
+       물리가 준비되지 않았으면(Havok 로드 실패) PUSH.bodies가 비어 있으므로 이 메시들이
+       COLL_AUTO로 들어가 그냥 막힌다. 밀리지도 않는데 통과까지 되면 유령이 되기 때문이다. */
+    if (PUSH.active && isPushable(m)) continue;
+    COLL_AUTO.push([(b.minimumWorld.x + b.maximumWorld.x) / 2,
+                    (b.minimumWorld.z + b.maximumWorld.z) / 2,
+                    w / 2, d / 2]);
   }
   console.log("[COLL] 사람 충돌 박스 — 수동", COLL_FOOTPRINTS.length, "+ 자동", COLL_AUTO.length +
               (PUSH.active ? " + 밀 수 있음 " + COLL_PUSH.length + "(길찾기 전용)" : ""));
@@ -6191,16 +6224,17 @@ function buildPushables() {
     box.rotation.y = it.ry;                      // setParent 전에 — 회전은 프록시가 갖는다
     box.isVisible = false; box.isPickable = false;
     h.setParent(box);                            // 월드 변환 보존
+    const ph = it.def.roll ? PUSH_PHYS.roll : PUSH_PHYS.drag;
     const ag = new BABYLON.PhysicsAggregate(box, ST.BOX,
-                 {mass, friction:0.32, restitution:0.02}, scene);
-    /* 감쇠 0.55 — 1.1로 잡았더니 카트가 곧바로 서 버려 **사람이 카트를 추월했다**(실측:
-       사람 1.26m 걷는 동안 카트 0.36m). 밀고 가는 그림이 아니라 밀치고 지나가는 그림이다.
-       0.55면 보행 속도(0.8~0.9 m/s)를 카트가 따라간다. 0에 가깝게 두면 한 번 밀린 카트가
-       방을 가로질러 굴러가 배치가 무너진다 — 캐스터에도 저항은 있다. */
-    ag.body.setLinearDamping(0.55);
+                 {mass, friction:ph.friction, restitution:0.02}, scene);
+    /* 구르는 것의 감쇠 0.55 — 1.1로 잡았더니 카트가 곧바로 서 버려 **사람이 카트를
+       추월했다**(실측: 사람 1.26m 걷는 동안 카트 0.36m). 밀고 가는 그림이 아니라 밀치고
+       지나가는 그림이다. 0.55면 보행 속도(0.8~0.9 m/s)를 카트가 따라간다. 0에 가깝게
+       두면 한 번 밀린 카트가 방을 가로질러 굴러가 배치가 무너진다 — 캐스터에도 저항은 있다. */
+    ag.body.setLinearDamping(ph.damp);
     ag.body.setAngularDamping(4.0);
     ag.body.setMassProperties({ mass, inertia:new V3(0, mass*(w*w + d*d)/12, 0) });
-    PUSH.bodies.push({ box, ag, holder:h, label:it.def.label, half:[w/2, d/2],
+    PUSH.bodies.push({ box, ag, holder:h, label:it.def.label, half:[w/2, d/2], maxV:ph.maxV,
                        home:box.position.clone(), homeYaw:it.ry,
                        size:[+w.toFixed(2), +ht.toFixed(2), +d.toFixed(2)] });
   }
@@ -6210,6 +6244,14 @@ function buildPushables() {
      buildPersonColliders는 PUSH.active 를 보고 분류하므로 순서가 이 뒤여야 한다. */
   buildPersonColliders();
   buildNavGrid();
+  /* **시작 위치가 물건과 겹쳐 있으면 사람이 아니라 물건이 밀려난다.** 사람 스폰(0.60, 3.10)이
+     바스켓 카트(0.90, 3.20) 발자국 안이라, 밀기를 켜자마자 카트가 0.50m 밀려나 있었다
+     (실측: 자동 운행 표류가 매번 정확히 0.495m로 같았던 것이 단서였다 — 사람이 지나다
+     건드린 게 아니라 t=0에 이미 겹쳐 있었다는 뜻이다).
+     여기서는 **사람을 빼낸다** — 배치는 참조 현장 근거로 잡은 값이라 물건을 옮길 수 없다.
+     solid 기본값(true)으로 부르므로 밀 수 있는 물건도 벽으로 취급된다. */
+  resolvePersonCollision(person.node.position);
+  for (const e of EXTRAS) if (e && e.node) resolvePersonCollision(e.node.position);
   console.log("[PUSH] 밀 수 있는 물건 " + PUSH.bodies.length + "개 — " +
               PUSH.bodies.map(b => b.label + " " + b.size.join("×")).join(" · "));
 }
@@ -6231,6 +6273,12 @@ function buildPushables() {
    14면 0.06m 파고들었을 때 0.84 m/s — 보행 속도와 같아져 카트가 사람 앞에서 굴러간다.
    9.0으로 잡았을 때는 카트가 뒤처져 사람이 뚫고 지나가는 것처럼 보였다(실측). */
 const PUSH_GAIN = 14.0;
+/* **스치는 것과 미는 것을 가르는 문턱.** A*가 물건을 피해 가도 회피 스티어링이 옆을
+   스칠 수 있는데, 문턱이 없으면 그 스침마다 물건이 조금씩 밀린다 — 자동 운행 6.7초에
+   바스켓 카트 한 대가 0.30m 표류했다(실측). 하루 종일 돌리면 배치가 무너진다.
+   0.06m는 사람 반경(0.26)의 23%로, 어깨가 살짝 닿는 정도는 무시하고 몸으로 밀고 들어갈
+   때만 물건이 움직인다. 이 값을 0으로 두면 종전 동작(스쳐도 밀림)으로 돌아간다. */
+const PUSH_DEADZONE = 0.06;
 function pushUpdate() {
   if (!PUSH.active) return;
   // 리셋으로 열어 둔 메시→바디 동기화를 되돌린다 (열어 두면 매 프레임 비용)
@@ -6251,15 +6299,15 @@ function pushUpdate() {
       const qx = clamp(lx, -b.half[0], b.half[0]), qz = clamp(lz, -b.half[1], b.half[1]);
       const ox = lx - qx, oz = lz - qz;
       const dist = Math.hypot(ox, oz);
-      if (dist >= PERSON_R) continue;                              // 아직 안 닿았다
-      const pen = PERSON_R - dist;
+      if (dist >= PERSON_R - PUSH_DEADZONE) continue;              // 아직 안 닿았거나 스치기만 했다
+      const pen = PERSON_R - PUSH_DEADZONE - dist;
       // 밀리는 방향 = 사람 → 카트 (로컬 → 월드로 되돌린다)
       let nx, nz;
       if (dist > 1e-4) { nx = -ox/dist; nz = -oz/dist; }
       else             { nx = -Math.sign(lx) || 1; nz = 0; }       // 정확히 겹침 — 임의 방향
       const wx = nx*cs + nz*sn, wz = -nx*sn + nz*cs;               // 역회전
       const v = b.ag.body.getLinearVelocity();
-      const want = pen * PUSH_GAIN;
+      const want = Math.min(pen * PUSH_GAIN, b.maxV);   // 종류별 상한 — 구르는 것/끌리는 것
       const cur = v.x*wx + v.z*wz;                                 // 이미 그 방향으로 가는 속도
       if (cur < want)
         b.ag.body.setLinearVelocity(new V3(v.x + (want-cur)*wx, v.y, v.z + (want-cur)*wz));
