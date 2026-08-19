@@ -2903,7 +2903,7 @@ const PRED = { horizon:1.6, steps:12, vel:new V3(0,0,0), lastPos:null, lastT:0,
                     행동을 바꾸지 않으면서 그림만 길게 뽑기 위해 일부러 나눴다.
                   minSigma: 사람 충돌 캡슐 반경(0.24AU=어깨 반폭). 확률 구름이 t=0에서 0으로
                     수축하면 화면에서 안 보이므로, 최소한 '사람 가로 면적'만큼은 항상 그린다. */
-               vizHorizon:3.5, vizSteps:14, minSigma:0.24, mix:[],
+               vizHorizon:3.5, vizSteps:14, minSigma:0.24, mix:[], lineW:0.09,
                /* sigA = 사람 가감속 불확실성(㎧²). 이 값이 곧 지평선 끝 위치 불확실성을 지배한다.
                   실측(2026-08-13) — 사람이 **가만히 서 있을 때** 예측 정지가 오발동하는지:
                     1.2 → sigma 2.19m → 2.5m에서 오탐 ✗   (계획서의 "고정물 지속 오탐=영구정지")
@@ -3127,18 +3127,20 @@ function predictionUpdate(srcPos, now) {
   }
   PRED.mix = mix;
   densUpdate(dtMs);                  // 바닥 확률밀도 음영 (논문 그림)
-  // 예측 경로 폴리라인 — 이동 중일 때만 표시
-  if (!PRED.line) {
-    PRED.line = BABYLON.MeshBuilder.CreateLines("predLine", { points: pts, updatable: true }, scene);
-    PRED.line.isPickable = false;
-  } else {
-    PRED.line = BABYLON.MeshBuilder.CreateLines("predLine", { points: pts, instance: PRED.line });
-  }
-  PRED.line.setEnabled(SCALE.m(speed) > 0.08);   // 0.08㎧ 이상 이동 중일 때만
   const predCol = PRED.tStop < Infinity ? C3.FromHexString("#f85149")
                 : PRED.tSlow < Infinity ? C3.FromHexString("#e3b341")
                 : C3.FromHexString("#2ea043");
-  PRED.line.color = predCol;
+  /* 예측 경로 — 이동 중일 때만 표시. 기본 CreateLines는 **선 두께를 지원하지 않아**(항상 1px)
+     조감 화면에서 거의 안 보였다. GreasedLine은 리본으로 그려 두께(PRED.lineW, 월드 단위)를 준다. */
+  if (!PRED.line) {
+    PRED.line = BABYLON.CreateGreasedLine("predLine", { points: pts, updatable: true },
+                  { width: PRED.lineW, color: predCol }, scene);
+    PRED.line.isPickable = false;
+  } else {
+    PRED.line.setPoints(pts);
+  }
+  if (PRED.line.greasedLineMaterial) PRED.line.greasedLineMaterial.color = predCol;
+  PRED.line.setEnabled(SCALE.m(speed) > 0.08);   // 0.08㎧ 이상 이동 중일 때만
   // 3D σ 밴드 — 예측 경로를 따라 (t/horizon)·σ 만큼 좌우로 벌린 반투명 리본
   const np = pts.length;
   if (np > 1) {
@@ -3158,7 +3160,8 @@ function predictionUpdate(srcPos, now) {
       PRED.band.material = bm; PRED.band.isPickable = false;
     }
     PRED.band.material.emissiveColor = predCol; PRED.band.material.diffuseColor = predCol;
-    PRED.band.setEnabled(PRED.moving && PRED.showBand);   // 독립 토글 PRED.showBand
+    // 바닥 음영(DENS)이 켜져 있으면 밴드는 중복이라 자동으로 끈다(showBand로 되돌릴 수 있음)
+    PRED.band.setEnabled(PRED.moving && PRED.showBand && !DENS.on);
   }
 }
 
