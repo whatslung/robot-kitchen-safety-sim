@@ -495,6 +495,14 @@
     <button id="gtGenBtn">데이터셋 생성</button>
   </div>
 
+  <div class="section">궤적 데이터 수집 <span class="note" style="font-weight:400">예측기 학습용 (이슈 #2)</span></div>
+  <div class="row"><span>scene 수</span><input id="trajScenes" type="range" min="1" max="60" step="1" value="40"><b id="trajScenesV">40</b></div>
+  <div class="btnrow">
+    <button id="trajRunBtn">궤적 수집 시작</button>
+  </div>
+  <div class="hint">1단계 WORKFLOW 동선을 고정 dt로 돌려 추가 인원 궤적을 2.5Hz로 <b>detect_server의 /traj</b>에
+    저장합니다(<b>dataset/trajectories/</b>). 세부 조정은 콘솔 <code>__sim.trajRun({scenes,seed,seconds,jobs})</code>.</div>
+
   <div class="section">전문가 기능</div>
   <label class="row" style="cursor:pointer"><input type="checkbox" id="devMode" style="accent-color:#76b900">
     <span style="width:auto;color:#c9d1d9">전문가 기능 표시</span></label>
@@ -3279,9 +3287,13 @@ function makeRNG(seed) {
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
-  return { seed: seed >>> 0, next,
+  const o = { seed: seed >>> 0, next,
            range: (a, b) => a + next() * (b - a),
-           pick: arr => arr[(next() * arr.length) | 0] };
+           pick: arr => arr[(next() * arr.length) | 0],
+           /* 궤적 수집 하네스가 scene마다 전역 흐름을 같은 시드로 되돌린다.
+              고정 dt + 재시드라야 같은 시드의 scene 좌표가 글자 단위로 재현된다. */
+           reseed: k => { s = (k >>> 0) || 1; o.seed = s; } };
+  return o;
 }
 const SEED0 = (() => {
   const q = new URLSearchParams(location.search).get("seed");
@@ -9306,6 +9318,13 @@ $("gtGenBtn").addEventListener("click", () => {
   if (DATAGEN.running) { DATAGEN.abort = true; setStatus("중단 요청 — 현재 샘플까지 저장 후 종료"); }
   else generateDataset(+$("gtCount").value);
 });
+$("trajScenes").addEventListener("input", e => $("trajScenesV").textContent = e.target.value);
+$("trajRunBtn").addEventListener("click", async () => {
+  if (TRAJ.running) { setStatus("궤적 수집 이미 실행 중"); return; }
+  const btn = $("trajRunBtn"); btn.disabled = true; btn.textContent = "수집 중…";
+  try { await trajRun({ scenes: +$("trajScenes").value }); }
+  finally { btn.disabled = false; btn.textContent = "궤적 수집 시작"; }
+});
 $("inspectorBtn").addEventListener("click", showInspector);
 
 /* 물리 · 안전 UI */
@@ -9892,6 +9911,8 @@ window.__sim = {
   ROLE, roleStations, spawnRole, buildPersonColliders, transitPath,
   JOB, SCENARIO, spawnJob, runScenario, jobRole, jobNextTarget,
   WF, WORKFLOW, wfPlan, workflowTarget, personWorkflow,
+  get TRAJ() { return TRAJ; },   // 선언이 이 블록보다 뒤 — TDZ 회피(EXTRAS·OVERLAP과 같은 규약)
+  trajRun, trajRunScene,         // 궤적 데이터 수집(이슈 #2 2단계) — 함수 선언이라 hoisted
   resolvePeopleSeparation, makeRNG, armClearance, armContactUpdate,
   demoHazard, demoHazardClear, findHazardSpot, workOverlapUpdate,
   get OVERLAP() { return OVERLAP; },   // 선언이 이 블록보다 뒤 — 직접 넣으면 TDZ로 스크립트가 죽는다
@@ -10292,7 +10313,11 @@ const EXTRAS = [];
    인원 시드를 (전역시드 + 인덱스)로만 잡으면 재추출을 눌러도 같은 사람이 다시 나온다.
    세대를 시드에 섞어 두면 재추출은 달라지면서도 (seed, 세대)만 같으면 그대로 재현된다. */
 let EXTRA_GEN = 0;
-const extraSeed = i => SEED0 + 7919 * (i + 1) + 104729 * EXTRA_GEN;
+/* 궤적 수집 하네스가 켜지면(TRAJ.seedBase != null) 전역 SEED0 대신 scene 시드를 기준으로
+   삼아 사람 시드가 scene마다 결정적이 되게 한다. 평소엔 SEED0 그대로. */
+const extraSeed = i =>
+  ((typeof TRAJ !== "undefined" && TRAJ.seedBase != null) ? TRAJ.seedBase : SEED0)
+  + 7919 * (i + 1) + 104729 * EXTRA_GEN;
 const RAND_PATHS = [
   [new V3(1.9,0,2.4), new V3(1.9,0,-1.2), new V3(-1.0,0,-1.7), new V3(-2.3,0,0.4), new V3(-2.2,0,2.4)],
   [new V3(-2.3,0,2.6), new V3(-0.9,0,2.2), new V3(1.4,0,1.4), new V3(2.2,0,-0.6)],
@@ -10830,15 +10855,126 @@ async function spawnJob(jobKey) {
 }
 /* 근무 시나리오 한 회차 — 기존 인원을 비우고 배역대로 다시 세운다.
    같은 시드 + 같은 시나리오면 같은 회차가 재현된다. */
+/* 기존 인원을 비우고 jobs 목록대로 다시 세운다 — runScenario(이름 기반)와
+   trajSpawn(궤적 하네스)가 공유하는 스폰 코어. 같은 시드면 같은 회차가 재현된다. */
+async function spawnJobList(jobs) {
+  await setExtraCount(0);
+  for (const j of jobs) await spawnJob(j);
+  return EXTRAS.slice();
+}
 async function runScenario(name) {
   const S = SCENARIO[name];
   if (!S) { console.warn("[SCEN] 없는 시나리오:", name); return null; }
-  await setExtraCount(0);
-  for (const j of S.jobs) await spawnJob(j);
+  await spawnJobList(S.jobs);
   const labels = EXTRAS.map(P => (JOB[P.job] || {}).label + "(" + P.role + ")");
   setStatus("시나리오 — " + S.label + " · " + labels.join(" · ") + " · seed " + SEED0);
   console.log("[SCEN]", name, S.label, "—", labels.join(", "));
   return EXTRAS.slice();
+}
+/* ══ 궤적 데이터 수집 (이슈 #2 2단계) ═══════════════════════════════════════
+   1단계 WORKFLOW 동선을 고정 dt로 돌려 추가 인원 궤적을 2.5Hz로 기록 → /traj 서버 저장.
+   고정 dt인 이유: 가변 dt(실시간)면 같은 시드라도 좌표가 미세하게 달라져 재현이 안 된다.
+   궤적은 월드 좌표를 직접 읽으므로 GPU 렌더가 불필요해 탭 가시성과 무관하게, 실시간보다 빠르게 돈다.
+   설계: docs/chanwoo/specs/2026-08-19-trajectory-collection-design.md */
+const TRAJ = {
+  hz: 2.5, dt: 0.4, subDt: 0.04,       // 스냅 2.5Hz · 서브스텝 40ms(잘게 밟아 순간이동/끼임 방지)
+  stabilizeSec: 1.0,                   // 스폰 직후 안정화(첫 스냅 전, 기록 안 함)
+  teleportMax: 0.8,                    // 스텝 간 이동이 이보다 크면 코드 산물(순간이동)로 보고 폐기표시.
+                                       // 정상 최대 = 최대속도(~0.9)×0.4s≈0.36m라 급정지/급가속은 안 걸린다.
+  url: (location.origin || "") + "/traj",
+  seedBase: null,                      // 하네스 활성 시 scene 시드(평소 null → extraSeed가 SEED0 사용)
+  running: false, layout: "island",
+  jobSets: [["cook","carry"], ["cook","lead"], ["prep","wash"], ["cook","carry","wash"]],
+};
+/* 지금 기록할 노드 = 추가 인원. 주인공(person)은 WASD·카메라 종속이라 제외. */
+function trajNodes() {
+  return EXTRAS.map((P, i) => ({ P, id:"extra_" + i, job:P.job || null, role:P.role || null, frames:[] }));
+}
+/* 한 프레임 스냅 — moving은 실제로 걷는 중일 때만 true.
+   dwellT>0(작업 체류)뿐 아니라 crouch/idle(정지 동작) 프레임도 걷는 게 아니므로 제외한다
+   — dwellT만 보면 서 있는 crouch/idle 프레임이 moving:true로 잘못 찍힌다. */
+function trajSnap(nodes, t) {
+  for (const nd of nodes) {
+    const p = nd.P.root.position, st = nd.P.station, m = nd.P.mode;
+    nd.frames.push({
+      t:+t.toFixed(3), x:+p.x.toFixed(4), z:+p.z.toFixed(4),
+      goal:(st && st.key) || null,
+      gx: st && st.pos ? +st.pos.x.toFixed(4) : null,
+      gz: st && st.pos ? +st.pos.z.toFixed(4) : null,
+      moving: !(nd.P.dwellT > 0) && m !== "crouch" && m !== "idle",
+    });
+  }
+}
+/* 모션에 필요한 최소 집합만 고정 dt로 돌린다(로봇·조리·안전 판정 제외 → 전역 RNG 소비가
+   사람 모션에만 국한돼 결정성이 는다). */
+function trajStep(dtMs) { extrasUpdate(dtMs); resolvePeopleSeparation(); }
+/* scene 하나 생성 → JSON 반환(+ /traj POST). 하네스 상태(seedBase·WF·EXTRA_GEN)는
+   이 함수가 스스로 저장·복원한다 — 직접 호출해도 평소 스폰 시드가 오염되지 않게. */
+async function trajRunScene(sceneSeed, seconds, jobs, idx) {
+  const saved = { seedBase: TRAJ.seedBase, wf: WF.on, gen: EXTRA_GEN };
+  try {
+    TRAJ.seedBase = sceneSeed >>> 0; EXTRA_GEN = 0; RNG.reseed(sceneSeed); WF.on = true;
+    await spawnJobList(jobs);
+    const nodes = trajNodes();
+    if (!nodes.length) { console.warn("[TRAJ] 스폰된 인원이 없다 — ?person=1·시나리오 확인"); return null; }
+    const subMs = TRAJ.subDt * 1000;
+    for (let e = 0; e < TRAJ.stabilizeSec * 1000; e += subMs) trajStep(subMs);   // 안정화
+    /* 스냅 간 실제 시뮬 간격 = perSnap·subDt. subDt가 dt를 정수로 나누지 않으면 이 값이
+       TRAJ.dt와 달라지므로, t·hz·scene.dt를 이 실측 간격으로 적어 라벨과 실제가 어긋나지 않게 한다. */
+    const perSnap = Math.max(1, Math.round(TRAJ.dt / TRAJ.subDt));
+    const snapDt = perSnap * TRAJ.subDt;
+    const steps = Math.round(seconds / snapDt);
+    const prev = nodes.map(nd => ({ x:nd.P.root.position.x, z:nd.P.root.position.z }));
+    trajSnap(nodes, 0);
+    for (let s = 1; s <= steps - 1; s++) {
+      for (let k = 0; k < perSnap; k++) trajStep(subMs);
+      trajSnap(nodes, s * snapDt);
+      for (let n = 0; n < nodes.length; n++) {                  // 순간이동(코드 산물) 검사 — 노드별
+        const p = nodes[n].P.root.position;
+        if (Math.hypot(p.x - prev[n].x, p.z - prev[n].z) > TRAJ.teleportMax) nodes[n].discarded = true;
+        prev[n].x = p.x; prev[n].z = p.z;
+      }
+    }
+    const scene = {
+      scene_id: TRAJ.layout + "_seed" + (sceneSeed >>> 0) + "_" + String(idx).padStart(4, "0"),
+      schema:1, seed:sceneSeed >>> 0, layout:TRAJ.layout, wf:true,
+      hz:+(1 / snapDt).toFixed(4), dt:+snapDt.toFixed(4), steps,
+      discarded: nodes.some(nd => nd.discarded),   // 하나라도 오염되면 scene 표시(노드별 플래그로 정밀 필터 가능)
+      nodes: nodes.map(nd => ({ id:nd.id, job:nd.job, role:nd.role, discarded:!!nd.discarded, frames:nd.frames })),
+    };
+    try {
+      const r = await fetch(TRAJ.url, { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify(scene) });
+      const j = await r.json();
+      console.log("[TRAJ]", scene.scene_id, "— 노드", scene.nodes.length, "· 스텝", steps,
+                  (scene.discarded ? "· ⚠폐기노드 " + scene.nodes.filter(n=>n.discarded).length : ""), "· 저장", j.count || "?");
+    } catch (e) { console.warn("[TRAJ] /traj 저장 실패 — detect_server 떠 있나?", e); }
+    return scene;
+  } finally {
+    TRAJ.seedBase = saved.seedBase; WF.on = saved.wf; EXTRA_GEN = saved.gen;
+  }
+}
+/* 하네스 진입점 — 시드를 순환하며 scene 자동 생성. __sim.trajRun({scenes,seed,seconds,jobs}). */
+async function trajRun(opts) {
+  opts = opts || {};
+  const scenes = opts.scenes || 40, base = (opts.seed != null ? opts.seed : 1) >>> 0;
+  const seconds = opts.seconds || 60, jobsOverride = opts.jobs || null;
+  if (TRAJ.running) { console.warn("[TRAJ] 이미 실행 중"); return; }
+  TRAJ.running = true;                          // 하네스 상태(seedBase·WF·GEN) 복원은 trajRunScene이 담당
+  console.log("[TRAJ] 시작 — scene", scenes, "· 기준시드", base, "· 각", seconds + "초");
+  const out = [];
+  try {
+    for (let k = 0; k < scenes; k++) {
+      const jobs = jobsOverride || TRAJ.jobSets[k % TRAJ.jobSets.length];
+      setStatus("궤적 수집 — scene " + (k + 1) + "/" + scenes + " (seed " + (base + k) + ")");
+      const scene = await trajRunScene(base + k, seconds, jobs, k);
+      if (scene) out.push(scene);
+      await new Promise(r => setTimeout(r, 0));   // UI가 상태 갱신할 틈을 준다
+    }
+  } finally { TRAJ.running = false; }
+  const kept = out.filter(s => !s.discarded).length;
+  console.log("[TRAJ] 완료 — scene", out.length, "· 유효", kept, "· 폐기", out.length - kept);
+  setStatus("궤적 수집 완료 — scene " + out.length + " (유효 " + kept + ")");
+  return out;
 }
 /* 역할을 지정해 인원을 추가한다. 회의 요구의 A/B/C가 이것으로 만들어진다. */
 async function spawnRole(roleKey) {

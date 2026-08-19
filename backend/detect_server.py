@@ -35,6 +35,7 @@ detect_server.py — 시뮬레이터 '모델 검증(http 모드)'용 어댑터 �
 """
 import base64
 import io
+import json
 import os
 import time
 import argparse
@@ -333,6 +334,28 @@ async def shot(req: Request):
         f = d / (name + ".png")
         f.write_bytes(base64.b64decode(b64))
         return {"saved": str(f), "bytes": f.stat().st_size}
+    except Exception as e:                # noqa: BLE001
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.post("/traj")
+async def traj(req: Request):
+    """시뮬이 만든 궤적 scene 하나를 dataset/trajectories/<scene_id>.json 에 쓴다.
+
+    /dataset·/shot과 같은 규약 — 시뮬이 scene 완결 시 scene JSON 전체를 POST하면 서버가
+    받아 쓴다(폴더 선택창 없음, 클릭 0회). dataset/이 gitignore라 궤적도 자동 제외된다.
+    요청: {"scene_id":"island_seed7_0000", "schema":1, "seed":7, ..., "nodes":[...]}
+    """
+    try:
+        body = await req.json()
+        safe = lambda v, d: "".join(c for c in str(v) if c.isalnum() or c in "-_")[:80] or d
+        sid = safe(body.get("scene_id", "scene"), "scene")
+        root = _ROOT / "dataset" / "trajectories"
+        root.mkdir(parents=True, exist_ok=True)
+        (root / (sid + ".json")).write_text(
+            json.dumps(body, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        n = len(list(root.glob("*.json")))
+        return {"ok": True, "count": n, "dir": str(root)}
     except Exception as e:                # noqa: BLE001
         return JSONResponse(status_code=500, content={"error": str(e)})
 
