@@ -185,7 +185,7 @@ function workflowTarget(job, curKey, from, rng) {
 
 ```js
 const S = __sim, from = S.STATION.island.pos, r = S.makeRNG(11), h = {};
-for (let i = 0; i < 4000; i++) { const t = S.workflowTarget("prep", "island", from, r); h[t.key] = (h[t.key]||0)+1; }
+for (let i = 0; i < 4000; i++) { const t = S.workflowTarget("prep", { key:"island", step:0 }, from, r); h[t.key] = (h[t.key]||0)+1; }
 console.table(Object.entries(h).sort((a,b)=>b[1]-a[1]).map(([k,n])=>({키:k, 비율:+(n/4000).toFixed(3)})));
 ```
 
@@ -259,10 +259,11 @@ $("scWorkflow").addEventListener("click", () => personWorkflow(!WF.on));
 
 ```js
 const S = __sim;
-const run = job => { const r = S.makeRNG(7); let cur = S.wfPlan(job).set[0], d = 0, keys = [];
-  for (let i = 0; i < 600; i++) { const from = S.STATION[cur].pos;
+const run = job => { const r = S.makeRNG(7); const plan = S.wfPlan(job);
+  let cur = { key:plan.steps[0][0], step:0 }, d = 0, keys = [];
+  for (let i = 0; i < 600; i++) { const from = S.STATION[cur.key].pos;
     const t = S.workflowTarget(job, cur, from, r);
-    d += Math.hypot(t.pos.x - from.x, t.pos.z - from.z); cur = t.key; keys.push(t.key); }
+    d += Math.hypot(t.pos.x - from.x, t.pos.z - from.z); cur = { key:t.key, step:t.step }; keys.push(t.key); }
   return { 직무:job, 평균이동m:+(d/600).toFixed(2), 방문스테이션수:new Set(keys).size,
            첫10:keys.slice(0,10).join(">") }; };
 console.table(["prep","cook","wash","carry","lead"].map(run));

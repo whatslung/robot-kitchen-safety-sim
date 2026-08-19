@@ -10594,6 +10594,11 @@ function jobNextTarget(P, rng) {
   return null;
 }
 function extraNextTarget(P) {
+  /* 라벨을 여기서 다시 잡는다 — WF는 스폰 뒤에 켜지는데(runScenario 후 WF.on=true·버튼)
+     P.role은 spawnJob에서 한 번만 캐시된다. 안 잡으면 사람은 WORKFLOW 사이클로 걷는데
+     라벨은 JOB.route 기준으로 남아, jobRole의 WF 분기가 정상 흐름에서 죽는다.
+     jobRole은 결정적이라 재계산이 idempotent다. WF를 끄면 스폰 시 라벨(route 기준)로 둔다. */
+  if (P.job && WF.on) P.role = jobRole(P.job);
   const R = ROLE[P.role] || ROLE.far;
   const rng = P.rng || RNG;                  // 인원별 독립 난수 — 서로 간섭하지 않는다
   P.speed = rng.range(R.speed[0], R.speed[1]);
@@ -10619,7 +10624,10 @@ function extraNextTarget(P) {
       if (EXTRAS.some(o => o !== P && o.station && o.station.key === t.key)) continue;
       if (setPathTo(P, t.pos)) {
         P.wfStep = t.step;
-        P.station = Object.assign({ dist:0 }, STATION[t.key], { key:t.key, dwell:t.dwell });
+        /* dwell은 **원본**을 싣는다 — 도착 처리(extrasUpdate)가 rng.range(0.6,1.5)를 곱한다.
+           workflowTarget이 돌려준 t.dwell은 이미 지터가 곱해진 값이라 그걸 쓰면 두 번 곱해진다
+           (jobNextTarget은 원본 st.dwell을 실어 단일 지터만 걸린다 — 그쪽과 맞춘다). */
+        P.station = Object.assign({ dist:0 }, STATION[t.key], { key:t.key });
         return P.station;
       }
     }
