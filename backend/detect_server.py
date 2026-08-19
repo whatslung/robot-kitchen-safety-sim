@@ -270,6 +270,28 @@ async def detect(req: Request):
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
+@app.post("/shot")
+async def shot(req: Request):
+    """브라우저가 만든 이미지를 그대로 디스크에 저장한다 (captures/, gitignore 대상).
+
+    종전에는 시뮬의 capture()가 <a download>로 브라우저 다운로드를 띄워 **사람이 매번 저장
+    버튼을 눌러야** 했다. 데모/문서용 스냅을 자동으로 남기려면 서버가 받아 쓰는 쪽이 맞다.
+    요청: {"name": "demo", "image": "data:image/png;base64,..."}
+    """
+    try:
+        body = await req.json()
+        raw = body["image"]
+        b64 = raw.split(",", 1)[1] if "," in raw else raw
+        name = "".join(c for c in str(body.get("name", "shot")) if c.isalnum() or c in "-_")[:60] or "shot"
+        d = _ROOT / "captures"
+        d.mkdir(exist_ok=True)
+        f = d / (name + ".png")
+        f.write_bytes(base64.b64decode(b64))
+        return {"saved": str(f), "bytes": f.stat().st_size}
+    except Exception as e:                # noqa: BLE001
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
 # 시뮬 정적 파일(sim.html·assets·vendor…)도 같은 FastAPI가 서빙한다 →
 # 서버 하나로 시뮬 + 검출을 모두 처리(별도 http.server 불필요, 동일 출처라 CORS도 불필요).
 # 라우트(/detect·/health)를 먼저 등록한 뒤 마운트하므로 그 경로들이 우선한다.
