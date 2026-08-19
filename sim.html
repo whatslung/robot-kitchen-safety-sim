@@ -2084,11 +2084,14 @@ const CAM_DEFS = [
      ortho span = X 8.533 × Z 6.4 (960:720 = 4:3에 맞춰 X를 6.4×4/3로) → 112.5px/m 균일.
      fov는 직교에서 무시된다(placeholder). ortho:{w,h}가 실제 프러스텀을 정한다.
      noCeil: 5m는 천장 밖 가상 시점 — 후드/천장을 빼 조리라인 위를 직시(GT·데모 전용).
-     ⚠ center/span은 **옛 조리셀(6.6×4.95m) 기준**이다. 섬 배치(방 12×10m)로 바뀌었으니
-       전역 동선을 담으려면 cx/cz·ortho{w,h}를 다시 잡아야 한다(후속).
+     **섬 배치(2026-08-19) 재조정**: 실측한 활동 범위 — 스테이션 x[-2.13, 4.88]·z[-0.86, 4.53],
+       로봇 베이스 (-1.1, 0.81) — 을 4:3(960×720)에 담는다.
+       center (1.375, 1.85) · span X 8.9 × Z 6.675 → 프레임 x[-3.08, 5.83]·z[-1.49, 5.19],
+       107.9px/m 균일. 옛 값(center 1.45,3.21 · span 8.533×6.4)은 조리셀만 담아 로봇/TCP가
+       프레임 밖(z≈-0.03)으로 빠졌다(실측).
      z축 +0.001 오프셋은 top과 같은 이유(수직 시점 yaw를 계약으로 고정: 세로=+Z, 가로=+X). */
-  { id:"orthotop", label:"CAM11 직교 상부(나디르 GT)", pos:new V3(1.450,5.00,3.210),
-    tgt:new V3(1.450,0,3.211), fov:1.30, noCeil:true, ortho:{ w:8.533, h:6.4 } },
+  { id:"orthotop", label:"CAM11 직교 상부(나디르 GT)", pos:new V3(1.375,5.00,1.850),
+    tgt:new V3(1.375,0,1.851), fov:1.30, noCeil:true, ortho:{ w:8.9, h:6.675 } },
 ];
 /* ══ 섬 배치용 카메라 재배치 ═════════════════════════════════════════════════
    섬이 되면 주인공이 정중앙이라 **벽에서 안쪽을 보면 곧 주인공을 보는 것**이 된다.
@@ -8251,7 +8254,7 @@ function camUIapply(write = true) {
    저장된 값이 그대로 복원돼 새 배치가 안 보이는 일을 막는다 — 버전을 올리면 새 기본값으로 시작. */
 // v4: 방 남쪽 +3m 확장에 맞춰 CAM7~10 증설. 버전을 안 올리면 v3 저장값이 복원되면서
 //     새로 단 4대가 통째로 사라진다(camStoreLoad가 CAM_DEFS를 저장분으로 교체하므로).
-const CAM_STORE = "hkr.sim.cams.v5";   // v5: 섬 배치 CAM7~10 + CAM11(직교 상부 GT) 구성
+const CAM_STORE = "hkr.sim.cams.v6";   // v6: CAM11 프레임을 섬 배치 활동범위로 재조정
 function camStoreSave() {
   try {
     localStorage.setItem(CAM_STORE, JSON.stringify(CAM_DEFS.map(d => {
