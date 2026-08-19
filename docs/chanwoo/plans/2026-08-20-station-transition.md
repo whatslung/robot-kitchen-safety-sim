@@ -16,6 +16,12 @@
 
 **스펙:** `docs/chanwoo/specs/2026-08-20-station-transition-design.md`
 
+> **구현 후 — 계획과 달라진 두 가지** (근거는 스펙 하단 실측 표에 있다)
+> 1. `WORKFLOW` 사이클의 membership·순서를 **좌표 기준으로 다시 갈랐고 왕복을 허용했다.**
+>    계획대로 넣었더니 평균 이동이 4.06~5.37 m로 기준(2~3 m)을 못 넘었다.
+> 2. `workflowTarget(job, cur, from, rng)` — 둘째 인자가 키 문자열이 아니라 `{key, step}`이고
+>    반환에 `step`이 붙는다. 왕복 사이클에서 진행도를 키로 되짚으면 뒷 절반이 죽는다.
+
 ## 전역 제약
 
 - `wanderTarget()` · `jobNextTarget()` · `JOB` · `ROUTE` · `ROLE` 는 **수정 금지**.
