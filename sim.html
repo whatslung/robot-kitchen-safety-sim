@@ -152,16 +152,23 @@
 
   /* ══ Isaac Sim풍 도킹 레이아웃 ══ */
   body{display:flex;flex-direction:column}
+  /* 좁은 창에서 **버튼이 먼저 밀려나면 안 된다.** 제목과 우측 버전 표기가 먼저 줄고,
+     그래도 모자라면 가로로 스크롤한다. 종전에는 셋 다 flex:0 0 auto라 창을 줄이면
+     오른쪽 버튼부터 화면 밖으로 나갔다(카트 밀기가 안 보인다는 지적의 한 원인). */
   #menubar{height:36px;flex:0 0 36px;background:#1d1d1f;border-bottom:1px solid #0a0a0a;
-    display:flex;align-items:center;gap:4px;padding:0 10px;font-size:12px;color:#cfcfcf;z-index:20}
+    display:flex;align-items:center;gap:4px;padding:0 10px;font-size:12px;color:#cfcfcf;z-index:20;
+    overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
+  #menubar::-webkit-scrollbar{display:none}
   #menubar .logo{width:10px;height:10px;border-radius:2px;background:#76b900;margin-right:6px}
-  #menubar .title{font-weight:700;color:#e8e8e8;margin-right:14px;font-size:12.5px}
+  #menubar .title{font-weight:700;color:#e8e8e8;margin-right:14px;font-size:12.5px;
+    flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   #menubar .sep{width:1px;height:18px;background:#3a3a3a;margin:0 8px}
   .mbtn{background:none;border:1px solid transparent;color:#d8d8d8;padding:4px 10px;border-radius:4px;
     font-size:12px;cursor:pointer;font-family:inherit;flex:0 0 auto}
   .mbtn:hover{background:#2e2e30;border-color:#3c3c3e}
   .mbtn.play{color:#9fe234}
-  #menubar .right{margin-left:auto;display:flex;align-items:center;gap:10px;color:#8b949e;font-size:11px}
+  #menubar .right{margin-left:auto;display:flex;align-items:center;gap:10px;color:#8b949e;font-size:11px;
+    flex:0 1 auto;min-width:0;overflow:hidden;white-space:nowrap}
   #main{flex:1;display:flex;min-height:0}
   #stagePanel{width:200px;flex:0 0 200px;background:#232326;border-right:1px solid #0a0a0a;
     display:flex;flex-direction:column;min-height:0}
@@ -9217,10 +9224,16 @@ initPhysics();   // 비동기 — 파일 없으면 물리만 꺼진 채 계속 �
 
     <div class="stStep" data-step="4">
       <div class="stHead"><b>4</b> 안전 시연 <span id="stS4" class="stChip"></span></div>
-      <div class="stWhy">사람이 다가오면 예측으로 미리 감속하고, 정지 반경에 들어오면 멈춥니다.</div>
+      <div class="stWhy">사람이 다가오면 예측으로 미리 감속하고, 정지 반경에 들어오면 멈춥니다.<br>
+        <b>카트 밀기</b>는 사람이 아닌 <b>물체</b>가 반경을 침범하는 경우입니다 — 조리원이 카트를
+        로봇 쪽으로 밀고 갑니다.</div>
       <div class="btnrow">
         <button id="stAuto" class="primary">▶ 자동 작업</button>
         <button id="stApproach">사람 접근</button>
+      </div>
+      <div class="btnrow">
+        <button id="stPush">🛒 카트 밀기 (물리)</button>
+        <button id="stPushBack">↩ 카트 원위치</button>
         <button id="stReset">↺ 리셋</button>
       </div>
     </div>
@@ -9245,6 +9258,10 @@ initPhysics();   // 비동기 — 파일 없으면 물리만 꺼진 채 계속 �
   document.getElementById("stMil").onclick = () => { showTab("data"); click("milBtn"); };
   document.getElementById("stAuto").onclick = () => click("autoBtn");
   document.getElementById("stApproach").onclick = () => click("scApproach");
+  /* 기본 탭에서 바로 누를 수 있어야 한다 — 상단바·실행 탭에도 같은 버튼이 있지만,
+     처음 여는 사람이 보는 화면은 이 탭이다(실측 지적: "카트 밀기가 안 보인다"). */
+  document.getElementById("stPush").onclick     = () => click("mbPush");
+  document.getElementById("stPushBack").onclick = () => click("mbPushReset");
   document.getElementById("stReset").onclick = () => click("resetBtn");
   document.getElementById("stRuns").onclick = () => gotoControl("data", "runLogList");
 
