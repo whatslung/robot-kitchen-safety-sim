@@ -6282,7 +6282,7 @@ function buildPushables() {
     ag.body.setLinearDamping(ph.damp);
     ag.body.setAngularDamping(4.0);
     ag.body.setMassProperties({ mass, inertia:new V3(0, mass*(w*w + d*d)/12, 0) });
-    PUSH.bodies.push({ box, ag, holder:h, label:it.def.label, half:[w/2, d/2], maxV:ph.maxV,
+    PUSH.bodies.push({ box, ag, holder:h, label:it.def.label, half:[w/2, d/2, ht/2], maxV:ph.maxV,
                        home:box.position.clone(), homeYaw:it.ry,
                        size:[+w.toFixed(2), +ht.toFixed(2), +d.toFixed(2)] });
   }
@@ -6367,7 +6367,10 @@ function pushUpdate(dt) {
       /* 밀고 있다는 표식 — locoPlay가 보행 클립 대신 밀기 클립을 튼다.
          매 프레임 갱신되므로, 손을 떼면 PUSH_ANIM_HOLD 뒤에 저절로 보행으로 돌아간다.
          값이 너무 짧으면 접촉이 한 프레임 끊길 때마다 자세가 깜빡인다. */
-      if (mv.rig) mv.rig.pushT = PUSH_ANIM_HOLD;
+      if (mv.rig) {
+        mv.rig.pushT = PUSH_ANIM_HOLD;
+        mv.rig.pushTopY = b.box.position.y + b.half[2];   // 미는 면(물건 윗면)의 높이
+      }
     }
   }
 }
@@ -6401,6 +6404,62 @@ function demoPushCart() {
   personGo([new V3(c.x + ux * 1.30, 0, c.z + uz * 1.30)], { speed: 0.80 });
   setStatus("🛒 " + best.label + "를 로봇 쪽으로 밉니다 — 정지 링에 들어가는지 보세요");
   return best;
+}
+/* ══ 미는 자세 보정 — 손이 물건에 닿게 상체를 숙인다 ═══════════════════════
+   `Push_Loop`은 **손을 가슴 높이(1.18m)로 내밀고** 민다. 그 높이에 맞는 물건은 팬 카트
+   (1.43m)뿐이고, 바스켓 카트(0.80m)·쓰레기통(0.69m)에서는 **손이 물건 위 38cm 허공을
+   밀었다**(실측: 손 1.18 · 카트 0.80 · 손이 카트 수평범위 안 97%). 카트는 밀리는데
+   사람은 허공을 젓는 그림이라 "미는 동작이 부자연스럽다"의 정체가 이것이다.
+
+   클립을 물건 높이별로 따로 받을 수는 없으므로 **상체를 숙여 손을 내린다.** 실제로도
+   낮은 카트를 밀 때 사람은 허리를 숙인다. 스파인을 굽히면 손이 따라 내려온다
+   (실측: 0.20rad → 손 1.18→1.07 · 0.40rad → 0.95).
+
+   **본이 아니라 본에 연결된 TransformNode를 돌려야 한다.** GLB 스켈레톤은 애니메이션이
+   TransformNode를 향하므로 Bone.setRotation은 그 프레임에 덮어써진다(실측: 굽힘을 0.45까지
+   줘도 손 높이가 1.183→1.185로 그대로였다). 매 프레임 **애니메이션이 쓴 값에 각도를 더한다** —
+   누적되지 않는다(다음 프레임에 애니메이션이 다시 덮어쓰므로).
+
+   목표 높이에 비례해 굽히지 않고 **오차를 보고 조금씩 따라가게** 했다. 캐릭터 신장이나
+   클립이 바뀌어도 상수를 다시 잡을 필요가 없다. 상한 0.42rad(24°)는 미는 자세를 넘어
+   절하는 그림이 되지 않는 선이다 — 아주 낮은 물건은 손이 조금 뜬 채로 둔다. */
+/* 상한 0.50rad(29°) — 스파인 굽힘 1rad당 손이 약 0.58m 내려간다(실측: 0.20→0.113m,
+   0.40→0.232m). 낮은 물건(0.69~0.80m)에서 필요한 굽힘이 약 0.56rad이라 상한에 걸리지만,
+   그 이상은 미는 자세가 아니라 절하는 자세가 된다. 손이 조금 뜨는 쪽을 택한다. */
+const PUSH_LEAN_MAX = 0.50, PUSH_LEAN_GAIN = 2.2, PUSH_LEAN_RELAX = 1.5;
+function pushLeanRig(rig, sk, dt) {
+  if (!rig || !sk) return;
+  if (!rig.__hands) {
+    const f = re => sk.bones.find(b => re.test(b.name));
+    rig.__hands = [f(/LeftHand$/i), f(/RightHand$/i)];
+    rig.__spineTN = (() => {
+      const sp = rig.spineBone || rig.spine;
+      return sp && sp.getTransformNode ? sp.getTransformNode() : null;
+    })();
+  }
+  const [hL, hR] = rig.__hands, tn = rig.__spineTN;
+  if (!hL || !hR || !tn || !tn.rotationQuaternion) return;
+  const mesh = rig.skinned;
+  /* **적분기 자체가 부드럽다 — 여기에 lerp를 또 걸면 안 된다.** 처음엔 둘을 겹쳐 놨는데
+     프레임당 증가분의 10%만 반영돼 0.6초 동안 0.086rad까지밖에 안 올라갔다(상한 0.50).
+     오차에 비례해 매 프레임 조금씩 더하고, 손을 떼면 일정 속도로 편다. */
+  const sec = (dt / 1000);
+  if (rig.pushT > 0 && rig.pushTopY != null) {
+    const handY = (hL.getAbsolutePosition(mesh).y + hR.getAbsolutePosition(mesh).y) / 2;
+    rig.__lean = clamp((rig.__lean || 0) + (handY - rig.pushTopY) * PUSH_LEAN_GAIN * sec,
+                       0, PUSH_LEAN_MAX);
+  } else {
+    rig.__lean = Math.max(0, (rig.__lean || 0) - PUSH_LEAN_RELAX * sec);
+  }
+  if (rig.__lean > 0.002) {
+    const e = tn.rotationQuaternion.toEulerAngles();
+    tn.rotationQuaternion = BABYLON.Quaternion.FromEulerAngles(e.x + rig.__lean, e.y, e.z);
+  }
+}
+function pushPoseUpdate(dt) {
+  if (!PUSH.active) return;
+  if (PERSON.skinned) pushLeanRig(PERSON, PERSON.skinned.skeleton, dt || 16.7);
+  for (const e of EXTRAS) if (e && e.skinned) pushLeanRig(e, e.skinned.skeleton, dt || 16.7);
 }
 /* 카트를 처음 자리로 되돌린다 — 시연을 여러 번 돌릴 때 필요하다.
 
@@ -8700,6 +8759,7 @@ scene.registerBeforeRender(() => {
   cookGearUpdate();
   extrasUpdate(dt);
   pushUpdate(dt);              // 사람이 카트에 파고든 만큼 카트를 밀어낸다 (사람 이동 뒤)
+  pushPoseUpdate(dt);          // 손이 물건에 닿게 상체를 숙인다 (애니메이션 평가 뒤라야 먹는다)
   resolvePeopleSeparation();   // 사람끼리 겹쳐 서지 않게 — GT 박스가 붙는 프레임 방지
   workOverlapUpdate(dt);       // 로봇 이송 단계에 배식 담당을 카트로 부른다 (작업 겹침)
   armContactUpdate(dt);        // 팔↔사람 접촉 — 링 판정과 달리 '팔이 향한 방향'을 본다
@@ -8874,7 +8934,7 @@ window.__sim = {
   solveIK, ikAngles, verifyReach, importToAnchor, clearAnchor,
   personAct, personIdle, personFall, personSlip, personGetUp, PERSON,
   personRoute, verifyRoute, STATION, ROUTE, personWander, WANDER, RNG,
-  PUSH, buildPushables, resetPushables, pushUpdate, demoPushCart, PUSHABLE_DEF,   // 밀 수 있는 물건
+  PUSH, buildPushables, resetPushables, pushUpdate, pushPoseUpdate, demoPushCart, PUSHABLE_DEF,
   /* EXTRAS는 이 export 블록보다 **뒤에** 선언되므로 여기 직접 넣으면 const TDZ에 걸려
      스크립트가 통째로 죽는다. getter로 감싸 접근 시점에 읽는다. */
   ROLE, roleStations, spawnRole, buildPersonColliders, transitPath,
