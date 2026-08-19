@@ -360,6 +360,52 @@ async def traj(req: Request):
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
+_PREDICTOR = None
+_PREDICTOR_ERR = None
+
+
+def _get_predictor():
+    """학습형 궤적 예측기를 1회 로드(지연). 없으면 _PREDICTOR_ERR에 이유."""
+    global _PREDICTOR, _PREDICTOR_ERR
+    if _PREDICTOR is not None or _PREDICTOR_ERR is not None:
+        return _PREDICTOR
+    try:
+        import sys
+        sys.path.insert(0, str(_ROOT))
+        from trajectory.learned_predictor import LearnedPredictor
+        w = _ROOT / "training" / "traj_predictor" / "model.pt"
+        if not w.exists():
+            raise FileNotFoundError(f"가중치 없음: {w} (train/train_traj_predictor.py 먼저 실행)")
+        _PREDICTOR = LearnedPredictor(weights_path=str(w), device="cpu")
+        print(f"[detect_server] 궤적 예측기 로드: {w}")
+    except Exception as e:                # noqa: BLE001
+        _PREDICTOR_ERR = str(e)
+        print(f"[detect_server] 궤적 예측기 로드 실패 → /predict 비활성 ({e})")
+    return _PREDICTOR
+
+
+@app.post("/predict")
+async def predict(req: Request):
+    """학습형 멀티모달 궤적 예측. 이슈 #2 5단계.
+
+    시뮬의 window.__customPredictor가 관측 8점(씬 AU, 0.4s 간격으로 리샘플)을 보내면
+    K개 모드(각 경로+가중치+스텝별 σ)를 돌려준다. 좌표는 모델 학습 단위(AU)와 동일.
+    요청: {"hist": [[x,z], … 8개]}   응답: {"modes": [{"path":[[x,z]…], "w":.., "sigma":[…]}]}
+    """
+    p = _get_predictor()
+    if p is None:
+        return JSONResponse(status_code=503, content={"error": _PREDICTOR_ERR or "predictor 미로드"})
+    try:
+        body = await req.json()
+        hist = [(float(x), float(z)) for x, z in body["hist"]]
+        modes = p.predict_modes(hist)
+        return {"modes": [{"path": [[round(x, 4), round(z, 4)] for (x, z) in m["path"]],
+                           "w": round(m["w"], 4),
+                           "sigma": [round(s, 4) for s in m["sigma"]]} for m in modes]}
+    except Exception as e:                # noqa: BLE001
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
 # 시뮬 정적 파일(sim.html·assets·vendor…)도 같은 FastAPI가 서빙한다 →
 # 서버 하나로 시뮬 + 검출을 모두 처리(별도 http.server 불필요, 동일 출처라 CORS도 불필요).
 # 라우트(/detect·/health)를 먼저 등록한 뒤 마운트하므로 그 경로들이 우선한다.

@@ -5134,7 +5134,7 @@ const PRED = { horizon:1.6, steps:12, vel:new V3(0,0,0), lastPos:null, lastT:0,
    비동기 호출이므로 매 프레임 부르지 않고 hz로 제한하며, 응답이 올 때까지는
    직전 경로를 계속 쓴다(실제 온디바이스 추론과 같은 조건). 등록이 없거나 실패하면
    **조용히 칼만으로 되돌아간다** — 예측기가 죽었다고 로봇이 못 서면 안 된다.        */
-const CPRED = { fn:null, hz:10, acc:0, busy:false, path:null, at:0, sigma:0,
+const CPRED = { fn:null, hz:10, acc:0, busy:false, path:null, modes:null, at:0, sigma:0,
                 lastMs:0, n:0, err:0, lastErr:null };
 function customPredictTick(srcPos, now, dtMs) {
   CPRED.fn = (typeof window.__customPredictor === "function") ? window.__customPredictor : null;
@@ -5150,16 +5150,63 @@ function customPredictTick(srcPos, now, dtMs) {
       if (res && Array.isArray(res.path) && res.path.length) {
         CPRED.path = res.path; CPRED.at = performance.now();
         CPRED.sigma = isFinite(res.sigma) ? res.sigma : 0;
+        CPRED.modes = Array.isArray(res.modes) ? res.modes : null;   // 밀도 구름(멀티모달) 소스
         CPRED.n++;
       }
       CPRED.lastMs = performance.now() - t0;
     }).catch(e => {
       CPRED.err++; CPRED.lastErr = String(e && e.message || e).slice(0, 120);
-      CPRED.path = null;                       // 실패하면 칼만으로 되돌아간다
+      CPRED.path = null; CPRED.modes = null;   // 실패하면 칼만으로 되돌아간다
     }).finally(() => { CPRED.busy = false; });
   }
   // 1초 넘게 갱신이 없으면 신뢰하지 않는다 (모델이 멈춘 채 옛 경로로 판정하면 위험)
   return !!(CPRED.path && performance.now() - CPRED.at < 1000);
+}
+/* ══ 학습형 예측기 배선 — detect_server /predict (이슈 #2 5단계) ═══════════════
+   dense PRED.hist(~60Hz)를 모델 학습과 같은 8점×0.4s로 리샘플해 POST하고, K모드를 받아
+   최빈 모드는 {path,sigma}(계약), 전체 모드는 밀도 구름용으로 돌려준다. 좌표는 씬 AU(모델 학습 단위와 동일).
+   서버가 죽으면 예외 → customPredictTick이 칼만으로 폴백. */
+function trajResample(hist, now, n = 8, dtMs = 400) {
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const target = now - (n - 1 - i) * dtMs;         // now-2800 … now
+    let a = hist[0], b = hist[hist.length - 1];
+    for (let j = 0; j < hist.length; j++) {
+      if (hist[j].t <= target) a = hist[j];
+      if (hist[j].t >= target) { b = hist[j]; break; }
+    }
+    const span = (b.t - a.t) || 1, u = Math.max(0, Math.min(1, (target - a.t) / span));
+    out.push([a.x + (b.x - a.x) * u, a.z + (b.z - a.z) * u]);
+  }
+  return out;
+}
+async function trajPredict(obs) {
+  const hist = (obs.hist && obs.hist.length) ? obs.hist : [{ t: obs.now, x: obs.pos.x, z: obs.pos.z }];
+  const pts = trajResample(hist, obs.now);
+  const r = await fetch("/predict", { method: "POST", headers: { "Content-Type": "application/json" },
+                                      body: JSON.stringify({ hist: pts }) });
+  if (!r.ok) throw new Error("/predict " + r.status);
+  const j = await r.json();
+  const modes = (j.modes || []).map(m => ({
+    path: m.path.map(([x, z], i) => ({ t: 0.4 * (i + 1), x, z })),   // 스텝 시각 0.4·i (now 기준)
+    w: m.w, sigma: m.sigma,
+  }));
+  if (!modes.length) throw new Error("/predict 모드 없음");
+  const ml = modes[0];                                // 서버가 가중치 내림차순으로 준다
+  return { path: ml.path, sigma: SCALE.m(ml.sigma[ml.sigma.length - 1]), modes };
+}
+if (!window.__customPredictor) window.__customPredictor = trajPredict;   // 팀 훅이 이미 있으면 존중, 없을 때만 기본 등록
+/* 학습형 모드 경로/σ 보간 — 밀도 구름이 실제 곡선 경로 점을 쓰게 한다(방향 근사 아님). */
+function modePosAt(m, t) {
+  const p = m.path; let a = p[0], b = p[p.length - 1];
+  for (let i = 0; i < p.length - 1; i++) if (p[i].t <= t && p[i + 1].t >= t) { a = p[i]; b = p[i + 1]; break; }
+  const span = (b.t - a.t) || 1, u = Math.max(0, Math.min(1, (t - a.t) / span));
+  return [a.x + (b.x - a.x) * u, a.z + (b.z - a.z) * u];
+}
+function modeSigAt(m, t) {
+  const s = m.sigma, f = t / 0.4 - 1;                 // 스텝 i의 시각 = 0.4·(i+1)
+  const i = Math.max(0, Math.min(s.length - 1, Math.floor(f)));
+  return s[i];
 }
 /* ══ 시각화 억제 — **모델 입력·데이터셋에서 반드시 빼야 하는 것** ═══════════════
    바닥에 칠한 예측 띠·모드 화살표·그래프 노드/엣지·로봇 기동 표시는 전부 **주석**이다.
@@ -5287,21 +5334,40 @@ function pmodeArrowsFor(node, idx, dt) {
   }
   st.x = p.x; st.z = p.z;
   const speed = Math.hypot(st.vx, st.vz);
-  const modes = goalModesAt(p, st.vx, st.vz, speed);
+  /* 학습형 예측기가 **이 사람(추적 대상)**을 예측 중이면 그 K모드를 쓴다 — 바닥 구름이
+     goalModesAt(목표 휴리스틱) 대신 학습형 봉우리를 그린다(이슈 #2 완료 조건). 추적 대상은
+     predictionUpdate가 PRED._learned.src에 남긴 위치로 판별(가장 가까운 사람). */
+  const L = (PRED._learned && idx === PRED._learnedIdx) ? PRED._learned.modes : null;
+  const modes = L
+    ? L.map((m, i) => { const e = m.path[m.path.length - 1];
+        const dx = e.x - p.x, dz = e.z - p.z, d = Math.hypot(dx, dz) || 1e-6;
+        return { name:"L" + i, w:m.w, dist:d, ux:dx / d, uz:dz / d }; })
+    : goalModesAt(p, st.vx, st.vz, speed);
   let n = 0;
   /* 이 사람의 **띠 성분**도 같이 만든다 — 화살표는 "몇 가지 가능성"을, 띠는 "어디쯤"을 말한다.
-     둘을 같은 사람에게 붙여야 그림이 대칭이 된다(종전엔 위협 1명만 띠가 있었다).
-     σ는 위협 트랙처럼 칼만 공분산을 쓰지 않고 경로 좌표계 성장률만 쓴다 — 사람마다
-     칼만을 돌리지 않기 때문이고, 표시용으로는 충분하다. */
-  modes.forEach((md, mi) => {
-    for (let k = 0; k <= PRED.vizSteps; k++) {
-      const t = PRED.vizHorizon * k / PRED.vizSteps;
-      const travel = Math.min(speed * t, md.dist);
-      PRED.bands.push({ x:p.x + md.ux*travel, z:p.z + md.uz*travel, ux:md.ux, uz:md.uz,
-                        sAlong:PRED.minSigma + PRED.alongK*t, sAcross:PRED.minSigma + PRED.acrossK*t,
-                        w:md.w * (1 - 0.35*(k/PRED.vizSteps)), ci:mi, pi:idx });
-    }
-  });
+     학습형이면 각 모드의 실제 곡선 경로 점(모델 σ)을, 아니면 방향 외삽 띠를 쓴다.
+     σ는 칼만 공분산 대신 경로 좌표계 성장률(또는 모델 σ) — 표시용으로 충분하다. */
+  if (L) {
+    L.forEach((m, mi) => {
+      for (let k = 0; k <= PRED.vizSteps; k++) {
+        const t = PRED.vizHorizon * k / PRED.vizSteps;
+        const [bx, bz] = modePosAt(m, t);
+        const sg = Math.max(modeSigAt(m, t), PRED.minSigma);
+        PRED.bands.push({ x:bx, z:bz, ux:0, uz:0, sAlong:sg, sAcross:sg,
+                          w:m.w * (1 - 0.35*(k/PRED.vizSteps)), ci:mi, pi:idx });
+      }
+    });
+  } else {
+    modes.forEach((md, mi) => {
+      for (let k = 0; k <= PRED.vizSteps; k++) {
+        const t = PRED.vizHorizon * k / PRED.vizSteps;
+        const travel = Math.min(speed * t, md.dist);
+        PRED.bands.push({ x:p.x + md.ux*travel, z:p.z + md.uz*travel, ux:md.ux, uz:md.uz,
+                          sAlong:PRED.minSigma + PRED.alongK*t, sAcross:PRED.minSigma + PRED.acrossK*t,
+                          w:md.w * (1 - 0.35*(k/PRED.vizSteps)), ci:mi, pi:idx });
+      }
+    });
+  }
   modes.forEach((md, mi) => {
     const len = Math.min(Math.max(speed * PRED.vizHorizon, PMODE.minLen), md.dist);
     if (!(len > 0.15)) return;
@@ -5325,7 +5391,19 @@ function predModeArrows(dtMs) {
   PRED.bands = [];
   if (!PMODE.on || vizSuppressed) return;
   const dt = Math.min(Math.max((dtMs || 16)/1000, 1e-3), 0.5);
-  peopleList().forEach((node, i) => pmodeArrowsFor(node, i, dt));
+  const nodes = peopleList();
+  /* 학습형 추적 대상 = src에 가장 가까운 사람 **1명**(임계 0.4 AU 내). 임계만 쓰면
+     지나가며 두 사람이 다 걸릴 수 있어 최근접 하나로 못박는다. */
+  PRED._learnedIdx = -1;
+  if (PRED._learned) {
+    let best = 0.4 * 0.4;
+    nodes.forEach((node, i) => {
+      const p = node.position, s = PRED._learned.src;
+      const d2 = (p.x - s.x) ** 2 + (p.z - s.z) ** 2;
+      if (d2 < best) { best = d2; PRED._learnedIdx = i; }
+    });
+  }
+  nodes.forEach((node, i) => pmodeArrowsFor(node, i, dt));
 }
 /* 진행 방향과 정렬된 스테이션들을 '행동 모드'로 뽑는다.
    정렬도(진행방향·목표방향 내적)를 제곱해 가중치로 쓴다 — 정면 목표가 확실히 더 진하게.
@@ -5511,7 +5589,9 @@ function predictionUpdate(srcPos, now) {
   PRED.lastPos = srcPos.clone(); PRED.lastT = now;
   // 최근 2초 관측 — 학습형 예측기는 속도 하나가 아니라 궤적 이력을 본다
   PRED.hist.push({ t: now, x: srcPos.x, z: srcPos.z });
-  while (PRED.hist.length && now - PRED.hist[0].t > 2000) PRED.hist.shift();
+  /* 학습형 예측기는 8스텝×0.4s(=2.8s) 관측을 먹으므로 최소 그만큼은 보관한다(여유 3.2s).
+     __customPredictor가 이 dense 이력을 8점으로 리샘플한다. */
+  while (PRED.hist.length && now - PRED.hist[0].t > 3200) PRED.hist.shift();
 
   const bx = LAYOUT.robot.base.x, bz = LAYOUT.robot.base.z;
   PRED.tStop = PRED.tSlow = Infinity;
@@ -5569,7 +5649,14 @@ function predictionUpdate(srcPos, now) {
             Math.max(PRED.minSigma + PRED.acrossK * t, PRED.minSigma)];  // across
   };
   const mix = [];
-  const modes = predGoalModes(srcPos, speed);
+  /* 학습형 예측기가 K모드를 주면 그걸로 밀도 구름을 그린다 — 목표 휴리스틱(predGoalModes) 대체.
+     그래야 시각화에 **학습형의 멀티모달 봉우리**가 뜬다(이슈 #2 완료 조건). */
+  const cModes = (useCustom && CPRED.modes && CPRED.modes.length) ? CPRED.modes : null;
+  const modes = cModes
+    ? cModes.map((m, i) => { const e = m.path[m.path.length - 1];
+        const dx = e.x - srcPos.x, dz = e.z - srcPos.z, d = Math.hypot(dx, dz) || 1e-6;
+        return { name:"L" + i, w:m.w, dist:d, ux:dx / d, uz:dz / d }; })
+    : predGoalModes(srcPos, speed);
   const moving = SCALE.m(speed) >= 0.12;
   const vux = moving ? PRED.vel.x / speed : 0, vuz = moving ? PRED.vel.z / speed : 0;
   for (let k = 0; k <= PRED.vizSteps; k++) {
@@ -5579,7 +5666,13 @@ function predictionUpdate(srcPos, now) {
     const fade = 1 - 0.35*(k/PRED.vizSteps);
     const put = (px, pz, w, mode, ux, uz) => mix.push({ x:px, z:pz, t, w, mode,
                    ux, uz, sAlong, sAcross:Math.min(sAcross, sAlong) });
-    if (modes.length) {                          // 다봉 — 목표별로 한 성분씩
+    if (cModes) {                                // 학습형 — 각 모드의 **실제 경로 점**에 등방 블롭(모델 σ)
+      for (const m of cModes) {
+        const [px, pz] = modePosAt(m, t);
+        const sg = Math.max(modeSigAt(m, t), PRED.minSigma);
+        mix.push({ x:px, z:pz, t, w:m.w * fade, mode:"L", ux:0, uz:0, sAlong:sg, sAcross:sg });
+      }
+    } else if (modes.length) {                   // 다봉 — 목표별로 한 성분씩
       for (const md of modes) {
         const travel = Math.min(speed * t, md.dist);   // speed는 AU/s · 목표를 지나치지 않는다
         put(srcPos.x + md.ux*travel, srcPos.z + md.uz*travel, md.w * fade, md.name, md.ux, md.uz);
@@ -5592,7 +5685,10 @@ function predictionUpdate(srcPos, now) {
   PRED.mix = mix;
   PRED.modes = modes.map(m => ({ name:m.name, w:+m.w.toFixed(2), dist:+m.dist.toFixed(2),
                                  ux:m.ux, uz:m.uz,
-                                 len:Math.min(speed * PRED.vizHorizon, m.dist) }));
+                                 len: cModes ? m.dist : Math.min(speed * PRED.vizHorizon, m.dist) }));
+  /* 추적 대상 + 학습형 모드를 per-person 밴드 빌더(pmodeArrowsFor)에 넘긴다 →
+     바닥 구름이 이 사람만 학습형 봉우리로 그려진다. */
+  PRED._learned = cModes ? { src: { x: srcPos.x, z: srcPos.z }, modes: CPRED.modes } : null;
   predModeArrows(dtMs);
   graphUpdate();                     // 씬 그래프(노드 흰 원 + 상호작용 점선)
   densUpdate(dtMs);                  // 바닥 확률밀도 음영 (논문 그림)
