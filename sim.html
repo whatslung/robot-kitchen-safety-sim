@@ -2898,6 +2898,12 @@ function kfStep(f, z, dt, sa2, sm2) {
 }
 const PRED = { horizon:1.6, steps:12, vel:new V3(0,0,0), lastPos:null, lastT:0,
                tStop:Infinity, tSlow:Infinity, line:null, band:null, showBand:true, level:0,
+               /* ── 논문 그림용 확률밀도 표시 (안전 판정과 분리) ─────────────────
+                  vizHorizon: **그림 전용** 지평선. 안전 판정은 위의 horizon(1.6s)을 그대로 쓴다 —
+                    행동을 바꾸지 않으면서 그림만 길게 뽑기 위해 일부러 나눴다.
+                  minSigma: 사람 충돌 캡슐 반경(0.24AU=어깨 반폭). 확률 구름이 t=0에서 0으로
+                    수축하면 화면에서 안 보이므로, 최소한 '사람 가로 면적'만큼은 항상 그린다. */
+               vizHorizon:3.5, vizSteps:14, minSigma:0.24, mix:[],
                /* sigA = 사람 가감속 불확실성(㎧²). 이 값이 곧 지평선 끝 위치 불확실성을 지배한다.
                   실측(2026-08-13) — 사람이 **가만히 서 있을 때** 예측 정지가 오발동하는지:
                     1.2 → sigma 2.19m → 2.5m에서 오탐 ✗   (계획서의 "고정물 지속 오탐=영구정지")
@@ -2992,18 +2998,21 @@ function predictionUpdate(srcPos, now) {
   const useCustom = PRED.model === "custom" && customPredictTick(srcPos, now, dtMs);
   const cp = useCustom ? CPRED.path : null;
   const sigmaEff = useCustom ? SCALE.au(CPRED.sigma) : PRED.sigma;
-  for (let k = 0; k <= PRED.steps; k++) {
-    const t = PRED.horizon * k / PRED.steps;
-    let px, pz;
-    if (cp) {                                  // 예측 경로에서 t에 해당하는 점을 뽑는다
+  /* 미래 시각 t의 예측 위치 — 학습형 경로가 있으면 거기서 보간, 없으면 등속 외삽.
+     안전 판정 루프와 밀도 혼합(PRED.mix)이 **같은 위치**를 쓰도록 한 곳에 모았다. */
+  const posAt = t => {
+    if (cp) {
       let a = cp[0], b = cp[cp.length - 1];
       for (let i = 0; i < cp.length - 1; i++)
         if (cp[i].t <= t && cp[i+1].t >= t) { a = cp[i]; b = cp[i+1]; break; }
       const span = (b.t - a.t) || 1, u = Math.max(0, Math.min(1, (t - a.t) / span));
-      px = a.x + (b.x - a.x) * u; pz = a.z + (b.z - a.z) * u;
-    } else {
-      px = srcPos.x + PRED.vel.x * t; pz = srcPos.z + PRED.vel.z * t;
+      return [a.x + (b.x - a.x) * u, a.z + (b.z - a.z) * u];
     }
+    return [srcPos.x + PRED.vel.x * t, srcPos.z + PRED.vel.z * t];
+  };
+  for (let k = 0; k <= PRED.steps; k++) {
+    const t = PRED.horizon * k / PRED.steps;
+    const [px, pz] = posAt(t);
     pts.push(new V3(px, 0.06, pz)); flat.push({ x:px, z:pz });
     // 보수적 판정 — 예측이 멀수록 불확실하므로 그만큼 '더 가까이 있을 수 있다'고 본다.
     // (등속 모델에는 불확실성 추정이 없어 sigma=0 → 종전과 동일하게 동작)
@@ -3014,6 +3023,26 @@ function predictionUpdate(srcPos, now) {
   PRED.pathPts = flat;
   PRED.moving = SCALE.m(speed) > 0.08;
   PRED.level = PRED.tStop < Infinity ? 2 : PRED.tSlow < Infinity ? 1 : 0;
+  /* 확률밀도 혼합(GMM) — 바닥 음영이 이걸 그린다. 칼만은 시점당 성분 1개(단일 모드)지만,
+     학습형이 여러 모드를 주면 성분이 늘어나 **같은 렌더가 멀티모달 봉우리**를 그린다
+     (Trajectron++ vs 칼만 비교 그림이 렌더 수정 없이 나오도록 자료구조를 일반화해 둔 것). */
+  const sa2v = Math.pow(SCALE.au(PRED.sigA), 2);
+  const mix = [];
+  for (let k = 0; k <= PRED.vizSteps; k++) {
+    const t = PRED.vizHorizon * k / PRED.vizSteps;
+    const [px, pz] = posAt(t);
+    let sx, sz;
+    if (useCustom) {                  // 학습형: 지평선 끝 σ까지 선형 증가로 근사(GMM 오면 대체)
+      sx = sz = SCALE.au(CPRED.sigma) * (t / PRED.vizHorizon);
+    } else {                          // 칼만: 축별 공분산 전파 P00 + 2t·P01 + t²·P11 + σa²t⁴/4
+      const t2 = t*t, t4 = t2*t2;
+      sx = Math.sqrt(Math.max(0, PRED.kx.P00 + 2*t*PRED.kx.P01 + t2*PRED.kx.P11 + sa2v*t4/4));
+      sz = Math.sqrt(Math.max(0, PRED.kz.P00 + 2*t*PRED.kz.P01 + t2*PRED.kz.P11 + sa2v*t4/4));
+    }
+    mix.push({ x:px, z:pz, w:1,
+               sx:Math.max(sx, PRED.minSigma), sz:Math.max(sz, PRED.minSigma) });
+  }
+  PRED.mix = mix;
   // 예측 경로 폴리라인 — 이동 중일 때만 표시
   if (!PRED.line) {
     PRED.line = BABYLON.MeshBuilder.CreateLines("predLine", { points: pts, updatable: true }, scene);
