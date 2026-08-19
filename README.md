@@ -13,10 +13,17 @@
 python -m http.server 5173
 ```
 
-→ <http://localhost:5173/sim.html>
+→ <http://localhost:5173/sim.html?layout=island>
 
 더블클릭 실행이 필요하면 `launch/` 안의 스크립트를 쓴다 (macOS: `실행하기_Mac.command`,
 Windows: `실행하기_Windows.bat`). 빈 포트를 찾아 서버를 띄우고 Chrome/Edge로 열어준다.
+`index.html`과 이 스크립트들은 아래 플래그를 이미 붙여 연다.
+
+> **`?layout=island`를 반드시 붙일 것.** 이게 팀에서 확정한 배치다
+> (방 11.5×11.5 m · 천장 3.9 m · 구역담당 CCTV 15대 · 안전링 3단계 · 로봇 팔 1.70 m).
+> 플래그 없이 `sim.html`만 열면 **확정 이전의 옛 배치**가 뜬다
+> (방 9 m · 천장 3.3 m · 카메라 10대 · 팔 1.30 m). 옛 배치는 비교용으로만 남겨 둔 것이라
+> 여기서 뽑은 데이터셋은 팀 기준과 맞지 않는다. 화면 우측 정보줄의 `방 11.5m`로 확인할 수 있다.
 
 > **`sim.html`을 파일로 직접 열지 말 것.** `file://`로 열면 3D 화면은 뜨지만
 > ONNX 런타임이 wasm/mjs를 ES 모듈로 로드하지 못해 모델 검증이 동작하지 않는다.
