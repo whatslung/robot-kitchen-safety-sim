@@ -126,13 +126,30 @@ class CamState:
 CAMS = {}
 
 
+# ByteTrack 활성 임계값. 라이브러리 기본값은 0.7인데, 우리 시뮬 모델의 라이브 confidence는
+# 0.25~0.58에 몰린다(도메인 랜덤화된 노이즈·지터 프레임으로 학습했는데 라이브 화면은 깨끗해서
+# 절대 confidence가 낮게 나온다 — recall 0.87인데도 그렇다). 기본값이면 **트랙이 하나도
+# 활성화되지 않아 id가 영영 -1**이 된다(실측). 안전 시스템에서 낮은 confidence 검출을 버리는 건
+# 위험한 쪽 오류라 문턱을 낮춘다. env로 조정 가능.
+TRACK_ACT = float(os.environ.get("TRACK_ACT", "0.35"))
+TRACK_HIGH = float(os.environ.get("TRACK_HIGH", "0.35"))
+
+
 def _new_tracker():
     if TRACKER_CLS is None:
         return None
     try:
-        return TRACKER_CLS()
+        return TRACKER_CLS(track_activation_threshold=TRACK_ACT,
+                           high_conf_det_threshold=TRACK_HIGH,
+                           minimum_consecutive_frames=2)
+    except TypeError:                     # 다른 버전이면 인자 없이
+        try:
+            return TRACKER_CLS()
+        except Exception as e:            # noqa: BLE001
+            print(f"[detect_server] 트래커 생성 실패 → 추적 비활성 ({e})")
+            return None
     except Exception as e:                # noqa: BLE001
-        print(f"[detect_server] ByteTrackTracker 생성 실패 → 추적 비활성 ({e})")
+        print(f"[detect_server] 트래커 생성 실패 → 추적 비활성 ({e})")
         return None
 
 
