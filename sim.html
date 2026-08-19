@@ -7869,7 +7869,9 @@ function beMap(wx, wz, cx, cy, half) {          // 월드 AU → 패널 px
 }
 function drawBirdseye(ctx, W, H) {
   if (!BE.on) return;
-  const sz = BE.size, pad = 12, x0 = W - sz - pad, y0 = H - sz - pad;
+  /* **좌**하단이다. 우하단은 `#stats`(right:14 bottom:14)가 이미 쓰고 있어 겹쳤다 —
+     DOM인 #stats가 캔버스 위에 그려지므로 조감 패널의 예측 경로가 그 밑에 깔린다. */
+  const sz = BE.size, pad = 12, x0 = pad, y0 = H - sz - pad;
   const cx = x0 + sz/2, cy = y0 + sz/2, half = sz/2, pxPerM = half / BE.viewR;
   ctx.save();
   ctx.fillStyle = "rgba(13,17,23,0.82)"; ctx.fillRect(x0, y0, sz, sz);
