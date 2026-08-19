@@ -4795,6 +4795,67 @@ function customPredictTick(srcPos, now, dtMs) {
   // 1초 넘게 갱신이 없으면 신뢰하지 않는다 (모델이 멈춘 채 옛 경로로 판정하면 위험)
   return !!(CPRED.path && performance.now() - CPRED.at < 1000);
 }
+/* ══ 씬 그래프 (Trajectron++ Fig.1의 흰 원 + 점선) ═══════════════════════════
+   논문 정의를 그대로 따른다:
+     노드 = 에이전트(사람들 + 로봇). Fig.1에서 **흰 원**.
+     엣지 = ‖pᵢ − pⱼ‖₂ ≤ d_Sⱼ 이면 Aᵢ→Aⱼ 로 존재. d_S 는 **받는 쪽의 클래스별 지각 반경**.
+            Fig.1에서 **검은 점선**. 영향은 이진이고 거리 가중은 없다(논문 §3).
+   여기서 지각 반경은 우리 셀 규모로 잡는다 — 사람 2.8m, 로봇은 감속링(SAFE.slowR).
+   방향성은 선 하나로 합쳐 그린다(그림도 무향처럼 보인다).                          */
+const GRAPH = { on:true, y:0.115, nodeR:0.34, nodeSeg:22, nodeW:0.028, edgeW:0.022,
+                dash:0.17, gap:0.13, pedR:2.8, mesh:{} };
+function graphDraw(key, pointsArr, hex, width) {
+  const col = C3.FromHexString(hex);
+  let m = GRAPH.mesh[key];
+  if (!m || m._nLines !== pointsArr.length) {
+    if (m) m.dispose();
+    m = GRAPH.mesh[key] = BABYLON.CreateGreasedLine("graph_" + key,
+          { points: pointsArr, updatable: true }, { width, color: col }, scene);
+    m.isPickable = false; m.renderingGroupId = 1; m._nLines = pointsArr.length;
+  } else {
+    m.setPoints(pointsArr);
+    if (m.greasedLineMaterial) { m.greasedLineMaterial.color = col; m.greasedLineMaterial.width = width; }
+  }
+  m.setEnabled(true);
+}
+/* a→b 를 점선 조각들로 — GreasedLine 은 점 배열의 배열을 받아 여러 선을 한 메시로 그린다 */
+function dashSegs(ax, az, bx, bz, y) {
+  const dx = bx-ax, dz = bz-az, L = Math.hypot(dx, dz);
+  if (L < 1e-3) return [];
+  const ux = dx/L, uz = dz/L, step = GRAPH.dash + GRAPH.gap, segs = [];
+  for (let t = 0; t < L; t += step) {
+    const e = Math.min(t + GRAPH.dash, L);
+    segs.push([new V3(ax + ux*t, y, az + uz*t), new V3(ax + ux*e, y, az + uz*e)]);
+  }
+  return segs;
+}
+function graphUpdate() {
+  for (const k in GRAPH.mesh) GRAPH.mesh[k].setEnabled(false);
+  if (!GRAPH.on || vizSuppressed) return;
+  const y = GRAPH.y;
+  const agents = peopleList().map(n => ({ x:n.position.x, z:n.position.z, r:GRAPH.pedR }));
+  agents.push({ x:LAYOUT.robot.base.x, z:LAYOUT.robot.base.z, r:SAFE.slowR, robot:true });
+  // 노드 — 흰 원
+  agents.forEach((a, i) => {
+    const seg = GRAPH.nodeSeg, pts = [], rr = a.robot ? GRAPH.nodeR*1.35 : GRAPH.nodeR;
+    for (let k = 0; k <= seg; k++) {
+      const th = k/seg * Math.PI*2;
+      pts.push(new V3(a.x + rr*Math.cos(th), y, a.z + rr*Math.sin(th)));
+    }
+    graphDraw("node" + i, [pts], "#ffffff", GRAPH.nodeW);
+  });
+  // 엣지 — 어느 방향으로든 지각 반경 안이면 점선 하나
+  let e = 0;
+  for (let i = 0; i < agents.length; i++)
+    for (let j = i+1; j < agents.length; j++) {
+      const A = agents[i], B = agents[j];
+      const dm = SCALE.m(Math.hypot(A.x-B.x, A.z-B.z));
+      if (dm > Math.max(A.r, B.r)) continue;          // ‖pi-pj‖ ≤ d_S 판정
+      const segs = dashSegs(A.x, A.z, B.x, B.z, y);
+      if (segs.length) graphDraw("edge" + (e++), segs, "#3d444d", GRAPH.edgeW);
+    }
+  GRAPH.edges = e;
+}
 /* 모드별 화살표 — Fig.1에서 보행자는 **색이 다른 화살표 다발**로 미래 행동 모드를 보여준다.
    음영(띠)만 있으면 "어디쯤"은 보이지만 "몇 가지 선택지가 있나"가 안 읽힌다. 둘을 같이 그린다.
    설비에 가리지 않게 오버레이(renderingGroupId 1)로 얹는다 — 주석이니까. */
@@ -5137,6 +5198,7 @@ function predictionUpdate(srcPos, now) {
                                  ux:m.ux, uz:m.uz,
                                  len:Math.min(speed * PRED.vizHorizon, m.dist) }));
   predModeArrows(dtMs);
+  graphUpdate();                     // 씬 그래프(노드 흰 원 + 상호작용 점선)
   densUpdate(dtMs);                  // 바닥 확률밀도 음영 (논문 그림)
   const predCol = PRED.tStop < Infinity ? C3.FromHexString("#f85149")
                 : PRED.tSlow < Infinity ? C3.FromHexString("#e3b341")
@@ -9193,7 +9255,7 @@ window.__sim = {
   // 물리 · 안전
   PHYS, ROBOT_GUARD, buildRobotGuard, resetBasket, ONNX, onnxLoadModel, onnxInfer, PRED, ENV_RAND, randomizeEnvironment, placeOccluder, setExtraCount, spawnDebris, triggerEstop, clearEstop,
   // 모델 검증
-  MIL, milCapture, milMaskBoxes, drawOverlay, effector, BE, drawBirdseye, DENS, AVOID, avoidMinDist, avoidDecide, SEQ, RARR, robotArrowsUpdate, PMODE,
+  MIL, milCapture, milMaskBoxes, drawOverlay, effector, BE, drawBirdseye, DENS, AVOID, avoidMinDist, avoidDecide, SEQ, RARR, robotArrowsUpdate, PMODE, GRAPH,
 };
 
 /* ══ Isaac풍 도킹 UI — 콘솔 · 스테이지 트리 · 메뉴바 ═════════════════════ */
