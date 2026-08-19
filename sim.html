@@ -152,16 +152,23 @@
 
   /* ══ Isaac Sim풍 도킹 레이아웃 ══ */
   body{display:flex;flex-direction:column}
+  /* 좁은 창에서 **버튼이 먼저 밀려나면 안 된다.** 제목과 우측 버전 표기가 먼저 줄고,
+     그래도 모자라면 가로로 스크롤한다. 종전에는 셋 다 flex:0 0 auto라 창을 줄이면
+     오른쪽 버튼부터 화면 밖으로 나갔다(카트 밀기가 안 보인다는 지적의 한 원인). */
   #menubar{height:36px;flex:0 0 36px;background:#1d1d1f;border-bottom:1px solid #0a0a0a;
-    display:flex;align-items:center;gap:4px;padding:0 10px;font-size:12px;color:#cfcfcf;z-index:20}
+    display:flex;align-items:center;gap:4px;padding:0 10px;font-size:12px;color:#cfcfcf;z-index:20;
+    overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
+  #menubar::-webkit-scrollbar{display:none}
   #menubar .logo{width:10px;height:10px;border-radius:2px;background:#76b900;margin-right:6px}
-  #menubar .title{font-weight:700;color:#e8e8e8;margin-right:14px;font-size:12.5px}
+  #menubar .title{font-weight:700;color:#e8e8e8;margin-right:14px;font-size:12.5px;
+    flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   #menubar .sep{width:1px;height:18px;background:#3a3a3a;margin:0 8px}
   .mbtn{background:none;border:1px solid transparent;color:#d8d8d8;padding:4px 10px;border-radius:4px;
     font-size:12px;cursor:pointer;font-family:inherit;flex:0 0 auto}
   .mbtn:hover{background:#2e2e30;border-color:#3c3c3e}
   .mbtn.play{color:#9fe234}
-  #menubar .right{margin-left:auto;display:flex;align-items:center;gap:10px;color:#8b949e;font-size:11px}
+  #menubar .right{margin-left:auto;display:flex;align-items:center;gap:10px;color:#8b949e;font-size:11px;
+    flex:0 1 auto;min-width:0;overflow:hidden;white-space:nowrap}
   #main{flex:1;display:flex;min-height:0}
   #stagePanel{width:200px;flex:0 0 200px;background:#232326;border-right:1px solid #0a0a0a;
     display:flex;flex-direction:column;min-height:0}
@@ -194,6 +201,11 @@
   <button class="mbtn play" id="mbPlay">▶ 자동 작업</button>
   <button class="mbtn" id="mbStop">■ 정지</button>
   <button class="mbtn" id="mbReset">↺ 리셋</button>
+  <div class="sep"></div>
+  <!-- 물리 시연 — 패널 "▶ 실행" 탭 안에만 두었더니 탭을 바꾸고 스크롤해야 보였다.
+       기본 탭이 "🚀 시작"이라 사실상 아무도 못 찾는다. 상단바는 항상 보인다. -->
+  <button class="mbtn" id="mbPush" title="조리원이 카트를 로봇 쪽으로 밀고 갑니다 (물리)">🛒 카트 밀기</button>
+  <button class="mbtn" id="mbPushReset" title="밀린 카트를 처음 자리로">↩ 카트 원위치</button>
   <div class="sep"></div>
   <button class="mbtn" id="mbGT">GT 캡처</button>
   <div class="right">Babylon.js <span id="bver2"></span> · 오프라인</div>
@@ -250,6 +262,17 @@
           <kbd>P</kbd> PiP 순환 · <kbd>X</kbd> PiP와 교환</li>
       <li><kbd>Space</kbd> 정지 · <kbd>H</kbd> 이 도움말</li>
       <li>마우스: 드래그 회전 · 휠 확대 · 우클릭 드래그 이동</li>
+    </ul>
+
+    <h3>물건 밀기 (물리)</h3>
+    <ul>
+      <li>맨 위 <b>🛒 카트 밀기</b> — 조리원이 가장 가까운 카트를 <b>로봇 쪽으로</b> 밀고 갑니다.
+          카트가 안전 링 안으로 들어가는 것이 볼 거리입니다. <b>↩ 카트 원위치</b>로 되돌립니다.</li>
+      <li>직접 밀려면 <kbd>Tab</kbd>으로 <b>🚶 사람</b>을 고르고 <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>로
+          카트에 밀고 들어가세요. 미는 자세로 바뀝니다.</li>
+      <li>밀리는 것은 <b>팬 카트·바스켓 카트·쓰레기통</b>입니다. 바퀴가 있는 카트는 굴러가고,
+          쓰레기통은 조금 밀리다 섭니다. 작업대·선반·냉장고는 고정입니다.</li>
+      <li>자동 운행만 보고 있으면 카트는 움직이지 않습니다 — 길찾기가 카트를 피해 다닙니다.</li>
     </ul>
 
     <h3>탭 안내</h3>
@@ -6747,7 +6770,7 @@ function buildPushables() {
     ag.body.setLinearDamping(ph.damp);
     ag.body.setAngularDamping(4.0);
     ag.body.setMassProperties({ mass, inertia:new V3(0, mass*(w*w + d*d)/12, 0) });
-    PUSH.bodies.push({ box, ag, holder:h, label:it.def.label, half:[w/2, d/2], maxV:ph.maxV,
+    PUSH.bodies.push({ box, ag, holder:h, label:it.def.label, half:[w/2, d/2, ht/2], maxV:ph.maxV,
                        home:box.position.clone(), homeYaw:it.ry,
                        size:[+w.toFixed(2), +ht.toFixed(2), +d.toFixed(2)] });
   }
@@ -6832,7 +6855,10 @@ function pushUpdate(dt) {
       /* 밀고 있다는 표식 — locoPlay가 보행 클립 대신 밀기 클립을 튼다.
          매 프레임 갱신되므로, 손을 떼면 PUSH_ANIM_HOLD 뒤에 저절로 보행으로 돌아간다.
          값이 너무 짧으면 접촉이 한 프레임 끊길 때마다 자세가 깜빡인다. */
-      if (mv.rig) mv.rig.pushT = PUSH_ANIM_HOLD;
+      if (mv.rig) {
+        mv.rig.pushT = PUSH_ANIM_HOLD;
+        mv.rig.pushTopY = b.box.position.y + b.half[2];   // 미는 면(물건 윗면)의 높이
+      }
     }
   }
 }
@@ -6866,6 +6892,62 @@ function demoPushCart() {
   personGo([new V3(c.x + ux * 1.30, 0, c.z + uz * 1.30)], { speed: 0.80 });
   setStatus("🛒 " + best.label + "를 로봇 쪽으로 밉니다 — 정지 링에 들어가는지 보세요");
   return best;
+}
+/* ══ 미는 자세 보정 — 손이 물건에 닿게 상체를 숙인다 ═══════════════════════
+   `Push_Loop`은 **손을 가슴 높이(1.18m)로 내밀고** 민다. 그 높이에 맞는 물건은 팬 카트
+   (1.43m)뿐이고, 바스켓 카트(0.80m)·쓰레기통(0.69m)에서는 **손이 물건 위 38cm 허공을
+   밀었다**(실측: 손 1.18 · 카트 0.80 · 손이 카트 수평범위 안 97%). 카트는 밀리는데
+   사람은 허공을 젓는 그림이라 "미는 동작이 부자연스럽다"의 정체가 이것이다.
+
+   클립을 물건 높이별로 따로 받을 수는 없으므로 **상체를 숙여 손을 내린다.** 실제로도
+   낮은 카트를 밀 때 사람은 허리를 숙인다. 스파인을 굽히면 손이 따라 내려온다
+   (실측: 0.20rad → 손 1.18→1.07 · 0.40rad → 0.95).
+
+   **본이 아니라 본에 연결된 TransformNode를 돌려야 한다.** GLB 스켈레톤은 애니메이션이
+   TransformNode를 향하므로 Bone.setRotation은 그 프레임에 덮어써진다(실측: 굽힘을 0.45까지
+   줘도 손 높이가 1.183→1.185로 그대로였다). 매 프레임 **애니메이션이 쓴 값에 각도를 더한다** —
+   누적되지 않는다(다음 프레임에 애니메이션이 다시 덮어쓰므로).
+
+   목표 높이에 비례해 굽히지 않고 **오차를 보고 조금씩 따라가게** 했다. 캐릭터 신장이나
+   클립이 바뀌어도 상수를 다시 잡을 필요가 없다. 상한 0.42rad(24°)는 미는 자세를 넘어
+   절하는 그림이 되지 않는 선이다 — 아주 낮은 물건은 손이 조금 뜬 채로 둔다. */
+/* 상한 0.50rad(29°) — 스파인 굽힘 1rad당 손이 약 0.58m 내려간다(실측: 0.20→0.113m,
+   0.40→0.232m). 낮은 물건(0.69~0.80m)에서 필요한 굽힘이 약 0.56rad이라 상한에 걸리지만,
+   그 이상은 미는 자세가 아니라 절하는 자세가 된다. 손이 조금 뜨는 쪽을 택한다. */
+const PUSH_LEAN_MAX = 0.50, PUSH_LEAN_GAIN = 2.2, PUSH_LEAN_RELAX = 1.5;
+function pushLeanRig(rig, sk, dt) {
+  if (!rig || !sk) return;
+  if (!rig.__hands) {
+    const f = re => sk.bones.find(b => re.test(b.name));
+    rig.__hands = [f(/LeftHand$/i), f(/RightHand$/i)];
+    rig.__spineTN = (() => {
+      const sp = rig.spineBone || rig.spine;
+      return sp && sp.getTransformNode ? sp.getTransformNode() : null;
+    })();
+  }
+  const [hL, hR] = rig.__hands, tn = rig.__spineTN;
+  if (!hL || !hR || !tn || !tn.rotationQuaternion) return;
+  const mesh = rig.skinned;
+  /* **적분기 자체가 부드럽다 — 여기에 lerp를 또 걸면 안 된다.** 처음엔 둘을 겹쳐 놨는데
+     프레임당 증가분의 10%만 반영돼 0.6초 동안 0.086rad까지밖에 안 올라갔다(상한 0.50).
+     오차에 비례해 매 프레임 조금씩 더하고, 손을 떼면 일정 속도로 편다. */
+  const sec = (dt / 1000);
+  if (rig.pushT > 0 && rig.pushTopY != null) {
+    const handY = (hL.getAbsolutePosition(mesh).y + hR.getAbsolutePosition(mesh).y) / 2;
+    rig.__lean = clamp((rig.__lean || 0) + (handY - rig.pushTopY) * PUSH_LEAN_GAIN * sec,
+                       0, PUSH_LEAN_MAX);
+  } else {
+    rig.__lean = Math.max(0, (rig.__lean || 0) - PUSH_LEAN_RELAX * sec);
+  }
+  if (rig.__lean > 0.002) {
+    const e = tn.rotationQuaternion.toEulerAngles();
+    tn.rotationQuaternion = BABYLON.Quaternion.FromEulerAngles(e.x + rig.__lean, e.y, e.z);
+  }
+}
+function pushPoseUpdate(dt) {
+  if (!PUSH.active) return;
+  if (PERSON.skinned) pushLeanRig(PERSON, PERSON.skinned.skeleton, dt || 16.7);
+  for (const e of EXTRAS) if (e && e.skinned) pushLeanRig(e, e.skinned.skeleton, dt || 16.7);
 }
 /* 카트를 처음 자리로 되돌린다 — 시연을 여러 번 돌릴 때 필요하다.
 
@@ -8744,6 +8826,12 @@ $("scWander").addEventListener("click", () => personWander(!WANDER.on));
 /* 작업 동선 — 스테이션마다 도착해서 실제 작업 동작을 재생한다 */
 $("scWork").addEventListener("click",   () => personRoute("work",     { loop:true }));
 $("scPushCart").addEventListener("click", () => demoPushCart());
+/* 상단바 — 패널 버튼과 같은 동작. 두 곳에 두는 이유는 위 주석 참조(찾을 수 없었다). */
+$("mbPush").addEventListener("click", () => demoPushCart());
+$("mbPushReset").addEventListener("click", () => {
+  const n = resetPushables();
+  setStatus(n ? "↩ 카트 " + n + "개를 처음 자리로 되돌렸습니다" : "되돌릴 카트가 없습니다");
+});
 $("scKettle").addEventListener("click", () => personRoute("toKettle"));
 $("scFull").addEventListener("click",   () => personRoute("full",     { loop:true }));
 $("scApproach").addEventListener("click", () => {
@@ -9468,6 +9556,7 @@ scene.registerBeforeRender(() => {
   cookGearUpdate();
   extrasUpdate(dt);
   pushUpdate(dt);              // 사람이 카트에 파고든 만큼 카트를 밀어낸다 (사람 이동 뒤)
+  pushPoseUpdate(dt);          // 손이 물건에 닿게 상체를 숙인다 (애니메이션 평가 뒤라야 먹는다)
   resolvePeopleSeparation();   // 사람끼리 겹쳐 서지 않게 — GT 박스가 붙는 프레임 방지
   workOverlapUpdate(dt);       // 로봇 이송 단계에 배식 담당을 카트로 부른다 (작업 겹침)
   armContactUpdate(dt);        // 팔↔사람 접촉 — 링 판정과 달리 '팔이 향한 방향'을 본다
@@ -9643,7 +9732,7 @@ window.__sim = {
   solveIK, ikAngles, verifyReach, importToAnchor, clearAnchor,
   personAct, personIdle, personFall, personSlip, personGetUp, PERSON,
   personRoute, verifyRoute, STATION, ROUTE, personWander, WANDER, RNG,
-  PUSH, buildPushables, resetPushables, pushUpdate, demoPushCart, PUSHABLE_DEF,   // 밀 수 있는 물건
+  PUSH, buildPushables, resetPushables, pushUpdate, pushPoseUpdate, demoPushCart, PUSHABLE_DEF,
   /* EXTRAS는 이 export 블록보다 **뒤에** 선언되므로 여기 직접 넣으면 const TDZ에 걸려
      스크립트가 통째로 죽는다. getter로 감싸 접근 시점에 읽는다. */
   ROLE, roleStations, spawnRole, buildPersonColliders, transitPath,
@@ -9926,10 +10015,16 @@ initPhysics();   // 비동기 — 파일 없으면 물리만 꺼진 채 계속 �
 
     <div class="stStep" data-step="4">
       <div class="stHead"><b>4</b> 안전 시연 <span id="stS4" class="stChip"></span></div>
-      <div class="stWhy">사람이 다가오면 예측으로 미리 감속하고, 정지 반경에 들어오면 멈춥니다.</div>
+      <div class="stWhy">사람이 다가오면 예측으로 미리 감속하고, 정지 반경에 들어오면 멈춥니다.<br>
+        <b>카트 밀기</b>는 사람이 아닌 <b>물체</b>가 반경을 침범하는 경우입니다 — 조리원이 카트를
+        로봇 쪽으로 밀고 갑니다.</div>
       <div class="btnrow">
         <button id="stAuto" class="primary">▶ 자동 작업</button>
         <button id="stApproach">사람 접근</button>
+      </div>
+      <div class="btnrow">
+        <button id="stPush">🛒 카트 밀기 (물리)</button>
+        <button id="stPushBack">↩ 카트 원위치</button>
         <button id="stReset">↺ 리셋</button>
       </div>
     </div>
@@ -9954,6 +10049,10 @@ initPhysics();   // 비동기 — 파일 없으면 물리만 꺼진 채 계속 �
   document.getElementById("stMil").onclick = () => { showTab("data"); click("milBtn"); };
   document.getElementById("stAuto").onclick = () => click("autoBtn");
   document.getElementById("stApproach").onclick = () => click("scApproach");
+  /* 기본 탭에서 바로 누를 수 있어야 한다 — 상단바·실행 탭에도 같은 버튼이 있지만,
+     처음 여는 사람이 보는 화면은 이 탭이다(실측 지적: "카트 밀기가 안 보인다"). */
+  document.getElementById("stPush").onclick     = () => click("mbPush");
+  document.getElementById("stPushBack").onclick = () => click("mbPushReset");
   document.getElementById("stReset").onclick = () => click("resetBtn");
   document.getElementById("stRuns").onclick = () => gotoControl("data", "runLogList");
 
