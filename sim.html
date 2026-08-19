@@ -415,6 +415,7 @@
     <button id="scRoleDanger">＋ C 위험 접근자 (정지 반경 진입)</button>
     <button id="scWander">🎲 랜덤 움직임 시작/중지</button>
     <button id="scWork">🔁 작업 동선 (선반↔조리대)</button>
+    <button id="scPushCart">🛒 카트 밀기 (물리)</button>
     <button id="scKettle">솥 접근 (감속·정지)</button>
     <button id="scFull">전체 순회 (입구→작업→퇴장)</button>
     <button id="scApproach">솥 접근(구)</button>
@@ -6200,7 +6201,8 @@ function buildPushables() {
     ag.body.setAngularDamping(4.0);
     ag.body.setMassProperties({ mass, inertia:new V3(0, mass*(w*w + d*d)/12, 0) });
     PUSH.bodies.push({ box, ag, holder:h, label:it.def.label, half:[w/2, d/2],
-                       home:box.position.clone(), size:[+w.toFixed(2), +ht.toFixed(2), +d.toFixed(2)] });
+                       home:box.position.clone(), homeYaw:it.ry,
+                       size:[+w.toFixed(2), +ht.toFixed(2), +d.toFixed(2)] });
   }
   if (!PUSH.bodies.length) return;
   PUSH.active = true;
@@ -6231,6 +6233,9 @@ function buildPushables() {
 const PUSH_GAIN = 14.0;
 function pushUpdate() {
   if (!PUSH.active) return;
+  // 리셋으로 열어 둔 메시→바디 동기화를 되돌린다 (열어 두면 매 프레임 비용)
+  for (const b of PUSH.bodies)
+    if (b.restore && --b.restore === 0) b.ag.body.disablePreStep = true;
   const movers = [person.node];
   for (const e of EXTRAS) if (e && e.node) movers.push(e.node);
   for (const b of PUSH.bodies) {
@@ -6261,13 +6266,62 @@ function pushUpdate() {
     }
   }
 }
-/* 카트를 처음 자리로 되돌린다 — 시연을 여러 번 돌릴 때 필요하다 */
+/* ══ 카트 밀기 시연 ═════════════════════════════════════════════════════════
+   **A*가 카트를 피해 다니므로 자동 운행만 보고 있으면 카트는 평생 안 밀린다.** 그게 맞는
+   기본값이다(조리원이 카트를 들이받고 다니지는 않는다). 그런데 그 탓에 "물리가 되는지"를
+   눈으로 확인할 방법이 WASD로 직접 몰고 가는 것뿐이었다 — 기능이 있는데 안 보였다.
+
+   이 버튼은 사람을 **카트 반대편(로봇에서 먼 쪽)에 세우고 로봇 쪽으로 밀게** 한다.
+   목적지를 카트 너머로 잡으면 사람이 카트를 밀고 갈 수밖에 없다 — 비켜갈 이유가 없다.
+   카트가 정지 링 안으로 들어가는 것이 이 시연의 핵심이다(사람이 아닌 물체가 반경 침범). */
+function demoPushCart() {
+  if (!PUSH.active) { setStatus("물리가 꺼져 있어 카트를 밀 수 없습니다"); return null; }
+  const B = LAYOUT.robot.base;
+  // 로봇에서 가장 가까운 카트를 고른다 — 가장 짧게 밀어도 링에 들어간다
+  let best = null, bd = 1e9;
+  for (const b of PUSH.bodies) {
+    const d = Math.hypot(b.box.position.x - B.x, b.box.position.z - B.z);
+    if (d < bd) { bd = d; best = b; }
+  }
+  if (!best) return null;
+  const c = best.box.position;
+  // 카트 → 로봇 방향. 사람은 그 반대편에 선다
+  const ux = (B.x - c.x) / bd, uz = (B.z - c.z) / bd;
+  const stand = new V3(c.x - ux * 0.95, 0, c.z - uz * 0.95);
+  person.node.position.x = stand.x; person.node.position.z = stand.z;
+  person.node.rotation.y = Math.atan2(ux, uz);
+  WANDER.on = false;
+  person.freeze = false; person.dwellT = 0;
+  // 카트 **너머** 지점을 목표로 준다 — 그래야 카트를 밀고 지나간다
+  personGo([new V3(c.x + ux * 1.30, 0, c.z + uz * 1.30)], { speed: 0.80 });
+  setStatus("🛒 " + best.label + "를 로봇 쪽으로 밉니다 — 정지 링에 들어가는지 보세요");
+  return best;
+}
+/* 카트를 처음 자리로 되돌린다 — 시연을 여러 번 돌릴 때 필요하다.
+
+   **메시 좌표를 고쳐 봐야 소용없다.** 동적 바디는 물리 엔진이 변환을 소유하므로,
+   box.position에 값을 넣으면 그 순간에는 바뀐 것처럼 보이지만 다음 물리 스텝이
+   덮어써서 카트가 제자리로 돌아온다(실측: 리셋 직후 읽으면 맞는데 한 프레임 뒤에
+   원래 밀려 있던 자리로 복귀). 엔진에 "여기로 옮겨라"라고 말해야 한다 —
+   방법은 **disablePreStep을 한 프레임만 여는 것**이다. 동적 바디는 이 값이 true라
+   물리가 메시 변환을 아예 읽지 않는다(물리가 쓰는 쪽이라 읽을 이유가 없다). false로
+   두면 스텝 직전에 메시 → 바디 동기화가 한 번 일어나므로, 그때 옮겨 놓은 좌표가 먹는다.
+   그 뒤 바로 true로 되돌린다 — 계속 열어 두면 매 프레임 동기화 비용을 문다.
+   (setTargetTransform은 **키네마틱 전용**이라 여기서는 아무 일도 하지 않는다. 실측으로
+    확인했다 — 부르고 나서도 카트가 밀린 자리에 그대로 있었다.)
+   속도도 같이 0으로 만들지 않으면 옮겨 놓자마자 남아 있던 속도로 다시 굴러간다. */
 function resetPushables() {
+  const Q = BABYLON.Quaternion;
   for (const b of PUSH.bodies) {
     b.ag.body.setLinearVelocity(V3.Zero());
     b.ag.body.setAngularVelocity(V3.Zero());
+    const q = Q.RotationAxis(BABYLON.Axis.Y, b.homeYaw);
     b.box.position.copyFrom(b.home);
-    if (b.box.rotationQuaternion) b.box.rotationQuaternion.copyFrom(BABYLON.Quaternion.Identity());
+    if (!b.box.rotationQuaternion) b.box.rotationQuaternion = q.clone();
+    else b.box.rotationQuaternion.copyFrom(q);
+    b.box.computeWorldMatrix(true);
+    b.ag.body.disablePreStep = false;   // 이번 스텝에만 메시 → 바디 동기화를 연다
+    b.restore = 2;                      // 두 프레임 뒤 pushUpdate가 되돌린다
   }
   if (PUSH.bodies.length) { buildPersonColliders(); buildNavGrid(); }
   return PUSH.bodies.length;
@@ -7818,6 +7872,7 @@ $("hzClear").addEventListener("click", () => demoHazardClear());
 $("scWander").addEventListener("click", () => personWander(!WANDER.on));
 /* 작업 동선 — 스테이션마다 도착해서 실제 작업 동작을 재생한다 */
 $("scWork").addEventListener("click",   () => personRoute("work",     { loop:true }));
+$("scPushCart").addEventListener("click", () => demoPushCart());
 $("scKettle").addEventListener("click", () => personRoute("toKettle"));
 $("scFull").addEventListener("click",   () => personRoute("full",     { loop:true }));
 $("scApproach").addEventListener("click", () => {
@@ -8708,7 +8763,7 @@ window.__sim = {
   solveIK, ikAngles, verifyReach, importToAnchor, clearAnchor,
   personAct, personIdle, personFall, personSlip, personGetUp, PERSON,
   personRoute, verifyRoute, STATION, ROUTE, personWander, WANDER, RNG,
-  PUSH, buildPushables, resetPushables, pushUpdate, PUSHABLE_DEF,   // 밀 수 있는 물건
+  PUSH, buildPushables, resetPushables, pushUpdate, demoPushCart, PUSHABLE_DEF,   // 밀 수 있는 물건
   /* EXTRAS는 이 export 블록보다 **뒤에** 선언되므로 여기 직접 넣으면 const TDZ에 걸려
      스크립트가 통째로 죽는다. getter로 감싸 접근 시점에 읽는다. */
   ROLE, roleStations, spawnRole, buildPersonColliders, transitPath,
