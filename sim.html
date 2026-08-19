@@ -2969,7 +2969,10 @@ function customPredictTick(srcPos, now, dtMs) {
 /* 데이터셋 캡처 중에는 예측 시각화를 억제한다. 캡처의 매 scene.render()가 다시
    safetyUpdate→predictionUpdate를 돌려 선/밴드를 되살리므로, 플래그로 막아야 한다(실측). */
 let vizSuppressed = false;
-const DENS = { on:true, res:128, hz:10, acc:0, alpha:0.6, gamma:0.7,
+/* alpha: 밀도 최고점의 불투명도. gamma: 감쇠 지수 — 1보다 크게 줄수록 중심만 진하고
+   주변이 빠르게 옅어져 '확률밀도 그라데이션'으로 읽힌다. 0.7(완만)에서는 바닥 전체가
+   초록으로 물들어 구조가 안 보였다(실측). */
+const DENS = { on:true, res:128, hz:10, acc:0, alpha:0.72, gamma:2.2,
                plane:null, tex:null, img:null,
                cx:1.0, cz:2.0, size:16 };      // 평면 중심·한 변(AU) — 방 전체를 넉넉히 덮는다
 function densInit() {
@@ -3106,7 +3109,10 @@ function predictionUpdate(srcPos, now) {
     if (d < SAFE.slowR && PRED.tSlow === Infinity) PRED.tSlow = t;
   }
   PRED.pathPts = flat;
-  PRED.moving = SCALE.m(speed) > 0.08;
+  /* 표시 게이트에 히스테리시스 — 켜짐 0.08㎧↑, 꺼짐 0.04㎧↓. 검출/칼만 속도 추정은 프레임
+     간격에 따라 출렁여서 단일 임계값이면 음영·선이 깜빡인다(실측 0.06~0.33㎧ 진동). */
+  const mSpeed = SCALE.m(speed);
+  PRED.moving = PRED.moving ? mSpeed > 0.04 : mSpeed > 0.08;
   PRED.level = PRED.tStop < Infinity ? 2 : PRED.tSlow < Infinity ? 1 : 0;
   /* 확률밀도 혼합(GMM) — 바닥 음영이 이걸 그린다. 칼만은 시점당 성분 1개(단일 모드)지만,
      학습형이 여러 모드를 주면 성분이 늘어나 **같은 렌더가 멀티모달 봉우리**를 그린다
@@ -3143,7 +3149,7 @@ function predictionUpdate(srcPos, now) {
     PRED.line.setPoints(pts);
   }
   if (PRED.line.greasedLineMaterial) PRED.line.greasedLineMaterial.color = predCol;
-  PRED.line.setEnabled(SCALE.m(speed) > 0.08 && !vizSuppressed);   // 0.08㎧ 이상 이동 중일 때만
+  PRED.line.setEnabled(PRED.moving && !vizSuppressed);   // 이동 중일 때만(히스테리시스 적용)
   // 3D σ 밴드 — 예측 경로를 따라 (t/horizon)·σ 만큼 좌우로 벌린 반투명 리본
   const np = pts.length;
   if (np > 1) {
