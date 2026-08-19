@@ -330,3 +330,63 @@ id 지속 **6→26프레임 · 7→25 · 8→25**, ID 스위치 0건, 월드 트
 - 브라우저 ONNX 자립 데모 점검(`best.onnx`, opset 12 — 노트북 발표용, 서버 불필요)
 - 학습형 궤적 예측기(`__customPredictor`)로 스테이션 목표 모드 대체
 - 실사 주방 라벨 확보 후 sim-to-real 재측정
+
+---
+
+## 8. 모델 배포 — 팀원이 쓰는 방법 (2026-08-19)
+
+### 8-1. 왜 git에 없나
+`training/`(9.4GB)·`dataset/`(1.4GB)은 `.gitignore` 대상이다. 가중치를 git에 넣으면
+재학습마다 19MB 바이너리가 이력에 영구히 쌓이고 클론이 무거워진다. Git LFS도 무료 할당량을
+빠르게 소모한다. 그래서 **가중치는 허깅페이스 허브에, 코드는 git에** 둔다.
+
+### 8-2. 팀원 실행 절차 — 파일 전달 없음
+
+```bash
+uv sync --group serve
+uv run python backend/detect_server.py --port 8001
+# → http://127.0.0.1:8001/sim.html?person=1
+```
+
+`detect_server.py`는 로컬 `training/island_yolo11s/weights/best.pt`가 있으면 그걸 쓰고,
+**없으면 허브에서 자동으로 내려받는다**(`~/.cache/huggingface`에 캐시, 최초 1회 19MB).
+공개 저장소라 토큰도 필요 없다.
+
+| env | 기본값 | 용도 |
+|---|---|---|
+| `DETECT_MODEL` | `training/island_yolo11s/weights/best.pt` | 로컬 가중치 경로 |
+| `DETECT_MODEL_REPO` | `chanubc/robot-kitchen-nadir-yolo11s` | 허브 저장소 |
+| `DETECT_MODEL_FILE` | `best.pt` | 받을 파일 (`best.onnx`도 가능) |
+
+> ⚠️ 기본 모델을 옛 `yolo11s_orthotop`(조리셀 배치, person recall 0.688)에서
+> **`island_yolo11s`(섬 배치, 0.871)로 바꿨다.** 현재 시뮬 배치에 맞는 모델이다.
+
+### 8-3. 허브 저장소
+
+**https://huggingface.co/chanubc/robot-kitchen-nadir-yolo11s** (공개)
+
+| 파일 | 크기 | 용도 |
+|---|---|---|
+| `best.pt` | 19 MB | ultralytics / PyTorch |
+| `best.onnx` | 37 MB | ONNX Runtime (opset 12, 브라우저 ort-web 호환) |
+
+모델 카드에 클래스 순서·in-domain 지표·학습 조건과 함께 **"실사에는 쓸 수 없다"**(실사 recall
+0.048)를 명시했다. §2·§5-7의 결론이라 외부 이용자가 오용하지 않도록 카드에 직접 박아둔다.
+
+라이선스는 **AGPL-3.0** — 베이스 Ultralytics YOLO11이 AGPL이고 학습 가중치도 그 범위로 본다.
+GitHub 저장소가 이미 공개라 소스공개 의무는 충족된 상태다. 상용에서 이 의무를 피해야 하면
+Apache-2.0인 RF-DETR 계열을 쓸 것(§5-4).
+
+### 8-4. 재학습본을 올릴 때
+
+```bash
+uv run python -c "
+from huggingface_hub import HfApi
+HfApi().upload_file(path_or_fileobj='training/<run>/weights/best.pt',
+                    path_in_repo='best.pt',
+                    repo_id='chanubc/robot-kitchen-nadir-yolo11s',
+                    commit_message='<무엇을 바꿨는지>')"
+```
+
+git 기반이라 커밋으로 쌓인다. 특정 버전을 고정하려면 `hf_hub_download(..., revision="<sha>")`.
+**모델 카드의 지표도 같이 갱신할 것** — 지표가 실제 가중치와 어긋나면 카드가 거짓말이 된다.
