@@ -4733,13 +4733,13 @@ const PRED = { horizon:1.6, steps:12, vel:new V3(0,0,0), lastPos:null, lastT:0,
                     수축하면 화면에서 안 보이므로, 최소한 '사람 가로 면적'만큼은 항상 그린다. */
                vizHorizon:3.5, vizSteps:20, minSigma:0.24,
                /* 경로 좌표계 1σ 성장률(m/s) — along(진행)은 속도 불확실성, across(수직)는 좁게 */
-               alongK:0.55, acrossK:0.09, mix:[], lineW:0.09,
+               alongK:0.32, acrossK:0.08, mix:[], lineW:0.09,
                /* 다봉(멀티모달) 예측 — 사람은 스테이션 사이를 오간다(SCENARIO/ROUTE). 그래서
                   "어느 스테이션으로 가는가"가 곧 Trajectron++이 말하는 high-level behavior mode다.
                   칼만 단일모드는 등방 구름 하나뿐이라 예측의 성과가 그림에 안 나타난다.
                   goalModes: 진행 방향과 정렬된 상위 maxModes개 목표별 경로를 각각 성분으로 낳는다.
                   학습형(__customPredictor)이 GMM을 주면 이 자리를 그대로 대체하면 된다. */
-               goalModes:true, maxModes:3, alignMin:0.25, sepMin:32, modes:[],
+               goalModes:true, maxModes:3, alignMin:0.25, sepMin:32, modes:[], bands:[],
                /* 모드별 색 — Fig.1의 "colors representing different behavior modes" */
                modeCols:["#2dd4bf", "#60a5fa", "#f472b6"],
                /* sigA = 사람 가감속 불확실성(㎧²). 이 값이 곧 지평선 끝 위치 불확실성을 지배한다.
@@ -4832,6 +4832,19 @@ function pmodeArrowsFor(node, idx, dt) {
   const speed = Math.hypot(st.vx, st.vz);
   const modes = goalModesAt(p, st.vx, st.vz, speed);
   let n = 0;
+  /* 이 사람의 **띠 성분**도 같이 만든다 — 화살표는 "몇 가지 가능성"을, 띠는 "어디쯤"을 말한다.
+     둘을 같은 사람에게 붙여야 그림이 대칭이 된다(종전엔 위협 1명만 띠가 있었다).
+     σ는 위협 트랙처럼 칼만 공분산을 쓰지 않고 경로 좌표계 성장률만 쓴다 — 사람마다
+     칼만을 돌리지 않기 때문이고, 표시용으로는 충분하다. */
+  modes.forEach((md, mi) => {
+    for (let k = 0; k <= PRED.vizSteps; k++) {
+      const t = PRED.vizHorizon * k / PRED.vizSteps;
+      const travel = Math.min(speed * t, md.dist);
+      PRED.bands.push({ x:p.x + md.ux*travel, z:p.z + md.uz*travel, ux:md.ux, uz:md.uz,
+                        sAlong:PRED.minSigma + PRED.alongK*t, sAcross:PRED.minSigma + PRED.acrossK*t,
+                        w:md.w * (1 - 0.35*(k/PRED.vizSteps)), ci:mi, pi:idx });
+    }
+  });
   modes.forEach((md, mi) => {
     const len = Math.min(Math.max(speed * PRED.vizHorizon, PMODE.minLen), md.dist);
     if (!(len > 0.15)) return;
@@ -4852,6 +4865,7 @@ function pmodeArrowsFor(node, idx, dt) {
    각자 여러 가능성을 갖는다"는 그림의 요지가 사라진다. */
 function predModeArrows(dtMs) {
   for (const k in PMODE.mesh) PMODE.mesh[k].setEnabled(false);
+  PRED.bands = [];
   if (!PMODE.on || vizSuppressed) return;
   const dt = Math.min(Math.max((dtMs || 16)/1000, 1e-3), 0.5);
   peopleList().forEach((node, i) => pmodeArrowsFor(node, i, dt));
@@ -4908,7 +4922,7 @@ let vizSuppressed = false;
    pow(gamma)로 감쇠시키면 중심만 진하고 사방으로 흐려져 '물 빠진 얼룩'이 된다.
    논문 그림의 띠는 **내부가 고르게 진하고 경계가 뚜렷**하다 — 그건 지수감쇠가 아니라
    문턱(edge0)에서 올라와 edge1에서 포화되는 곡선이다. */
-const DENS = { on:true, res:128, hz:10, acc:0, alpha:0.92, edge0:0.10, edge1:0.42,
+const DENS = { on:true, res:128, hz:10, acc:0, alpha:0.58, edge0:0.26, edge1:0.62,
                plane:null, tex:null, img:null,
                cx:1.375, cz:1.85, size:11 };  // 평면 중심·한 변(AU) — CAM11 프레임(8.9×6.675)+여유.
                                               // 16m는 1텍셀 12.5cm(≈13px)로 계단이 보였다 → 11m로 좁혀 8.6cm
@@ -4928,10 +4942,8 @@ function densInit() {
   DENS.plane = p; DENS.tex = tex;
 }
 function densUpdate(dtMs) {
-  /* 방향이 있을 때(모드가 뽑혔을 때)만 띠를 그린다. 방향 미지의 등방 원은 "아무 데나 갈 수
-     있다"는 뜻이라 정보가 없는데 화면만 잡아먹는다 — 그 경우 위험 표시는 안전링이 맡는다. */
-  const live = DENS.on && !vizSuppressed && PRED.moving
-            && PRED.mix && PRED.mix.length > 1 && PRED.modes && PRED.modes.length > 0;
+  // 전원의 띠 성분(PRED.bands)을 그린다 — 방향이 있는 사람만 성분이 생기므로 게이트가 따로 필요 없다
+  const live = DENS.on && !vizSuppressed && PRED.bands && PRED.bands.length > 1;
   if (!live) { if (DENS.plane) DENS.plane.setEnabled(false); return; }
   if (!DENS.plane) densInit();
   DENS.plane.setEnabled(true);
@@ -4943,60 +4955,56 @@ function densUpdate(dtMs) {
   const ctx = DENS.tex.getContext();
   if (!DENS.img || DENS.img.width !== R) DENS.img = ctx.createImageData(R, R);
   const d = DENS.img.data; d.fill(0);
-  const col = PRED.level === 2 ? [248, 81, 73] : PRED.level === 1 ? [227, 179, 65] : [46, 160, 67];
-  /* 모드명 → RGB. PRED.modes 순서(가중치 내림차순)대로 팔레트를 물린다. */
-  const modeRGB = {};
-  (PRED.modes || []).forEach((m, mi) => {
-    const hex = PRED.modeCols[mi % PRED.modeCols.length];
-    modeRGB[m.name] = [parseInt(hex.slice(1,3),16), parseInt(hex.slice(3,5),16), parseInt(hex.slice(5,7),16)];
-  });
-
-  // 3σ 바운딩박스 → 계산할 텍셀 범위 (밖은 알파 0으로 남긴다)
-  let mnX = 1e9, mxX = -1e9, mnZ = 1e9, mxZ = -1e9;
-  for (const g of PRED.mix) {
-    const r = 3 * Math.max(g.sAlong, g.sAcross);
-    mnX = Math.min(mnX, g.x - r); mxX = Math.max(mxX, g.x + r);
-    mnZ = Math.min(mnZ, g.z - r); mxZ = Math.max(mxZ, g.z + r);
-  }
   const x0 = DENS.cx - half, z1 = DENS.cz + half;   // 텍셀 (0,0) = 좌상단 = (minX, maxZ)
-  const i0 = Math.max(0, Math.floor((mnX - x0)/per)), i1 = Math.min(R-1, Math.ceil((mxX - x0)/per));
-  const j0 = Math.max(0, Math.floor((z1 - mxZ)/per)), j1 = Math.min(R-1, Math.ceil((z1 - mnZ)/per));
+  /* 모드 인덱스 → RGB (화살표와 같은 팔레트) */
+  const palRGB = PRED.modeCols.map(h =>
+    [parseInt(h.slice(1,3),16), parseInt(h.slice(3,5),16), parseInt(h.slice(5,7),16)]);
 
-  const cells = (i1-i0+1) * (j1-j0+1);
-  const f = new Float32Array(cells), win = new Int16Array(cells);
-  let peak = 0, n = 0;
-  for (let j = j0; j <= j1; j++) {
-    const wz = z1 - (j + 0.5)*per;
-    for (let i = i0; i <= i1; i++, n++) {
-      const wx = x0 + (i + 0.5)*per;
-      let s = 0, wi = -1;
-      /* 합이 아니라 **최댓값(합집합)** 으로 섞는다. 합으로 하면 σ가 큰 먼 시점의 밀도가 낮아,
-         전체를 peak로 정규화하는 순간 먼 쪽이 사라져 "사람 옆 작은 얼룩"만 남는다(실측:
-         화면의 1.1%만 채워짐). 최댓값이면 시점별 타원이 제 밝기를 지켜 길고 넓은 부채꼴이 된다.
-         **이긴 성분(wi)** 을 같이 기록해 그 성분의 모드 색으로 칠한다 → 로브마다 다른 색. */
-      let acc = 0;
-      for (let gi = 0; gi < PRED.mix.length; gi++) {
-        const g = PRED.mix[gi];
-        const dx = wx - g.x, dz = wz - g.z;
-        let q;
-        if (g.ux || g.uz) {                     // 진행 방향이 있으면 종/횡으로 분해(비등방 띠)
-          const al = dx*g.ux + dz*g.uz, ac = -dx*g.uz + dz*g.ux;
-          const a1 = al/g.sAlong, a2 = ac/g.sAcross; q = a1*a1 + a2*a2;
-        } else {                                 // 멈춰 있음 → 등방(원). 방향을 모르니 이게 정직하다
-          const a1 = dx/g.sAlong, a2 = dz/g.sAlong; q = a1*a1 + a2*a2;
-        }
-        if (q < 18) {
-          const v = g.w * Math.exp(-0.5*q);
-          acc += v*v*v*v;                       // p=4 노름 — max보다 이음새가 매끈하다
-          if (v > s) { s = v; wi = gi; }         // 색은 이긴 성분(모드)으로
-        }
-      }
-      /* 딱딱한 max는 성분 타원마다 경계가 생겨 **띠처럼 갈라져 보인다**(사용자 지적).
-         p-노름(p=4)은 max에 가깝지만 겹치는 구간을 부드럽게 이어 그라데이션이 된다. */
-      f[n] = Math.pow(acc, 0.25); win[n] = wi; if (f[n] > peak) peak = f[n];
-    }
+  /* **사람별로 나눠 칠한다.** 전원 성분을 하나의 큰 박스에서 훑으면 텍셀마다 수백 개를
+     검사해 프레임이 무너진다(실측 107ms/프레임 → 9fps). 사람마다 자기 3σ 박스 안에서만
+     자기 성분을 보면 비용이 사람 수에 선형이 된다. peak도 사람별로 잡아 각자 또렷하게. */
+  const groups = new Map();
+  for (const g of PRED.bands) {
+    const k = g.pi === undefined ? 0 : g.pi;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(g);
   }
-  if (peak > 0) {
+  for (const band of groups.values()) {
+    let mnX = 1e9, mxX = -1e9, mnZ = 1e9, mxZ = -1e9;
+    for (const g of band) {
+      const r = 3 * (g.sAlong > g.sAcross ? g.sAlong : g.sAcross);
+      if (g.x - r < mnX) mnX = g.x - r; if (g.x + r > mxX) mxX = g.x + r;
+      if (g.z - r < mnZ) mnZ = g.z - r; if (g.z + r > mxZ) mxZ = g.z + r;
+    }
+    const i0 = Math.max(0, Math.floor((mnX - x0)/per)), i1 = Math.min(R-1, Math.ceil((mxX - x0)/per));
+    const j0 = Math.max(0, Math.floor((z1 - mxZ)/per)), j1 = Math.min(R-1, Math.ceil((z1 - mnZ)/per));
+    if (i1 < i0 || j1 < j0) continue;
+    const cells = (i1-i0+1) * (j1-j0+1);
+    const f = new Float32Array(cells), win = new Int16Array(cells);
+    let peak = 0, n = 0;
+    for (let j = j0; j <= j1; j++) {
+      const wz = z1 - (j + 0.5)*per;
+      for (let i = i0; i <= i1; i++, n++) {
+        const wx = x0 + (i + 0.5)*per;
+        let s = 0, wi = -1, acc = 0;
+        for (let gi = 0; gi < band.length; gi++) {
+          const g = band[gi];
+          const dx = wx - g.x, dz = wz - g.z;
+          const rr = 3 * (g.sAlong > g.sAcross ? g.sAlong : g.sAcross);
+          if (dx > rr || dx < -rr || dz > rr || dz < -rr) continue;   // 회전 계산 전 컷
+          const al = dx*g.ux + dz*g.uz, ac = -dx*g.uz + dz*g.ux;
+          const a1 = al/g.sAlong, a2 = ac/g.sAcross, q = a1*a1 + a2*a2;
+          if (q < 18) {
+            const v = g.w * Math.exp(-0.5*q);
+            acc += v*v*v*v;                      // p=4 노름 — max보다 이음새가 매끈하다
+            if (v > s) { s = v; wi = gi; }        // 색은 이긴 성분의 모드
+          }
+        }
+        const val = acc > 0 ? Math.pow(acc, 0.25) : 0;
+        f[n] = val; win[n] = wi; if (val > peak) peak = val;
+      }
+    }
+    if (peak <= 0) continue;
     n = 0;
     for (let j = j0; j <= j1; j++)
       for (let i = i0; i <= i1; i++, n++) {
@@ -5006,10 +5014,10 @@ function densUpdate(dtMs) {
         const cl = e < 0 ? 0 : e > 1 ? 1 : e;
         const a = cl*cl*(3 - 2*cl) * DENS.alpha;
         if (a <= 0.01) continue;
-        const g = win[n] >= 0 ? PRED.mix[win[n]] : null;
-        const c = (g && g.mode) ? (modeRGB[g.mode] || col) : col;   // 모드별 색(없으면 위협도 색)
-        const o = (j*R + i) * 4;
-        d[o] = c[0]; d[o+1] = c[1]; d[o+2] = c[2]; d[o+3] = (a*255)|0;
+        const g = win[n] >= 0 ? band[win[n]] : null;
+        const c = g ? palRGB[g.ci % palRGB.length] : [46,160,67];
+        const o = (j*R + i) * 4, na = (a*255)|0;
+        if (na > d[o+3]) { d[o] = c[0]; d[o+1] = c[1]; d[o+2] = c[2]; d[o+3] = na; }
       }
   }
   ctx.putImageData(DENS.img, 0, 0);
