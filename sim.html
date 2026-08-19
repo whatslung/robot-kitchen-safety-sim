@@ -5800,13 +5800,16 @@ const GT_W = 960, GT_H = 720;   // 데이터셋 해상도 — 창 크기와 무�
    두 호출이 겹치면 서로의 저장/복원 맵을 덮어써 **라벨이 0개로 나온다**(실측 확인).
    generateDataset은 await로 순차 호출하지만, GT 버튼 연타 등으로 겹칠 수 있다. */
 let GT_BUSY = null;
-async function groundTruth(camId) {
+async function groundTruth(camId, opt) {
   while (GT_BUSY) await GT_BUSY;                  // 앞선 캡처가 끝날 때까지 대기
   let release; GT_BUSY = new Promise(r => (release = r));
-  try { return await groundTruthImpl(camId); }
+  try { return await groundTruthImpl(camId, opt); }
   finally { GT_BUSY = null; release(); }
 }
-async function groundTruthImpl(camId) {
+/* opt.noDepth — 깊이맵 두 장을 건너뛴다. YOLO 학습에는 RGB + 라벨(인스턴스 마스크)만
+   필요한데 깊이 패스가 캡처 시간의 절반을 먹는다(실측 1.9s 중 ~0.8s). 대량 생성용 지름길. */
+async function groundTruthImpl(camId, opt) {
+  const noDepth = !!(opt && opt.noDepth);
   const cam = SURV[camId] ? SURV[camId].cam : camera;
   /* 예측 시각화(바닥 확률밀도 음영·굵은 예측선·σ밴드)는 **캡처 전 구간에서** 뺀다.
      이건 그림용 오버레이일 뿐 라벨에 없는 픽셀이다. 특히 음영은 사람을 따라다니므로
@@ -5943,7 +5946,7 @@ async function groundTruthImpl(camId) {
   // 3) 깊이맵 — 흰 무광 메시 + 검정 선형 안개(0~6m) 렌더 = 픽셀값이 곧 거리.
   //    (가까울수록 밝음: g = 255·(1 − d/6)) — RTT/float 리드백 불필요, GPU 무관
   let depthURL = null;
-  try {
+  if (!noDepth) try {
     const savedFog = { mode: scene.fogMode, start: scene.fogStart, end: scene.fogEnd,
                        color: scene.fogColor.clone(), enabled: scene.fogEnabled };
     let savedMats2 = null;
@@ -5976,7 +5979,7 @@ async function groundTruthImpl(camId) {
   //      (float RTT 리드백은 브라우저·GPU별로 깨져 폐기 — 실측 rms 27cm.
   //       안개는 셰이더 수식 그대로라 절대값이 정확하다: d = range·(1 − g/255))
   let depthNearURL = null;
-  try {
+  if (!noDepth) try {
     const savedFog2 = { mode: scene.fogMode, start: scene.fogStart, end: scene.fogEnd,
                         color: scene.fogColor.clone(), enabled: scene.fogEnabled };
     let savedMats3 = null;

@@ -270,6 +270,34 @@ async def detect(req: Request):
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
+@app.post("/dataset")
+async def dataset(req: Request):
+    """시뮬이 만든 한 샘플(이미지+YOLO 라벨)을 dataset/<set>/{images,labels}/ 에 쓴다.
+
+    시뮬의 generateDataset은 showDirectoryPicker(사용자 제스처) 또는 <a download>를 쓴다 —
+    둘 다 사람이 클릭해야 해서 자동 생성이 안 된다. 서버가 받아 쓰면 브라우저를 띄워두기만
+    하면 되고, 라벨/이미지가 항상 짝으로 저장된다.
+    요청: {"set":"sim-person-island","name":"orthotop_0000","image":"data:image/png;base64,...","label":"0 .. 
+"}
+    """
+    try:
+        body = await req.json()
+        safe = lambda v, d: "".join(c for c in str(v) if c.isalnum() or c in "-_")[:80] or d
+        st = safe(body.get("set", "ds"), "ds")
+        nm = safe(body.get("name", "sample"), "sample")
+        raw = body["image"]
+        b64 = raw.split(",", 1)[1] if "," in raw else raw
+        root = _ROOT / "dataset" / st
+        (root / "images").mkdir(parents=True, exist_ok=True)
+        (root / "labels").mkdir(parents=True, exist_ok=True)
+        (root / "images" / (nm + ".png")).write_bytes(base64.b64decode(b64))
+        (root / "labels" / (nm + ".txt")).write_text(body.get("label", ""), encoding="utf-8")
+        n = len(list((root / "images").glob("*.png")))
+        return {"ok": True, "count": n, "dir": str(root)}
+    except Exception as e:                # noqa: BLE001
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
 @app.post("/shot")
 async def shot(req: Request):
     """브라우저가 만든 이미지를 그대로 디스크에 저장한다 (captures/, gitignore 대상).
