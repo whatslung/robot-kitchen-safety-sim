@@ -437,6 +437,7 @@
     <button id="scRoleCaution">＋ B 주의구역 작업자 (감속까지만)</button>
     <button id="scRoleDanger">＋ C 위험 접근자 (정지 반경 진입)</button>
     <button id="scWander">🎲 랜덤 움직임 시작/중지</button>
+    <button id="scWorkflow">🧭 직무 전이 모드 시작/중지</button>
     <button id="scWork">🔁 작업 동선 (선반↔조리대)</button>
     <button id="scPushCart">🛒 카트 밀기 (물리)</button>
     <button id="scKettle">솥 접근 (감속·정지)</button>
@@ -3083,14 +3084,31 @@ if (ISLAND) {
    `JOB.route`와 따로 두는 이유: `JOB`은 추가 인원의 **재현 가능한 결정적 순회**이고
    기존 데이터셋 생성이 그것에 의존한다. 여기에 확률을 섞으면 그 회차들이 깨진다. */
 const WF = { on:false, P_NEXT:0.65, P_NEAR:0.30, TAU:2.0 };
-/* 사이클의 한 단계는 **키 배열**이다. 길이가 2 이상이면 그 단계에서 택일한다
-   (전처리 담당이 중앙 준비대 두 자리 중 가까운 쪽으로 가는 것 — 실제로 그렇게 일한다). */
+/* 사이클의 한 단계는 **키 배열**이다. 길이가 2 이상이면 그 단계에서 택일한다.
+
+   사이클은 **왕복을 허용한다**(같은 키가 두 번 나온다). 처음엔 설비 이름만 보고 고리
+   하나로 짰는데, 실측하니 구간이 5.4~8.8m였다(wash의 store↔nrack 8.78m). 이 방의 설비는
+   벽마다 흩어져 있어 **고리를 닫는 순간 방을 가로지르는 구간이 반드시 하나 생긴다.**
+   3칸 고리는 순서를 어떻게 바꿔도 총합이 같아서 재배열로는 못 고친다.
+   왕복 나열로 바꾸면 모든 구간이 짧아진다 — `JOB.route`가 이미 쓰는 방식이다
+   (`wash:["sink","wrack","nrack","isle2","sink","store"]`).
+
+   배정은 **설비 이름이 아니라 좌표**로 갈랐다. `JOB` 주석이 남긴 교훈과 같다 —
+   "동선은 자기 구역 안에서 돈다. 구역을 나눠 놓고 동선이 방을 가로지르면 아무 의미가
+   없다"(배식구 운반을 서벽에서 출발시켰더니 도착률 25%). 21곳 전부 배정돼 있다.
+   실측 사이클 평균 구간: prep 2.74 · cook 2.81 · wash 1.83 · carry 2.49 · lead 2.05 m. */
 const WORKFLOW = {
-  prep : { cycle:[["fridge"], ["wrack"], ["island"], ["isle1","isle2"], ["prep"]] },
-  cook : { cycle:[["prep"], ["kettle"], ["panel"], ["nkettle"], ["ntable"]] },
-  wash : { cycle:[["sink"], ["store"], ["nrack"]] },
-  carry: { cycle:[["serve"], ["isle3"], ["etable"], ["cartPick"], ["door"]] },
-  lead : { cycle:[["panel"], ["robotside"], ["aisle"], ["prep"]] },
+  // 서벽 전처리 + 중앙 준비대(북). isle1은 fridge를 거쳐 오간다(3.92m가 이 구역의 한계)
+  prep : { cycle:[["island"], ["wrack"], ["fridge"], ["isle1","isle2"], ["fridge"], ["wrack"]] },
+  // 중앙 조리셀 ↔ 북벽 라인. kettle↔ntable 4.33m은 줄일 수 없다 — 그 사이에 설비가 없다
+  cook : { cycle:[["kettle"], ["ntable"], ["nkettle"], ["ntable"], ["kettle"], ["prep"], ["panel"], ["prep"]] },
+  // 동벽 세척대 + 북동 선반. store(남동 건조 선반)는 6.8m 떨어져 carry로 넘겼다
+  wash : { cycle:[["nrack"], ["isle2"], ["nrack"], ["sink"]] },
+  // 남벽 배식 라인 + 동벽 배선대. 배식구까지 옮기는 일이라 남벽 안에서 돈다
+  carry: { cycle:[["serve"], ["isle3"], ["store"], ["etable"], ["store"], ["isle3"], ["cartPick"], ["shelf"]] },
+  /* 입구에서 들어와 제어반·로봇 앞을 보고 나간다. robotside(정지 반경 안)는 한 바퀴에
+     **한 번만** 나온다 — JOB 주석이 말하는 빈도 통제를 그대로 유지한다. */
+  lead : { cycle:[["door"], ["aisle"], ["panel"], ["prep"], ["robotside"], ["prep"], ["panel"], ["aisle"]] },
 };
 /* 직무 계획 해석 — 없는 스테이션은 버린다.
    `nkettle`·`ntable`·`nrack`은 ISLAND 배치에서만 STATION에 들어오므로
@@ -3123,7 +3141,11 @@ function wfWeightedPick(keys, from, rng) {
   return keys[keys.length - 1];
 }
 /* 현재 사이클 단계 — 사이클 밖에 서 있으면(모드 시작 직후·이탈 후) **가장 가까운 단계**로
-   붙인다. 못 찾았다고 넘기면 65% 분기가 죽어 구조 없는 근거리 랜덤으로 퇴화한다. */
+   붙인다. 못 찾았다고 넘기면 65% 분기가 죽어 구조 없는 근거리 랜덤으로 퇴화한다.
+
+   **키로 되짚는 것은 폴백이다.** 사이클이 왕복이라 같은 키가 두 단계에 나오고
+   (cook의 ntable은 1·3번), 키로 찾으면 늘 앞쪽만 걸려 뒷 절반이 죽는다.
+   진행도는 호출부가 숫자로 들고 다닌다 — 여기 오는 건 그 숫자가 없을 때뿐이다. */
 function wfStepIndex(plan, curKey, from) {
   for (let i = 0; i < plan.steps.length; i++)
     if (plan.steps[i].indexOf(curKey) >= 0) return i;
@@ -3134,30 +3156,38 @@ function wfStepIndex(plan, curKey, from) {
   }
   return best;
 }
-/* 다음 목표 — 반환 형태를 wanderTarget과 같게 맞춘다(+ 추적용 key).
+/* 다음 목표 — 반환 형태를 wanderTarget과 같게 맞춘다(+ 추적용 key·step).
      p=0.65  사이클의 다음 단계          ← 구조(학습 가능)
      p=0.30  직무 집합 안 거리 가중       ← 현실성
      p=0.05  직무 밖 이탈                ← 예외
-   확률은 WF에 있다 — 3단계 베이스라인이 같은 값을 읽어야 한다. */
-function workflowTarget(job, curKey, from, rng) {
+   확률은 WF에 있다 — 3단계 베이스라인이 같은 값을 읽어야 한다.
+
+   `cur`는 지금 서 있는 곳 `{key, step}`이다. 돌려준 `step`을 호출부가 그대로
+   다음 호출에 넣어 주면 사이클 진행도가 이어진다(왕복 사이클에 필수). */
+function workflowTarget(job, cur, from, rng) {
   const plan = wfPlan(job);
   if (!plan) return null;
-  const R = rng || RNG;
+  const R = rng || RNG, curKey = cur && cur.key;
   const ok = pool => pool.filter(k => k !== curKey && wfReach(k));
-  const i = wfStepIndex(plan, curKey, from);
+  const i = (cur && Number.isInteger(cur.step) && cur.step >= 0 && cur.step < plan.steps.length)
+          ? cur.step : wfStepIndex(plan, curKey, from);
   const u = R.next();
-  let key = null;
+  let key = null, step = i;
   if (u < WF.P_NEXT) {
-    key = wfWeightedPick(ok(plan.steps[(i + 1) % plan.steps.length]), from, R);
+    step = (i + 1) % plan.steps.length;
+    key = wfWeightedPick(ok(plan.steps[step]), from, R);
   } else if (u < WF.P_NEXT + WF.P_NEAR) {
     key = wfWeightedPick(ok(plan.set), from, R);
   } else {
     key = wfWeightedPick(ok(plan.outside), from, R);
   }
-  if (!key) key = wfWeightedPick(ok(plan.set), from, R);   // 세 분기 다 비면 집합 전체
+  if (!key) { step = i; key = wfWeightedPick(ok(plan.set), from, R); }  // 세 분기 다 비면 집합 전체
   if (!key) return null;
+  /* 사이클을 벗어난 곳으로 갔으면 진행도는 **그 자리에 둔다.** 다음 턴에 사이클로
+     돌아올 때 이어서 진행한다(0으로 되돌리면 늘 사이클 앞부분만 돌게 된다). */
+  if (step === i) { const j = plan.steps.findIndex(s => s.indexOf(key) >= 0); if (j >= 0) step = j; }
   const s = STATION[key];
-  return { key, pos:s.pos.clone(), act:s.act,
+  return { key, step, pos:s.pos.clone(), act:s.act,
            dwell:s.dwell * R.range(0.6, 1.5), label:s.label };
 }
 /* 동선이 로봇에 가장 가까이 가는 거리로 데이터셋 라벨을 정한다 */
@@ -3253,7 +3283,7 @@ const SEED0 = (() => {
   return (q !== null ? (parseInt(q, 10) >>> 0) : (Date.now() >>> 0)) || 1;
 })();
 const RNG = makeRNG(SEED0);                  // 주인공·전역용
-const WANDER = { on:false, last:null, count:0 };
+const WANDER = { on:false, last:null, count:0, job:null, step:null };
 /* 목적지 뽑기 — 70% 스테이션(작업 동작이 붙음) / 30% 통로 임의 지점(그냥 지나감).
    임의 지점은 설비 안이 아닌 곳이 나올 때까지 다시 뽑는다. */
 function wanderTarget() {
@@ -3274,10 +3304,26 @@ function wanderTarget() {
   return { pos:s.pos.clone(), act:s.act, dwell:s.dwell, label:s.label };
 }
 function wanderStep() {
-  const t = wanderTarget();
+  /* WF 모드가 꺼져 있으면 기존 경로 그대로다 — 기존 데이터셋 회차가 재현돼야 한다. */
+  let t = null;
+  if (WF.on && WANDER.job)
+    t = workflowTarget(WANDER.job, { key:WANDER.last, step:WANDER.step },
+                       person.node.position, RNG);
   WANDER.count++;
-  person.stations = [t];
-  personGo([t.pos], { speed: RNG.range(0.42, 0.88) });
+  if (!t) { t = wanderTarget(); person.stations = [t];
+            personGo([t.pos], { speed: RNG.range(0.42, 0.88) }); return; }
+  WANDER.last = t.key; WANDER.step = t.step;
+  /* 직무 전이는 방 반대편이 아니라 **작업 구역 안**을 오간다. 직선으로 가면 설비 측면을
+     긁는다(기존 균등 랜덤은 거리가 멀어 통로를 지나는 경우가 많았다). 추가 인원과 같은
+     A* 격자를 태워 돌아가게 한다 — 못 찾으면 직선으로 폴백한다.
+
+     **경유점에는 스테이션을 달지 않는다.** stations는 path와 같은 첨자로 읽히므로
+     [t] 하나만 넣으면 첫 경유점에서 작업 동작이 재생된다 — 목적지에 닿기도 전에
+     일을 시작하는 그림이 된다(extrasUpdate가 "경유점 소진이 먼저다"로 막는 것과 같은 함정). */
+  let route = navPath(person.node.position, t.pos);
+  if (!route || !route.length) route = [t.pos];
+  person.stations = route.map((_, i) => i === route.length - 1 ? t : null);
+  personGo(route, { speed: RNG.range(0.42, 0.88) });
 }
 /* ══ 인원 역할 ═══════════════════════════════════════════════════════════
    회의 요구: 여러 명이 **각기 다른 위험 수준**으로 움직여야 한다.
@@ -3390,6 +3436,17 @@ function personWander(on) {
          person.dwellT = 0; personIdle(); }
   setStatus(on ? "랜덤 움직임 시작 — seed " + RNG.seed + " (?seed=" + RNG.seed + " 로 재현)"
                : "랜덤 움직임 중지");
+}
+/* 직무 전이 모드 — personWander와 같은 뼈대를 쓰고 목표 선택만 바꾼다.
+   직무 배정이 없으면 WORKFLOW 첫 직무를 준다. 여기서 조용히 균등 랜덤으로 폴백하면
+   "켰는데 아무것도 안 달라졌다"가 되고, 그게 무엇 때문인지 화면으로는 알 수 없다. */
+function personWorkflow(on, job) {
+  WF.on = on;
+  WANDER.job = on ? (job || WANDER.job || Object.keys(WORKFLOW)[0]) : null;
+  WANDER.step = null;                       // 사이클 진행도는 켤 때마다 새로 잡는다
+  personWander(on);
+  if (on) setStatus("직무 전이 모드 — " + ((JOB[WANDER.job] || {}).label || WANDER.job)
+                    + " · seed " + RNG.seed + " (?seed=" + RNG.seed + " 로 재현)");
 }
 
 function personGo(points, opts) {
@@ -8912,6 +8969,7 @@ $("hzPush").addEventListener("click",  () => demoHazard("push"));
 $("hzPinch").addEventListener("click", () => demoHazard("pinch"));
 $("hzClear").addEventListener("click", () => demoHazardClear());
 $("scWander").addEventListener("click", () => personWander(!WANDER.on));
+$("scWorkflow").addEventListener("click", () => personWorkflow(!WF.on));
 /* 작업 동선 — 스테이션마다 도착해서 실제 작업 동작을 재생한다 */
 $("scWork").addEventListener("click",   () => personRoute("work",     { loop:true }));
 $("scPushCart").addEventListener("click", () => demoPushCart());
@@ -9826,7 +9884,7 @@ window.__sim = {
      스크립트가 통째로 죽는다. getter로 감싸 접근 시점에 읽는다. */
   ROLE, roleStations, spawnRole, buildPersonColliders, transitPath,
   JOB, SCENARIO, spawnJob, runScenario, jobRole, jobNextTarget,
-  WF, WORKFLOW, wfPlan, workflowTarget,
+  WF, WORKFLOW, wfPlan, workflowTarget, personWorkflow,
   resolvePeopleSeparation, makeRNG, armClearance, armContactUpdate,
   demoHazard, demoHazardClear, findHazardSpot, workOverlapUpdate,
   get OVERLAP() { return OVERLAP; },   // 선언이 이 블록보다 뒤 — 직접 넣으면 TDZ로 스크립트가 죽는다
