@@ -4956,7 +4956,7 @@ function predictionUpdate(srcPos, now) {
       sz = Math.sqrt(Math.max(0, PRED.kz.P00 + 2*t*PRED.kz.P01 + t2*PRED.kz.P11 + sa2v*t4/4));
     }
     // w: 먼 시점을 살짝 흐리게 — 시간 깊이감(논문 그림). 0으로 죽이지는 않는다.
-    mix.push({ x:px, z:pz, w:1 - 0.35*(k/PRED.vizSteps),
+    mix.push({ x:px, z:pz, t, w:1 - 0.35*(k/PRED.vizSteps),
                sx:Math.max(sx, PRED.minSigma), sz:Math.max(sz, PRED.minSigma) });
   }
   PRED.mix = mix;
@@ -7114,7 +7114,7 @@ const SEQ_FRY = [
      팔이 사람 위를 지나는 유일한 구간이라 가장 위험하다. 협동 운전 속도 0.50 m/s로 낮춘다
      (이동거리 1.13m ÷ 0.50 = 2.26s). 이 값과 SAFE.NOM_STOP은 **같이 움직인다** —
      되돌리면 정지링을 3.10 → 3.89m로 올려야 한다. */
-  { k:"ikOff", off:[-0.24, 0.02, 1.10], ms:2260, msg:"카트로 이송 — 통로 횡단 (감속 구간)" },
+  { k:"ikOff", off:[-0.24, 0.02, 1.10], ms:2260, msg:"카트로 이송 — 통로 횡단 (감속 구간)", cross:true },
   // 카트가 섬 배치에서 z 2.35로 물러나므로 정렬 좌표도 따라간다
   { k:"ikOff", off:[0,-0.06, 0], at:[-0.465, ISLAND ? 2.33 : 2.08], ms:800, msg:"카트 상공 정렬" },
   { k:"ikOff", off:[0,-0.31, 0], at:[-0.465, ISLAND ? 2.33 : 2.08], ms:700, msg:"카트에 안착" },
@@ -7201,11 +7201,63 @@ function startStep(i) {
     state.from = JOINTS.map(j => j.value);
   }
 }
+/* ══ 회피 기동 ═══════════════════════════════════════════════════════════════
+   종전 안전 동작은 **감속·정지뿐**이었다(state.seqT += dt * SAFE.factor). 즉 로봇은
+   같은 경로를 느리게 가거나 그 자리에 멈추는 것만 했고, 그래서 위험이 커지는 순간
+   **바스켓이 통로 위에 매달린 채 정지**했다 — 목표(§0 "불필요 정지↓ + 선제 회피")의
+   회피가 빠져 있었다.
+
+   여기서 두 기동을 더한다:
+     hold    — 통로 횡단을 **아예 시작하지 않고** 이전 안전 포즈에서 대기.
+               반응형 정지와 다른 점: 사람이 아직 멀어도 **예측 시간창 안에 들어올 것이면**
+               출발을 미룬다. 통로 위 정지 자체를 만들지 않는 게 목적이다.
+     retract — 이미 횡단 중인데 위험이 커지면 seqT를 되감아 **같은 경로로 후퇴**한다.
+               스텝 보간이 t = seqT/dur 이므로 seqT를 줄이면 그대로 역주행이라
+               새 IK 경로가 필요 없다.
+
+   위험 판정은 예측 혼합(PRED.mix)을 쓴다 — 각 성분이 (위치, σ, 시각 t)이므로
+   "횡단에 걸리는 시간 안에 사람이 정지 반경까지 올 수 있나"를 직접 물어볼 수 있다.
+   σ를 빼서 보수적으로 본다(불확실할수록 더 가까이 있을 수 있다고 가정).            */
+const AVOID = { on:true, mode:"proceed", rate:1, reason:"", holdMs:0, retractMs:0,
+                margin:0.35,        // 정지 반경에 더할 여유(m)
+                startT:0.06 };      // 이 진행도 이하면 '아직 출발 전'으로 보고 hold
+/* 예측 시간창 안에서 사람이 로봇 베이스에 얼마나 가까워질 수 있는지(m). σ 보정 포함. */
+function avoidMinDist(window) {
+  const bx = LAYOUT.robot.base.x, bz = LAYOUT.robot.base.z;
+  let min = Infinity;
+  const mix = PRED.mix || [];
+  for (const g of mix) {
+    if (g.t > window) continue;
+    const d = SCALE.m(Math.hypot(g.x - bx, g.z - bz)) - SCALE.m(Math.max(g.sx, g.sz));
+    if (d < min) min = d;
+  }
+  return min;
+}
+function avoidDecide(dtMs) {
+  const s = SEQ[state.seqIdx];
+  AVOID.rate = 1; AVOID.mode = "proceed"; AVOID.reason = "";
+  if (!AVOID.on || !state.auto || !s || !s.cross) return;   // 위험 구간(통로 횡단)에서만 개입
+  const t = state.dur ? clamp(state.seqT / state.dur, 0, 1) : 0;
+  const remain = state.dur ? (state.dur - state.seqT) / 1000 : 0;   // 남은 횡단 시간(s)
+  const window = Math.max(0.4, Math.min(remain, PRED.vizHorizon));
+  const dmin = avoidMinDist(window);
+  const risky = dmin < SAFE.NOM_STOP + AVOID.margin;
+  if (!risky) return;
+  if (t <= AVOID.startT) {                    // 아직 통로로 나가기 전 → 출발 보류
+    AVOID.mode = "hold"; AVOID.rate = 0; AVOID.holdMs += dtMs;
+    AVOID.reason = "횡단 보류 — " + window.toFixed(1) + "s 내 " + dmin.toFixed(2) + "m 접근 예측";
+  } else {                                     // 이미 횡단 중 → 같은 경로로 후퇴
+    AVOID.mode = "retract"; AVOID.rate = -1; AVOID.retractMs += dtMs;
+    AVOID.reason = "후퇴 — 횡단 중 " + dmin.toFixed(2) + "m 접근 예측";
+  }
+}
 function stepUpdate(dt) {
   if (!state.auto) return;
   const s = SEQ[state.seqIdx];
   if (!s) return;
-  state.seqT += dt * SAFE.factor;   // 안전 구역: 접근 시 감속, 진입 시 정지
+  avoidDecide(dt);
+  // 안전 구역: 접근 시 감속, 진입 시 정지 · AVOID.rate: 1 진행 / 0 대기(hold) / -1 후퇴(retract)
+  state.seqT = Math.max(0, state.seqT + dt * SAFE.factor * AVOID.rate);
   const t = clamp(state.seqT / state.dur, 0, 1);
   state.stirring = false;
   if (s.k === "ik" || s.k === "ikOff" || s.k === "home") {
@@ -8865,7 +8917,7 @@ window.__sim = {
   // 물리 · 안전
   PHYS, ROBOT_GUARD, buildRobotGuard, resetBasket, ONNX, onnxLoadModel, onnxInfer, PRED, ENV_RAND, randomizeEnvironment, placeOccluder, setExtraCount, spawnDebris, triggerEstop, clearEstop,
   // 모델 검증
-  MIL, milCapture, milMaskBoxes, drawOverlay, effector, BE, drawBirdseye, DENS,
+  MIL, milCapture, milMaskBoxes, drawOverlay, effector, BE, drawBirdseye, DENS, AVOID, avoidMinDist, avoidDecide, SEQ,
 };
 
 /* ══ Isaac풍 도킹 UI — 콘솔 · 스테이지 트리 · 메뉴바 ═════════════════════ */
