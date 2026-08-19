@@ -21,8 +21,7 @@ if "%PY%"=="" (
 )
 
 set PORT=5173
-rem 확정 배치(섬 배치)로 연다 - 플래그를 빼면 옛 배치가 뜬다. README "실행" 절 참조.
-set URL=http://localhost:%PORT%/sim.html?layout=island
+set URL=http://localhost:%PORT%/sim.html
 
 echo.
 echo   +--------------------------------------------+

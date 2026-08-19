@@ -610,7 +610,7 @@ const SHOW_PERSON = new URLSearchParams(location.search).get("person") !== "0";
    이 프로젝트는 git이 없어 되돌릴 안전망이 없으므로, 파일을 복사하는 대신
    한 빌드 안에서 신·구 환경을 직접 비교할 수 있게 둔다. */
 const ENV_V1 = new URLSearchParams(location.search).get("env") === "v1";
-/* ══ 아일랜드(섬) 배치 — sim.html?layout=island ═══════════════════════════════
+/* ══ 아일랜드(섬) 배치 — **기본값** (옛 배치는 sim.html?layout=legacy) ═══════════
    지금 배치는 조리기기가 **북벽에 한 줄**로 붙어 있다(참조 현장 CCTV 근거).
    그래서 방을 넓힐수록 주인공(솥+로봇)이 구석으로 밀린다 — 12×12m 방에서 솥이
    중앙에서 5.53m 벗어나 있었고, 새로 단 카메라에서 솥 앞 사람이 화면의 5~12%로
@@ -623,9 +623,24 @@ const ENV_V1 = new URLSearchParams(location.search).get("env") === "v1";
    하나뿐인데(정지 반경 안 통행 가능 칸 실측 5칸), 섬이 되면 360° 어디서나 접근한다.
    "사람이 어디서 올지 모른다"가 이 연구의 전제다.
 
-   **기본값은 바꾸지 않는다.** 참조 현장 근거가 걸린 변경이라 팀 판단이 필요하고,
-   git이 없어 되돌릴 안전망이 없다. ?env=v1·?reach= 와 같은 방식으로 플래그만 연다. */
-const ISLAND = new URLSearchParams(location.search).get("layout") === "island";
+   **2026-08-19 — 기본값을 섬 배치로 뒤집었다.** 종전에는 플래그를 붙여야만 열렸다.
+   그때 기본값을 안 바꾼 이유는 두 가지였는데 둘 다 해소됐다:
+     · "참조 현장 근거가 걸려 팀 판단이 필요하다" → 커밋 `d7314e6 섬 배치 확정`으로 정해졌다.
+     · "git이 없어 되돌릴 안전망이 없다"        → 공개 저장소에 git 이력이 생겼다.
+   해소된 뒤에도 플래그로 남겨 두니 **확정된 배치를 보려면 플래그를 알아야 하고, 모르면
+   폐기된 배치를 보는** 상태가 됐다. 그게 기본값이어야 할 이유다.
+
+   되돌리려면 sim.html?layout=legacy. `?layout=island`도 계속 받는다 — 기존 링크·북마크와
+   launch 스크립트가 그 주소를 쓰고 있어서, 깨뜨리면 안 된다(이제 아무 효과 없는 값이 된다).
+   `?env=v1`(옛 9×9 환경)은 옛 배치를 명시적으로 요구하는 플래그이므로 legacy로 친다 —
+   안 그러면 ISLAND가 먼저 걸려 env=v1이 조용히 무시된다. */
+const ISLAND = (() => {
+  const q = new URLSearchParams(location.search);
+  const L = q.get("layout");
+  if (L === "legacy" || L === "v1") return false;   // 옛 배치를 명시적으로 요구
+  if (L === "island") return true;                  // 종전 주소 호환 — 이제 기본값과 같다
+  return q.get("env") !== "v1";                     // 플래그 없음 → 섬 배치 (단 env=v1이면 옛 배치)
+})();
 /* 섬을 방 정중앙이 아니라 **북동쪽으로 치우치게** 둔다.
    정중앙이면 사방 6m가 다 뚫려 있어 **끼임이 성립하지 않는다** — 끼임은 로봇 반경과
    고정 장애물 사이의 좁은 틈에서만 생기는데, 그 틈이 없기 때문이다(실측: 팔 반경 안
