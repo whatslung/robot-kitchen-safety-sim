@@ -7265,7 +7265,7 @@ function avoidDecide(dtMs) {
    화살표 원점은 베이스가 아니라 **TCP(팔 끝)의 바닥 투영**이다. 실제로 움직이는 게 팔 끝이고,
    사람 예측 음영과 겹치는지도 팔 끝 궤적이 결정한다. 길이는 TCP 속도에 비례(정지 시 최소값).
    선택된 기동만 굵고 진하게, 나머지는 얇고 흐리게 — "지금 무엇을 골랐나"가 한눈에 보이게. */
-const RARR = { on:true, y:0.07, w:0.045, wSel:0.11, minLen:0.5, maxLen:1.9, headFrac:0.3,
+const RARR = { on:true, y:0.10, w:0.05, wSel:0.15, minLen:0.7, maxLen:2.1, headFrac:0.3,
                dir:new V3(0,0,1), prev:null, mesh:{},
                /* eff(실제 거동)별 색 — hold(선제 보류)와 stop(반응형 정지)을 일부러 다른 색으로 둔다.
                   둘 다 "지금 안 움직인다"지만, 예측으로 미리 멈춘 것과 사람이 반경에 들어와
@@ -7279,6 +7279,10 @@ function rarrDraw(key, pts, hex, width) {
     m = RARR.mesh[key] = BABYLON.CreateGreasedLine("rarr_" + key,
           { points: pts, updatable: true }, { width, color: col }, scene);
     m.isPickable = false;
+    /* 주석(annotation)이므로 **항상 위에 그린다.** TCP는 튀김솥·팔 위에 있어서 바닥에 그리면
+       나디르 뷰에서 설비에 통째로 가린다(실측: 프러스텀 안·enabled인데 화면에 안 보임).
+       renderingGroupId 1은 그룹 0을 다 그린 뒤 깊이를 지우고 그리므로 가림이 없다. */
+    m.renderingGroupId = 1;
   } else {
     m.setPoints(pts);
     if (m.greasedLineMaterial) {
