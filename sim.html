@@ -3283,9 +3283,44 @@ const COLL_FOOTPRINTS = [   // 2026-08-08 신규 배치(GLB 주방) 기준
         막히면 콘솔에 표로 뜨므로 눈으로 놓치지 않는다.
    손으로 적은 7개는 그대로 두고(솥·페데스탈 등 핵심) 자동 수집분을 더한다. */
 const COLL_AUTO = [];
+/* ══ 밀 수 있는 물건 ══════════════════════════════════════════════════════════
+   회의 요구: "물리력을 얼마나 넣을지 (object를 건드렸을때 실제로 밀리는지)".
+
+   지금까지 물리엔진(Havok)은 켜져 있었지만 **밀릴 물체가 하나도 없었다** — 물리 바디
+   15개가 전부 mass 0(고정)이라 벽 역할만 했다(사람이 설비를 통과 못 하게 막는 용도).
+
+   **팬 카트부터 여는 이유**(2026-08-19 실측, 로봇 베이스 기준 거리):
+     팬 카트 3대   2.57 / 2.83 / 2.84m → 전부 **정지 링(3.10m) 안**. 밀면 로봇 반경으로 들어간다
+     바스켓 카트 2대 2.33 / 3.11m       → 2순위. 낮아서(0.8m) '밀림'이 아니라 '발에 걸림'이다
+     쓰레기통 4대  4.6~8.6m            → 전부 감속 링 밖. 안전과 무관해 후순위
+     로봇 카트 1대 1.66m (위험 링 안)   → **열지 않는다.** 로봇 시퀀스가 이 카트 좌표를
+       숫자로 박아 쓴다(z=2.35가 여러 곳). 밀리면 로봇이 허공에 바스켓을 놓는다.
+       열려면 시퀀스가 카트를 따라가게 먼저 고쳐야 한다.
+   작업대·선반·냉장고·싱크는 고정으로 둔다 — 실제로도 안 밀린다.
+
+   아래 표에 줄을 추가하면 그 GLB가 밀리는 물건이 된다. 2순위를 열 때는 주석만 풀면 된다. */
+const PUSHABLE_DEF = {
+  "env_pancart.glb":     { mass: 28, label: "팬 카트" },
+  // "env_basketcart.glb": { mass: 16, label: "바스켓 카트" },   // 2순위
+  // "env_bin.glb":        { mass:  9, label: "쓰레기통" },       // 3순위
+};
+/* 밀 수 있는 물건의 발자국 — **A* 통행 격자에는 장애물로 남기고, 사람의 실제 이동에서만 뺀다.**
+   둘 다 빼면 사람이 온 방을 돌아다니며 카트를 들이받아 장면이 난장판이 된다. 둘 다 넣으면
+   하드 블로킹이라 물리에 접촉이 전달되지 않아 영영 안 밀린다. 그래서 갈라 놓는다:
+     · 길찾기  → 카트를 피해서 경로를 잡는다 (평소엔 안 건드린다. 실제 조리원도 그렇다)
+     · 실제 이동 → 카트를 통과하려 든다 → 사람 캡슐(ANIMATED)이 카트를 밀어낸다
+   WASD 수동 조작으로 카트에 밀고 들어가는 것이 이 기능의 주 사용처다. */
+const COLL_PUSH = [];
+const PUSH = { defs:[], bodies:[], active:false };
 function buildPersonColliders() {
   const SKIP = /^(floor|ground|ceiling|wall_|skirt_|cove_|tile|markTape|zone|trench|grating|backsplash|camBody|camLens|camProp|col_|hood|duct|ceil|pipeHanger|cableTray|window|sky|steam|smoke|fire|lamp|oil|noodle|debris|predLine|splash|Cook|Erika|robot|potB|vat|paddle)/i;
-  COLL_AUTO.length = 0;
+  COLL_AUTO.length = 0; COLL_PUSH.length = 0;
+  /* 조상 중에 pushable 표식이 있으면 밀 수 있는 물건이다 (메시는 홀더의 손자까지 내려간다) */
+  const isPushable = m => {
+    for (let n = m, g = 0; n && g < 24; n = n.parent, g++)
+      if (n.metadata && n.metadata.pushable) return true;
+    return false;
+  };
   for (const m of scene.meshes) {
     if (!m.getTotalVertices || !m.getTotalVertices() || !m.isVisible) continue;
     if (SKIP.test(m.name || "")) continue;
@@ -3297,11 +3332,15 @@ function buildPersonColliders() {
     const h = b.maximumWorld.y - b.minimumWorld.y;
     if (w < 0.20 || d < 0.20 || h < 0.35) continue;              // 너무 작으면 넘어간다
     if (w > 4.0 || d > 4.0) continue;                            // 벽·바닥 같은 거대 면 제외
-    COLL_AUTO.push([(b.minimumWorld.x + b.maximumWorld.x) / 2,
-                    (b.minimumWorld.z + b.maximumWorld.z) / 2,
-                    w / 2, d / 2]);
+    /* 물리가 준비돼 실제로 밀리는 상태일 때만 분리한다. Havok 로드가 실패하면
+       밀리지도 않는데 통과까지 되어 카트가 유령이 된다 — 그때는 그냥 막는 게 맞다. */
+    (PUSH.active && isPushable(m) ? COLL_PUSH : COLL_AUTO)
+      .push([(b.minimumWorld.x + b.maximumWorld.x) / 2,
+             (b.minimumWorld.z + b.maximumWorld.z) / 2,
+             w / 2, d / 2]);
   }
-  console.log("[COLL] 사람 충돌 박스 — 수동", COLL_FOOTPRINTS.length, "+ 자동", COLL_AUTO.length);
+  console.log("[COLL] 사람 충돌 박스 — 수동", COLL_FOOTPRINTS.length, "+ 자동", COLL_AUTO.length +
+              (PUSH.active ? " + 밀 수 있음 " + COLL_PUSH.length + "(길찾기 전용)" : ""));
   return COLL_AUTO.length;
 }
 /* ══ 길찾기 ══════════════════════════════════════════════════════════════
@@ -3576,9 +3615,16 @@ function snapStations() {
   }
   console.log("[STATION] 스냅", moved.length, "곳", moved.length ? "— " + moved.join(", ") : "");
 }
-function resolvePersonCollision(pos) {
+/* solid=false 이면 **밀 수 있는 물건을 무시한다** — 사람이 그 안으로 파고들 수 있게 해서
+   접촉이 물리 엔진에 전달되게 한다(사람 캡슐이 ANIMATED라 닿으면 카트를 밀어낸다).
+   기본값은 true(막는다) — 스테이션 배치·통행 격자·경로 검증은 전부 카트를 장애물로 봐야
+   한다. 사람의 **실제 이동 두 곳**(자동 보행·WASD)만 false로 부른다. */
+function resolvePersonCollision(pos, solid) {
   let pushed = false;
-  for (const f of COLL_FOOTPRINTS.concat(COLL_AUTO)) {
+  const boxes = (solid === false)
+    ? COLL_FOOTPRINTS.concat(COLL_AUTO)
+    : COLL_FOOTPRINTS.concat(COLL_AUTO, COLL_PUSH);
+  for (const f of boxes) {
     const hw = f[2] + PERSON_R, hd = f[3] + PERSON_R;
     const dx = pos.x - f[0], dz = pos.z - f[1];
     if (Math.abs(dx) < hw && Math.abs(dz) < hd) {
@@ -3628,7 +3674,7 @@ function personUpdate(dt) {
       else {
         const st = p.speed * dt/1000;
         n.position.x += dx/d*st; n.position.z += dz/d*st;
-        resolvePersonCollision(n.position);
+        resolvePersonCollision(n.position, false);   // 카트는 막지 않는다 — 밀고 지나간다
         /* 정체 감지 — 설비에 막혀 목표에 못 가면 다음 지점으로 넘긴다.
            예전 규칙은 "충돌이 났고 목표가 1.45m 이내면 도착 처리"였는데,
            솥 모서리를 **스쳐 지나가는 정상 경로**에서도 발동해 스테이션을 통째로
@@ -4226,8 +4272,16 @@ async function loadEnvProps() {
       m.metadata = Object.assign(m.metadata || {}, { gtInstance: inst });
     });
     dressProp(p.f, holder, i, inst);      // 선반·작업대 위 내용물
+    /* 밀 수 있는 물건이면 표식을 남기고 등록한다. 물리 바디는 여기서 만들지 않는다 —
+       initPhysics()가 비동기라 이 시점에 Havok이 아직 없을 수 있다. 둘 다 끝난 뒤
+       buildPushables()가 만든다(어느 쪽이 늦게 끝나든 거기서 한 번만 돈다). */
+    if (PUSHABLE_DEF[p.f]) {
+      holder.metadata = Object.assign(holder.metadata || {}, { pushable: true });
+      PUSH.defs.push({ holder, idx: i, ry: p.ry || 0, def: PUSHABLE_DEF[p.f] });
+    }
   }
   console.log("[ENV] props placed:", ENV_PROPS.length);
+  buildPushables();     // 물리가 먼저 끝났으면 여기서 만든다 (둘 중 늦은 쪽이 만든다)
   /* ── 배치 기준면 (레이캐스트 실측, 2026-08-13) ───────────────────────────
      프롭 위 물건은 물리로 얹는 게 아니라 좌표로 놓는다. 그래서 이 값을 틀리면
      접시가 공중에 뜬다. 실제로 아래가 전부 떠 있었다:
@@ -6038,6 +6092,7 @@ async function initPhysics() {
     scene.enablePhysics(new V3(0, -9.81, 0), new BABYLON.HavokPlugin(true, havok));
     buildColliders();
     PHYS.ready = true;
+    buildPushables();          // 프롭이 이미 올라왔으면 여기서 만든다
     $("physStatus").textContent = "Havok " + "활성 — 접촉 감시 중 (콜라이더 " + (PHYS.links.length + 7) + "개)";
     $("physStatus").style.color = "#7ee787";
   } catch (e) {
@@ -6094,6 +6149,128 @@ function buildColliders() {
   pag.body.setMotionType(MO.ANIMATED);
   pag.body.disablePreStep = false;
   PHYS.personCap = cap;
+}
+
+/* ══ 밀 수 있는 물건에 동적 바디를 만든다 ═══════════════════════════════════
+   loadEnvProps()와 initPhysics()는 서로 독립된 비동기라 순서가 보장되지 않는다.
+   그래서 **양쪽에서 다 부르고**, 준비가 안 됐으면 조용히 돌아간다. 늦게 끝난 쪽이 만든다.
+
+   **프록시 박스에 카트를 매단다.** GLB 계층에 직접 물리를 걸면 자식 메시마다 바디가 생겨
+   카트가 조각조각 흩어진다. 보이지 않는 박스 하나에 물리를 걸고 홀더를 그 자식으로 옮기면
+   박스가 움직이는 대로 카트가 통째로 따라온다. setParent는 월드 변환을 보존하므로
+   좌표를 손으로 다시 계산하지 않는다(직접 계산하다 카트가 바닥에 묻혔었다).
+
+   **눕지 않게 Y축 회전만 연다.** 상자에 질량만 주면 밀 때 앞으로 고꾸라진다. 실제 카트는
+   캐스터로 구르지 넘어지지 않는다. 관성텐서의 X·Z를 0으로 두면 그 축 회전이 잠긴다.
+   Y만 살려 두면 한쪽을 밀었을 때 카트가 방향을 트는, 캐스터다운 움직임이 나온다.
+
+   **마찰을 낮게(0.32) 준다.** Havok의 박스-바닥 마찰은 미끄러짐이지 구름이 아니다.
+   실제 카트의 구름저항을 흉내내려면 마찰을 낮추고 감쇠로 세우는 쪽이 맞다 —
+   마찰을 높이면 밀어도 안 가다가 갑자기 튀어나간다. */
+function buildPushables() {
+  if (PUSH.active || !PHYS.ready || !PUSH.defs.length) return;
+  const ST = BABYLON.PhysicsShapeType;
+  for (const it of PUSH.defs) {
+    const h = it.holder;
+    // 실제 메시에서 발자국을 잰다 — GLB마다 크기가 달라 상수로 적으면 어긋난다
+    let x0=1e9, x1=-1e9, y0=1e9, y1=-1e9, z0=1e9, z1=-1e9;
+    for (const m of h.getChildMeshes()) {
+      if (!m.getTotalVertices || !m.getTotalVertices()) continue;
+      m.computeWorldMatrix(true);
+      const b = m.getBoundingInfo().boundingBox;
+      x0=Math.min(x0,b.minimumWorld.x); x1=Math.max(x1,b.maximumWorld.x);
+      y0=Math.min(y0,b.minimumWorld.y); y1=Math.max(y1,b.maximumWorld.y);
+      z0=Math.min(z0,b.minimumWorld.z); z1=Math.max(z1,b.maximumWorld.z);
+    }
+    if (x0 > x1) continue;                       // 메시가 없는 홀더 — 건너뛴다
+    const w = x1-x0, ht = y1-y0, d = z1-z0, mass = it.def.mass;
+    const box = BABYLON.MeshBuilder.CreateBox("col_push_" + it.idx,
+                  {width:w, height:ht, depth:d}, scene);
+    box.position.set((x0+x1)/2, (y0+y1)/2, (z0+z1)/2);
+    box.rotation.y = it.ry;                      // setParent 전에 — 회전은 프록시가 갖는다
+    box.isVisible = false; box.isPickable = false;
+    h.setParent(box);                            // 월드 변환 보존
+    const ag = new BABYLON.PhysicsAggregate(box, ST.BOX,
+                 {mass, friction:0.32, restitution:0.02}, scene);
+    /* 감쇠 0.55 — 1.1로 잡았더니 카트가 곧바로 서 버려 **사람이 카트를 추월했다**(실측:
+       사람 1.26m 걷는 동안 카트 0.36m). 밀고 가는 그림이 아니라 밀치고 지나가는 그림이다.
+       0.55면 보행 속도(0.8~0.9 m/s)를 카트가 따라간다. 0에 가깝게 두면 한 번 밀린 카트가
+       방을 가로질러 굴러가 배치가 무너진다 — 캐스터에도 저항은 있다. */
+    ag.body.setLinearDamping(0.55);
+    ag.body.setAngularDamping(4.0);
+    ag.body.setMassProperties({ mass, inertia:new V3(0, mass*(w*w + d*d)/12, 0) });
+    PUSH.bodies.push({ box, ag, holder:h, label:it.def.label, half:[w/2, d/2],
+                       home:box.position.clone(), size:[+w.toFixed(2), +ht.toFixed(2), +d.toFixed(2)] });
+  }
+  if (!PUSH.bodies.length) return;
+  PUSH.active = true;
+  /* 충돌 박스와 통행 격자를 다시 굽는다 — 이제 카트가 COLL_PUSH 로 갈라져야 한다.
+     buildPersonColliders는 PUSH.active 를 보고 분류하므로 순서가 이 뒤여야 한다. */
+  buildPersonColliders();
+  buildNavGrid();
+  console.log("[PUSH] 밀 수 있는 물건 " + PUSH.bodies.length + "개 — " +
+              PUSH.bodies.map(b => b.label + " " + b.size.join("×")).join(" · "));
+}
+/* ══ 사람 → 카트 밀기 ═══════════════════════════════════════════════════════
+   **키네마틱 캡슐에 물리 접촉만 맡기면 사람이 카트를 뚫고 지나간다**(실측: 카트가 4cm만
+   밀리고 멈춘 뒤 사람이 통과). 사람 캡슐은 ANIMATED라 코드가 좌표를 옮기는 물체다.
+   Havok 입장에서는 속도 없이 순간이동하는 물체라, 한 번 안쪽으로 들어가 버리면 밀어낼
+   방향을 못 잡는다. 캐릭터 컨트롤러 없이 키네마틱으로 동적 물체를 미는 흔한 함정이다.
+
+   그래서 **파고든 깊이만큼 카트에 속도를 준다.** 힘(impulse)이 아니라 속도로 주는 이유는
+   질량을 바꿔도 미는 손맛이 그대로여야 하기 때문이다 — 힘으로 주면 mass를 올릴 때마다
+   게인을 다시 잡아야 한다. 카트는 여전히 강체라 벽·설비에 부딪히면 멈추고, 로봇 팔에
+   맞으면 그쪽 물리도 그대로 먹는다. 이 코드는 '사람이 미는 힘'만 대신 넣어 준다.
+
+   판정은 **회전한 상자 vs 원**이다. 카트를 원으로 퉁치면(반지름 = 긴 변/2) 모서리 바깥
+   허공에서도 밀려 나간다 — 팬 카트가 0.78×0.60이라 그 오차가 9cm다. 카트 로컬좌표로
+   사람을 옮겨 상자 위 최근접점을 구하면 그 오차가 사라진다. */
+/* 파고든 깊이(m) → 밀리는 속도(m/s). 사람 반경이 0.26이므로 최대 파고듦도 그 언저리다.
+   14면 0.06m 파고들었을 때 0.84 m/s — 보행 속도와 같아져 카트가 사람 앞에서 굴러간다.
+   9.0으로 잡았을 때는 카트가 뒤처져 사람이 뚫고 지나가는 것처럼 보였다(실측). */
+const PUSH_GAIN = 14.0;
+function pushUpdate() {
+  if (!PUSH.active) return;
+  const movers = [person.node];
+  for (const e of EXTRAS) if (e && e.node) movers.push(e.node);
+  for (const b of PUSH.bodies) {
+    const bp = b.box.position;
+    const yaw = b.box.rotationQuaternion ? b.box.rotationQuaternion.toEulerAngles().y
+                                         : b.box.rotation.y;
+    const cs = Math.cos(-yaw), sn = Math.sin(-yaw);
+    for (const mv of movers) {
+      const dx = mv.position.x - bp.x, dz = mv.position.z - bp.z;
+      if (Math.abs(dx) > 1.6 || Math.abs(dz) > 1.6) continue;      // 멀면 건너뛴다
+      // 카트 로컬좌표로 옮겨 상자 위 최근접점을 구한다
+      const lx = dx*cs - dz*sn, lz = dx*sn + dz*cs;
+      const qx = clamp(lx, -b.half[0], b.half[0]), qz = clamp(lz, -b.half[1], b.half[1]);
+      const ox = lx - qx, oz = lz - qz;
+      const dist = Math.hypot(ox, oz);
+      if (dist >= PERSON_R) continue;                              // 아직 안 닿았다
+      const pen = PERSON_R - dist;
+      // 밀리는 방향 = 사람 → 카트 (로컬 → 월드로 되돌린다)
+      let nx, nz;
+      if (dist > 1e-4) { nx = -ox/dist; nz = -oz/dist; }
+      else             { nx = -Math.sign(lx) || 1; nz = 0; }       // 정확히 겹침 — 임의 방향
+      const wx = nx*cs + nz*sn, wz = -nx*sn + nz*cs;               // 역회전
+      const v = b.ag.body.getLinearVelocity();
+      const want = pen * PUSH_GAIN;
+      const cur = v.x*wx + v.z*wz;                                 // 이미 그 방향으로 가는 속도
+      if (cur < want)
+        b.ag.body.setLinearVelocity(new V3(v.x + (want-cur)*wx, v.y, v.z + (want-cur)*wz));
+    }
+  }
+}
+/* 카트를 처음 자리로 되돌린다 — 시연을 여러 번 돌릴 때 필요하다 */
+function resetPushables() {
+  for (const b of PUSH.bodies) {
+    b.ag.body.setLinearVelocity(V3.Zero());
+    b.ag.body.setAngularVelocity(V3.Zero());
+    b.box.position.copyFrom(b.home);
+    if (b.box.rotationQuaternion) b.box.rotationQuaternion.copyFrom(BABYLON.Quaternion.Identity());
+  }
+  if (PUSH.bodies.length) { buildPersonColliders(); buildNavGrid(); }
+  return PUSH.bodies.length;
 }
 
 /* 접촉 감시 — 키네마틱 쌍은 물리 접촉 이벤트가 불안정하므로 OBB 겹침으로 판정.
@@ -8145,7 +8322,7 @@ function personDrive(dt) {
   const spd = (MOVE.run ? RUN_SPEED : WALK_SPEED) * dt / 1000;
   const n = p.node;
   n.position.x += dir.x * spd; n.position.z += dir.z * spd;
-  resolvePersonCollision(n.position);
+  resolvePersonCollision(n.position, false);   // 카트는 막지 않는다 — WASD로 밀 수 있다
   const want = Math.atan2(dir.x, dir.z);       // 진행 방향으로 회전
   let diff = want - n.rotation.y;
   while (diff >  Math.PI) diff -= 2 * Math.PI;
@@ -8356,6 +8533,7 @@ scene.registerBeforeRender(() => {
   personUpdate(dt);
   cookGearUpdate();
   extrasUpdate(dt);
+  pushUpdate();                // 사람이 카트에 파고든 만큼 카트를 밀어낸다 (사람 이동 뒤)
   resolvePeopleSeparation();   // 사람끼리 겹쳐 서지 않게 — GT 박스가 붙는 프레임 방지
   workOverlapUpdate(dt);       // 로봇 이송 단계에 배식 담당을 카트로 부른다 (작업 겹침)
   armContactUpdate(dt);        // 팔↔사람 접촉 — 링 판정과 달리 '팔이 향한 방향'을 본다
@@ -8530,6 +8708,7 @@ window.__sim = {
   solveIK, ikAngles, verifyReach, importToAnchor, clearAnchor,
   personAct, personIdle, personFall, personSlip, personGetUp, PERSON,
   personRoute, verifyRoute, STATION, ROUTE, personWander, WANDER, RNG,
+  PUSH, buildPushables, resetPushables, pushUpdate, PUSHABLE_DEF,   // 밀 수 있는 물건
   /* EXTRAS는 이 export 블록보다 **뒤에** 선언되므로 여기 직접 넣으면 const TDZ에 걸려
      스크립트가 통째로 죽는다. getter로 감싸 접근 시점에 읽는다. */
   ROLE, roleStations, spawnRole, buildPersonColliders, transitPath,
