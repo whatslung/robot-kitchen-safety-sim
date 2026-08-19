@@ -4795,12 +4795,79 @@ function customPredictTick(srcPos, now, dtMs) {
   // 1초 넘게 갱신이 없으면 신뢰하지 않는다 (모델이 멈춘 채 옛 경로로 판정하면 위험)
   return !!(CPRED.path && performance.now() - CPRED.at < 1000);
 }
+/* 모드별 화살표 — Fig.1에서 보행자는 **색이 다른 화살표 다발**로 미래 행동 모드를 보여준다.
+   음영(띠)만 있으면 "어디쯤"은 보이지만 "몇 가지 선택지가 있나"가 안 읽힌다. 둘을 같이 그린다.
+   설비에 가리지 않게 오버레이(renderingGroupId 1)로 얹는다 — 주석이니까. */
+const PMODE = { on:true, y:0.09, w:0.055, headFrac:0.26, minLen:1.2, mesh:{} };
+function pmodeDraw(key, pts, hex, width) {
+  const col = C3.FromHexString(hex);
+  let m = PMODE.mesh[key];
+  if (!m) {
+    m = PMODE.mesh[key] = BABYLON.CreateGreasedLine("pmode_" + key,
+          { points: pts, updatable: true }, { width, color: col }, scene);
+    m.isPickable = false; m.renderingGroupId = 1;
+  } else {
+    m.setPoints(pts);
+    if (m.greasedLineMaterial) { m.greasedLineMaterial.color = col; m.greasedLineMaterial.width = width; }
+  }
+  m.setEnabled(true);
+}
+/* 사람별 속도 추적 — 각자 진행 방향이 있어야 각자 모드를 뽑을 수 있다.
+   칼만은 위협 트랙 하나에만 걸려 있으므로, 여기선 위치 차분 + EMA로 가볍게 잡는다. */
+const PVEL = new Map();          // node → {x,z,vx,vz}
+function peopleList() {
+  const out = [person.node];
+  if (typeof EXTRAS !== "undefined") for (const P of EXTRAS) if (P && P.root) out.push(P.root);
+  return out;
+}
+function pmodeArrowsFor(node, idx, dt) {
+  const p = node.position;
+  let st = PVEL.get(node);
+  if (!st) { PVEL.set(node, { x:p.x, z:p.z, vx:0, vz:0 }); return 0; }
+  if (dt > 1e-3) {
+    const ivx = (p.x - st.x)/dt, ivz = (p.z - st.z)/dt;
+    st.vx = st.vx*0.75 + ivx*0.25; st.vz = st.vz*0.75 + ivz*0.25;
+  }
+  st.x = p.x; st.z = p.z;
+  const speed = Math.hypot(st.vx, st.vz);
+  const modes = goalModesAt(p, st.vx, st.vz, speed);
+  let n = 0;
+  modes.forEach((md, mi) => {
+    const len = Math.min(Math.max(speed * PRED.vizHorizon, PMODE.minLen), md.dist);
+    if (!(len > 0.15)) return;
+    const hex = PRED.modeCols[mi % PRED.modeCols.length];
+    const a = new V3(p.x, PMODE.y, p.z);
+    const tip = new V3(p.x + md.ux*len, PMODE.y, p.z + md.uz*len);
+    const back = len * PMODE.headFrac, px = -md.uz, pz = md.ux;
+    const hl = new V3(tip.x - md.ux*back + px*back*0.55, PMODE.y, tip.z - md.uz*back + pz*back*0.55);
+    const hr = new V3(tip.x - md.ux*back - px*back*0.55, PMODE.y, tip.z - md.uz*back - pz*back*0.55);
+    const w = PMODE.w * (0.55 + 0.45*md.w);      // 가중치 큰 모드를 굵게
+    pmodeDraw(idx + "_" + mi + "_shaft", [a, tip], hex, w);
+    pmodeDraw(idx + "_" + mi + "_head", [hl, tip, hr], hex, w);
+    n++;
+  });
+  return n;
+}
+/* Fig.1처럼 **모든 보행자**에게 각자 화살표를 그린다 — 위협 1명만 그리면 "여러 주체가
+   각자 여러 가능성을 갖는다"는 그림의 요지가 사라진다. */
+function predModeArrows(dtMs) {
+  for (const k in PMODE.mesh) PMODE.mesh[k].setEnabled(false);
+  if (!PMODE.on || vizSuppressed) return;
+  const dt = Math.min(Math.max((dtMs || 16)/1000, 1e-3), 0.5);
+  peopleList().forEach((node, i) => pmodeArrowsFor(node, i, dt));
+}
 /* 진행 방향과 정렬된 스테이션들을 '행동 모드'로 뽑는다.
    정렬도(진행방향·목표방향 내적)를 제곱해 가중치로 쓴다 — 정면 목표가 확실히 더 진하게.
    멈춰 있으면 방향이 없으니 빈 배열을 돌려 단일모드(등방 확산)로 되돌아간다. */
 function predGoalModes(pos, speed) {
-  if (!PRED.goalModes || SCALE.m(speed) < 0.12 || typeof STATION === "undefined") return [];
-  const vx = PRED.vel.x / speed, vz = PRED.vel.z / speed;
+  return goalModesAt(pos, PRED.vel.x, PRED.vel.z, speed);
+}
+/* 임의의 (위치, 속도)에 대한 행동 모드 — 위협 트랙뿐 아니라 **모든 사람**에게 쓴다.
+   문턱은 표시 게이트(PRED.moving, 0.04~0.08㎧ 히스테리시스)와 맞춘다. 종전 0.12㎧는
+   그 사이 구간에서 모드가 사라져 단일모드 등방(원)으로 떨어졌다(실측: 거대한 단색 얼룩). */
+function goalModesAt(pos, velx, velz, speed) {
+  if (!PRED.goalModes || SCALE.m(speed) < 0.05 || typeof STATION === "undefined") return [];
+  const vx = velx / speed, vz = velz / speed;
   const cand = [];
   for (const name in STATION) {
     const g = STATION[name].pos;
@@ -4837,10 +4904,11 @@ function predGoalModes(pos, speed) {
 /* 데이터셋 캡처 중에는 예측 시각화를 억제한다. 캡처의 매 scene.render()가 다시
    safetyUpdate→predictionUpdate를 돌려 선/밴드를 되살리므로, 플래그로 막아야 한다(실측). */
 let vizSuppressed = false;
-/* alpha: 밀도 최고점의 불투명도. gamma: 감쇠 지수 — 1보다 크게 줄수록 중심만 진하고
-   주변이 빠르게 옅어져 '확률밀도 그라데이션'으로 읽힌다. 0.7(완만)에서는 바닥 전체가
-   초록으로 물들어 구조가 안 보였다(실측). */
-const DENS = { on:true, res:128, hz:10, acc:0, alpha:0.72, gamma:2.2,
+/* alpha: 띠 내부의 불투명도. edge0~edge1: 밀도(0~1)를 알파로 바꾸는 **smoothstep 구간**.
+   pow(gamma)로 감쇠시키면 중심만 진하고 사방으로 흐려져 '물 빠진 얼룩'이 된다.
+   논문 그림의 띠는 **내부가 고르게 진하고 경계가 뚜렷**하다 — 그건 지수감쇠가 아니라
+   문턱(edge0)에서 올라와 edge1에서 포화되는 곡선이다. */
+const DENS = { on:true, res:128, hz:10, acc:0, alpha:0.92, edge0:0.10, edge1:0.42,
                plane:null, tex:null, img:null,
                cx:1.375, cz:1.85, size:11 };  // 평면 중심·한 변(AU) — CAM11 프레임(8.9×6.675)+여유.
                                               // 16m는 1텍셀 12.5cm(≈13px)로 계단이 보였다 → 11m로 좁혀 8.6cm
@@ -4860,7 +4928,10 @@ function densInit() {
   DENS.plane = p; DENS.tex = tex;
 }
 function densUpdate(dtMs) {
-  const live = DENS.on && !vizSuppressed && PRED.moving && PRED.mix && PRED.mix.length > 1;
+  /* 방향이 있을 때(모드가 뽑혔을 때)만 띠를 그린다. 방향 미지의 등방 원은 "아무 데나 갈 수
+     있다"는 뜻이라 정보가 없는데 화면만 잡아먹는다 — 그 경우 위험 표시는 안전링이 맡는다. */
+  const live = DENS.on && !vizSuppressed && PRED.moving
+            && PRED.mix && PRED.mix.length > 1 && PRED.modes && PRED.modes.length > 0;
   if (!live) { if (DENS.plane) DENS.plane.setEnabled(false); return; }
   if (!DENS.plane) densInit();
   DENS.plane.setEnabled(true);
@@ -4929,8 +5000,12 @@ function densUpdate(dtMs) {
     n = 0;
     for (let j = j0; j <= j1; j++)
       for (let i = i0; i <= i1; i++, n++) {
-        const a = Math.pow(f[n]/peak, DENS.gamma) * DENS.alpha;
-        if (a <= 0.004) continue;
+        const u = f[n]/peak;
+        // smoothstep(edge0, edge1) — 문턱 아래는 투명, 위는 고르게 진하다
+        const e = (u - DENS.edge0) / (DENS.edge1 - DENS.edge0);
+        const cl = e < 0 ? 0 : e > 1 ? 1 : e;
+        const a = cl*cl*(3 - 2*cl) * DENS.alpha;
+        if (a <= 0.01) continue;
         const g = win[n] >= 0 ? PRED.mix[win[n]] : null;
         const c = (g && g.mode) ? (modeRGB[g.mode] || col) : col;   // 모드별 색(없으면 위협도 색)
         const o = (j*R + i) * 4;
@@ -5050,7 +5125,10 @@ function predictionUpdate(srcPos, now) {
     }
   }
   PRED.mix = mix;
-  PRED.modes = modes.map(m => ({ name:m.name, w:+m.w.toFixed(2), dist:+m.dist.toFixed(2) }));
+  PRED.modes = modes.map(m => ({ name:m.name, w:+m.w.toFixed(2), dist:+m.dist.toFixed(2),
+                                 ux:m.ux, uz:m.uz,
+                                 len:Math.min(speed * PRED.vizHorizon, m.dist) }));
+  predModeArrows(dtMs);
   densUpdate(dtMs);                  // 바닥 확률밀도 음영 (논문 그림)
   const predCol = PRED.tStop < Infinity ? C3.FromHexString("#f85149")
                 : PRED.tSlow < Infinity ? C3.FromHexString("#e3b341")
@@ -9107,7 +9185,7 @@ window.__sim = {
   // 물리 · 안전
   PHYS, ROBOT_GUARD, buildRobotGuard, resetBasket, ONNX, onnxLoadModel, onnxInfer, PRED, ENV_RAND, randomizeEnvironment, placeOccluder, setExtraCount, spawnDebris, triggerEstop, clearEstop,
   // 모델 검증
-  MIL, milCapture, milMaskBoxes, drawOverlay, effector, BE, drawBirdseye, DENS, AVOID, avoidMinDist, avoidDecide, SEQ, RARR, robotArrowsUpdate,
+  MIL, milCapture, milMaskBoxes, drawOverlay, effector, BE, drawBirdseye, DENS, AVOID, avoidMinDist, avoidDecide, SEQ, RARR, robotArrowsUpdate, PMODE,
 };
 
 /* ══ Isaac풍 도킹 UI — 콘솔 · 스테이지 트리 · 메뉴바 ═════════════════════ */
