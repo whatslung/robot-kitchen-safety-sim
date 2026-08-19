@@ -174,7 +174,9 @@ uv run python train/eval_real.py dataset/3way/real_sim.yaml  --split test --weig
 | real-only(500) | **RF-DETR** | **0.917** | **0.931** | **0.943** |
 | real+sim(700) | YOLO11s | 0.844 | 0.860 | 0.898 |
 | real+sim(700) | RF-DETR | 0.900 | 0.877 | 0.905 |
-| real-full(~3,406) | YOLO11s | — | — | 0.980 |
+| real-full(3,970) | YOLO11s | 0.845 | 0.878 | 0.849 |
+
+> ⚠️ real-full(3,970)이 real-only(500)와 사실상 동일(0.849 vs 0.879) — **실사를 8배 늘려도 held-out test에선 안 오름**. 이유는 §5-7(iid vs cross-distribution). 참고 레포의 "recall 0.98"은 iid 재분할 test 기준.
 
 **핵심**:
 1. **sim→real 전이는 RF-DETR 압승**(0.411 vs 0.048). 원인 = RF-DETR의 **DINOv2 자기지도 백본** — 라벨 없이 실사 17억 장으로 배운 도메인 불변 특징이 합성 과적합을 막음. YOLO는 합성 표면에 과적합(sim val 0.688 ↔ 실사 0.048).
@@ -215,4 +217,27 @@ YOLO11/26·YOLO-Master = **AGPL-3.0**(상용 시 소스공개 의무). RF-DETR·
 - **⚠️ recall 상한 ≈ 0.53 (sim-only 증류의 한계).** 교사가 못 본 사람은 pseudo가 안 생겨 학생도 못 배움 → **안전 목표 recall 0.98은 sim-only 증류로 원리적 불가.**
 - **0.98 도달 경로**: (a) 실사 주방 수천 장 라벨(참고 레포 3,406장→0.98 실증), (b) 강한 교사(RF-DETR real-only 0.917) 증류, (c) **시스템 recall** — 낮은 conf + ByteTrack + 칼만으로 단일프레임 ~0.9를 시스템 ~0.98로. 최종 목표 지표 = 단일프레임 recall이 아니라 `blindPct→0`.
 - 증류의 값어치 = **실사 라벨이 없을 때 부트스트랩**("빠른 YOLO + 파운데이션 전이", 라벨 0).
+
+### 5-7. iid vs cross-distribution — "recall 0.98"의 진짜 조건 (핵심 결론)
+YOLO real-full(3,970) 학습 결과를 두 평가셋에서:
+
+| 평가셋 | Recall | Precision | mAP50 |
+|---|---|---|---|
+| **val (150, train과 동분포 = iid)** | **0.978** | 0.974 | **0.992** |
+| **test (137, 원본 v3 held-out = 다른 분포)** | 0.845 | 0.878 | 0.849 |
+
+**0.98은 iid(같은 분포)에서만 난다.** 참고 레포의 recall 0.98도 그들이 재분할한 iid test 기준. 원본 v3의 다른-분포 held-out(137)에선 YOLO가 **실사 3,970장으로도 0.85 포화**(500장 0.879과 동일 — 데이터 양이 답이 아님).
+
+**같은 137 held-out에서 아키텍처 대비**:
+| 학습 | Recall | mAP50 |
+|---|---|---|
+| YOLO real-500 | 0.829 | 0.879 |
+| YOLO real-3970 (8×↑) | 0.845 | 0.849 |
+| **RF-DETR real-500** | **0.917** | **0.943** |
+
+→ **진짜 난제는 "데이터 양"이 아니라 "분포를 건너뛰는 것(cross-distribution)".** YOLO는 데이터 8배로도 0.85 포화, RF-DETR은 500장으로 0.94 — 분포가 다를 때 **DINOv2 파운데이션 백본이 일반화로 이긴다.**
+
+**안전 목표 recall 0.98의 조건**:
+- 배포 현장 = 학습 분포(그 주방·그 카메라를 라벨) → 0.98 가능(iid).
+- 배포 현장 ≠ 학습 분포(새 급식실 = 현실) → cross-distribution. 답은 데이터 양이 아니라 **① 파운데이션 백본(RF-DETR/DINOv3) + ② 현장 소량 실사 + ③ 시스템 recall(낮은 conf·ByteTrack·칼만 → `blindPct→0`)**.
 
