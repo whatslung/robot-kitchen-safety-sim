@@ -62,6 +62,18 @@ def test_station_heuristic_matches_straight_line_to_goal():
     assert ade(steps, gt) < 0.05 and fde(steps, gt) < 0.05     # 등속 직진 = GT
 
 
+def test_station_heuristic_caps_at_goal():
+    # 가까운 목표(구간 내 도달) → 목표에서 멈추고 지나치지 않는다.
+    now, horizon, n = 0.8, 4.8, 12
+    hist = [(0.4 * i, 0.2 * i, 0.0) for i in range(OBS)]        # +x 0.5m/s
+    x0 = hist[-1][1]
+    goal = (x0 + 0.5, 0.0)                              # 0.5m 앞 — 첫 스텝들 안에 도달
+    steps = StationHeuristicPredictor(n_steps=n).predict_steps(Track(0, hist), now, horizon, goal)
+    xs = [s[1] for s in steps]
+    assert max(xs) <= x0 + 0.5 + 1e-6                   # 목표를 지나치지 않음
+    assert abs(steps[-1][1] - (x0 + 0.5)) < 1e-6        # 마지막엔 목표에 머문다
+
+
 def test_station_heuristic_falls_back_to_cv_when_no_goal():
     now, horizon, n = 0.8, 4.8, 12
     hist = [(0.4 * i, 0.2 * i, 0.0) for i in range(OBS)]

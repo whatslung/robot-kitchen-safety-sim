@@ -15,7 +15,10 @@ from typing import Optional
 from trajectory.types import Track, TrackScene
 
 OBS, PRED = 8, 12          # 관측 3.2s / 예측 4.8s (2.5Hz)
-MOVE_EPS = 0.20            # 예측 구간 동안 GT가 이 이상 움직이면 '움직인' 윈도우로 센다
+# '움직인' 윈도우 = 예측 구간 경로 길이(스텝 합)가 이 이상. 경로 길이라 왕복도 잡되,
+# 임계 1.0m로 정지+지터(4.8s에 ~0.2m)를 걸러 걷기만 남긴다 — 이 값이 낮으면(0.2m)
+# 지터만으로 거의 전부 '움직인'으로 잡혀 부분집합이 무의미해진다(리뷰 지적).
+MOVE_EPS = 1.0
 
 ROOT = Path(__file__).resolve().parent.parent
 TRAJ_DIR = ROOT / "dataset" / "trajectories"
@@ -43,7 +46,8 @@ def load_windows(split: str = "val", traj_dir=None) -> list:
     d = Path(traj_dir) if traj_dir else TRAJ_DIR
     wins = []
     for f in sorted(glob.glob(str(d / "*.json"))):
-        sc = json.load(open(f, encoding="utf-8"))
+        with open(f, encoding="utf-8") as fh:
+            sc = json.load(fh)
         seed = int(sc["seed"])
         val = is_val(seed)
         if split == "val" and not val:

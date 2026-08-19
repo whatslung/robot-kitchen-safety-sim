@@ -69,7 +69,7 @@ def mtp_loss(paths, logits, logsig, gt):
     import torch.nn.functional as F
     diff = paths - gt.unsqueeze(1)                 # (B,K,PRED,2)
     d2 = (diff ** 2).sum(-1)                        # (B,K,PRED)
-    kstar = d2.mean(-1).argmin(1)                   # (B,) ADE 최소 모드
+    kstar = d2.sqrt().mean(-1).argmin(1)            # (B,) ADE(평균 L2) 최소 모드 = winner
     sig = logsig.exp().clamp(min=1e-2)             # (B,K,PRED)
     gi = kstar.view(-1, 1, 1)
     d2s = d2.gather(1, gi.expand(-1, 1, d2.shape[-1])).squeeze(1)     # (B,PRED)
@@ -98,6 +98,8 @@ class LearnedPredictor:
     def predict_batch(self, hists):
         """hists = [hist_xz, …] → 각 입력의 모드 리스트. 한 번의 forward로 배치 처리."""
         torch = self.torch
+        if not hists:
+            return []
         frames = [frame_of(h) for h in hists]
         obs = np.stack([to_frame(h, o, a) for h, (o, a) in zip(hists, frames)]).astype(np.float32)
         with torch.no_grad():
@@ -105,7 +107,7 @@ class LearnedPredictor:
             paths, logits, logsig = self.net(x)
             w = torch.softmax(logits, dim=1).cpu().numpy()               # (N,K)
             paths = paths.cpu().numpy()                                  # (N,K,PRED,2)
-            sig = logsig.exp().cpu().numpy()                             # (N,K,PRED)
+            sig = logsig.exp().clamp(0.01, 5.0).cpu().numpy()            # (N,K,PRED) 밀도 viz 보호(상·하한)
         out = []
         for i, (origin, ang) in enumerate(frames):
             modes = []
