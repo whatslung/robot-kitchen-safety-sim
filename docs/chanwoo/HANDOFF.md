@@ -1,6 +1,6 @@
 # 핸드오프 — 조리로봇 안전: 검출 학습 루프
 
-> 최종 갱신: 2026-08-18
+> 최종 갱신: 2026-08-20
 
 ## 한 줄 요약
 
@@ -8,6 +8,63 @@
 **2026-08-18: 직교 나디르(top-down) 데이터로 파인튜닝해 person 검출 make-or-break PASS**
 — recall **0.688** / precision **0.797** (stock 0.175 / 0.374 대비). 설비 오탐이 잡혀
 **나디르 top-down 채택 근거 확보**. 다음은 데이터 증량으로 recall↑ + sim-to-real.
+
+## 🟢 2026-08-20 — 이슈 #2 궤적 예측 파이프라인 **완결 (1~5단계)** + sim2real 조사
+
+로드맵 1~5단계 전부 완료. **PR #3**(제목 "궤적 예측 파이프라인 — 이슈 #2 전체").
+
+- **[2] 궤적 수집**: 고정 dt 동기 하네스 → `dataset/trajectories/*.json` (**좌표 시계열 JSON, 이미지 아님**).
+  scene 자기기술 메타(layout·half·room·robot·mPerAU) + 2~4인. 현재 island 40 + island_h58 40 + legacy 40 = **120 scene**.
+  진입 `__sim.trajRun({scenes,seed,seconds,jobs})` · 데이터 탭 버튼 · `backend /traj`. 고정 dt라 탭 무관·빠름.
+- **[3] 베이스라인 ADE/FDE**: `trajectory/`(cooking-robot-safety에서 이식) + `sim_traj.py` 로더 + 스테이션 휴리스틱.
+- **[4] 학습형**: 경량 LSTM + 멀티모달 MTP 헤드(K=3) `trajectory/learned_predictor.py`. 단일 파일 ONNX export.
+- **[5] 배포**: `backend /predict` + `window.__customPredictor`(dense→8×0.4s 리샘플·10Hz·칼만 폴백) +
+  바닥 밀도 구름을 학습형 K모드 봉우리로. 설계 `docs/chanwoo/specs/2026-08-{19,20}-*`.
+
+**현재 최고 성적** (val, 120 scene, m): 등속 1.11/2.13 · 칼만 1.03/2.07 · 스테이션(목표앎) 0.69/1.23 ·
+**학습형 최빈 0.75/1.42 · minADE@3 0.43/0.80**. 표 `docs/chanwoo/prediction-eval.md`.
+
+**Trajectron++ / sim2real 조사** (스파이크 3개 — `docs/chanwoo/prediction-sim2real-notes.md`):
+- 사회적 풀링: 개선 ~0(직무사이클 지배) → **안 지음**. 교차 레이아웃: island→legacy **+31%** → 레이아웃 다양성 필요(반영).
+- 검출 노이즈: 깨끗-학습이 0.06m 노이즈에서 **+36% 악화** → **노이즈 증강 반영**(악화 반토막: +36%→+14%, 깨끗 val 유지).
+- 결론: 모델을 키우기보다 **도메인 갭(레이아웃·노이즈)을 닫는 게 정답**. Trajectron++ CVAE는 지표 이득 없어 보류(원하면 방법론용).
+
+**중요 구분**: **예측 데이터 = 좌표 JSON**(예측기는 픽셀 아니라 움직임을 배움). **이미지는 검출(YOLO)용 별개 데이터셋**(`dataset/sim-person-island/`·`overhead-person-v3`).
+
+**다음 (예측 sim2real 완성)**:
+- 실사 오버헤드 트랙으로 평가/파인튜닝(옆 레포 `cooking-robot-safety/trajectory/overhead_lstm.py`가 실사 YOLO 클립 사용).
+- 렌더 프레임을 `detect_server`로 실제 검출·추적해 나온 트랙(드롭·ID스위치 포함)으로 학습 — 가우시안 근사보다 실제 노이즈에 가까움.
+- 레이아웃 추가(현재 island·legacy 2종뿐 — 새 배치는 지오메트리 제작 필요).
+- (선택) Trajectron++ CVAE — "해보고 싶다"면 방법론적 완결용(지표는 소폭).
+- **미결(1단계부터)**: `danger` 라벨 축퇴(`SAFE.NOM_STOP` 3.1m로 5직무 전부 danger) — 위험 라벨을 실제 학습에 쓸 때 정리.
+
+**실행**: `DETECT_MODEL=… uv run python backend/detect_server.py --port 8001` → `http://127.0.0.1:8001/sim.html?person=1`.
+예측만 볼 땐 `DETECT_MODEL=none`로 충분(GT 좌표 사용). 테스트: `uv run --with pytest python -m pytest tests/`.
+
+---
+
+## 🟢 2026-08-19 결과 — 스테이션 전이 모델 (이슈 #2 1단계)
+
+사람 동선 생성에 **세 번째 모드**를 넣었다. `wanderTarget`(균등 랜덤)과 `JOB.route`(결정적
+순회) 사이가 비어 있었는데, 균등 랜덤은 엔트로피가 최대라 **학습형 예측기가 잡을 구조가
+없다** — 이 상태로는 학습형이 스테이션 휴리스틱(`PRED.modes`)을 이길 수 없다.
+
+- **`WORKFLOW` 사이클 + 확률 전이**: 다음 단계 0.65 / 직무 집합 안 거리 가중 0.30(τ=2m) /
+  직무 밖 이탈 0.05. `sim.html`의 `WF`·`WORKFLOW`·`workflowTarget`.
+- **진입점**: 버튼 `🧭 직무 전이 모드` · `__sim.personWorkflow(true, "prep")` · `__sim.WF.on`.
+  추가 인원은 `WF.on`이면 `extraNextTarget`이 확률 전이를 쓴다.
+- **실측**: 평균 이동 2.06~3.12 m(균등 랜덤 5.47 m) · 방문 분포 엔트로피 1.85~2.79비트
+  (균등 4.39) · 같은 시드 재현 · A* 로 설비를 돌아간다(겹침 1프레임/900).
+- **끄면 기존과 동일**하다 — 기존 데이터셋 회차가 재현된다.
+- 스펙·계획: `docs/chanwoo/{specs,plans}/2026-08-20-station-transition*.md`
+  (실측 표·설계 변경 근거가 스펙 하단에 있다).
+- **다음**: 이슈 #2의 2단계 — 이 모드로 궤적 데이터 수집.
+- **곁가지로 드러난 문제**: `SAFE.NOM_STOP`이 3.1 m로 커져 5직무의 로봇 최근접이 전부 그
+  안에 들어온다 → `jobRole`이 다섯 다 `danger`를 돌려준다. far/caution/danger가 데이터셋
+  라벨인데 다 같으면 하드 네거티브가 사라진다. WF 도입 전부터 그런 상태여서 이번엔
+  건드리지 않았다. 스펙 하단 "남은 문제" 참조.
+
+---
 
 ## 🟢 2026-08-18 결과 (핵심)
 

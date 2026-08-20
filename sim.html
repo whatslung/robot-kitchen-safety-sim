@@ -437,6 +437,7 @@
     <button id="scRoleCaution">＋ B 주의구역 작업자 (감속까지만)</button>
     <button id="scRoleDanger">＋ C 위험 접근자 (정지 반경 진입)</button>
     <button id="scWander">🎲 랜덤 움직임 시작/중지</button>
+    <button id="scWorkflow">🧭 직무 전이 모드 시작/중지</button>
     <button id="scWork">🔁 작업 동선 (선반↔조리대)</button>
     <button id="scPushCart">🛒 카트 밀기 (물리)</button>
     <button id="scKettle">솥 접근 (감속·정지)</button>
@@ -493,6 +494,14 @@
     <button id="gtPreviewBtn">GT 미리보기</button>
     <button id="gtGenBtn">데이터셋 생성</button>
   </div>
+
+  <div class="section">궤적 데이터 수집 <span class="note" style="font-weight:400">예측기 학습용 (이슈 #2)</span></div>
+  <div class="row"><span>scene 수</span><input id="trajScenes" type="range" min="1" max="60" step="1" value="40"><b id="trajScenesV">40</b></div>
+  <div class="btnrow">
+    <button id="trajRunBtn">궤적 수집 시작</button>
+  </div>
+  <div class="hint">1단계 WORKFLOW 동선을 고정 dt로 돌려 추가 인원 궤적을 2.5Hz로 <b>detect_server의 /traj</b>에
+    저장합니다(<b>dataset/trajectories/</b>). 세부 조정은 콘솔 <code>__sim.trajRun({scenes,seed,seconds,jobs})</code>.</div>
 
   <div class="section">전문가 기능</div>
   <label class="row" style="cursor:pointer"><input type="checkbox" id="devMode" style="accent-color:#76b900">
@@ -3071,13 +3080,136 @@ if (ISLAND) {
   JOB.wash.route  = ["sink","wrack","nrack","isle2","sink","store"];
   JOB.lead.route  = ["door","aisle","robotside","ntable","aisle","nrack"];
 }
+/* ══ 스테이션 전이 모델 (WORKFLOW) ══════════════════════════════════════════
+   `wanderTarget`은 21개 스테이션을 균등 랜덤으로 뽑는다 — 엔트로피가 최대라
+   **학습할 구조가 없다**(실측 평균 이동 5.51m vs 실제 동선 0.98~2.8m).
+   `JOB.route`는 반대쪽 극단이다 — 완전히 결정적이라 예측할 게 없다.
+
+   그 중간을 만든다: 직무 사이클을 **기준선**으로 두고 확률적으로 벗어난다.
+   같은 스테이션에 서 있어도 직무와 사이클 진행도에 따라 다음 목표의 확률이
+   달라지는 것 — 그게 학습형 예측기가 스테이션 휴리스틱을 이길 수 있는 유일한 여지다.
+
+   `JOB.route`와 따로 두는 이유: `JOB`은 추가 인원의 **재현 가능한 결정적 순회**이고
+   기존 데이터셋 생성이 그것에 의존한다. 여기에 확률을 섞으면 그 회차들이 깨진다. */
+const WF = { on:false, P_NEXT:0.65, P_NEAR:0.30, TAU:2.0 };
+/* 사이클의 한 단계는 **키 배열**이다. 길이가 2 이상이면 그 단계에서 택일한다.
+
+   사이클은 **왕복을 허용한다**(같은 키가 두 번 나온다). 처음엔 설비 이름만 보고 고리
+   하나로 짰는데, 실측하니 구간이 5.4~8.8m였다(wash의 store↔nrack 8.78m). 이 방의 설비는
+   벽마다 흩어져 있어 **고리를 닫는 순간 방을 가로지르는 구간이 반드시 하나 생긴다.**
+   3칸 고리는 순서를 어떻게 바꿔도 총합이 같아서 재배열로는 못 고친다.
+   왕복 나열로 바꾸면 모든 구간이 짧아진다 — `JOB.route`가 이미 쓰는 방식이다
+   (`wash:["sink","wrack","nrack","isle2","sink","store"]`).
+
+   배정은 **설비 이름이 아니라 좌표**로 갈랐다. `JOB` 주석이 남긴 교훈과 같다 —
+   "동선은 자기 구역 안에서 돈다. 구역을 나눠 놓고 동선이 방을 가로지르면 아무 의미가
+   없다"(배식구 운반을 서벽에서 출발시켰더니 도착률 25%). 21곳 전부 배정돼 있다.
+   실측 사이클 평균 구간: prep 2.74 · cook 2.81 · wash 1.83 · carry 2.49 · lead 2.05 m. */
+const WORKFLOW = {
+  // 서벽 전처리 + 중앙 준비대(북). isle1은 fridge를 거쳐 오간다(3.92m가 이 구역의 한계)
+  prep : { cycle:[["island"], ["wrack"], ["fridge"], ["isle1","isle2"], ["fridge"], ["wrack"]] },
+  // 중앙 조리셀 ↔ 북벽 라인. kettle↔ntable 4.33m은 줄일 수 없다 — 그 사이에 설비가 없다
+  cook : { cycle:[["kettle"], ["ntable"], ["nkettle"], ["ntable"], ["kettle"], ["prep"], ["panel"], ["prep"]] },
+  // 동벽 세척대 + 북동 선반. store(남동 건조 선반)는 6.8m 떨어져 carry로 넘겼다
+  wash : { cycle:[["nrack"], ["isle2"], ["nrack"], ["sink"]] },
+  // 남벽 배식 라인 + 동벽 배선대. 배식구까지 옮기는 일이라 남벽 안에서 돈다
+  carry: { cycle:[["serve"], ["isle3"], ["store"], ["etable"], ["store"], ["isle3"], ["cartPick"], ["shelf"]] },
+  /* 입구에서 들어와 제어반·로봇 앞을 보고 나간다. robotside(정지 반경 안)는 한 바퀴에
+     **한 번만** 나온다 — JOB 주석이 말하는 빈도 통제를 그대로 유지한다. */
+  lead : { cycle:[["door"], ["aisle"], ["panel"], ["prep"], ["robotside"], ["prep"], ["panel"], ["aisle"]] },
+};
+/* 직무 계획 해석 — 없는 스테이션은 버린다.
+   `nkettle`·`ntable`·`nrack`은 ISLAND 배치에서만 STATION에 들어오므로
+   테이블을 그대로 믿으면 조리·세정 담당이 undefined를 향해 걷는다. */
+const WF_PLAN = {};
+function wfPlan(job) {
+  if (WF_PLAN[job]) return WF_PLAN[job];
+  const W = WORKFLOW[job];
+  if (!W) return null;
+  const steps = W.cycle.map(s => s.filter(k => STATION[k])).filter(s => s.length);
+  if (!steps.length) return null;
+  const set = steps.flat(), inSet = new Set(set);
+  const outside = Object.keys(STATION).filter(k => !inSet.has(k));
+  return (WF_PLAN[job] = { steps, set, outside });
+}
+/* 길이 막힌 스테이션은 후보에서 뺀다 — roleStations와 같은 규약.
+   고르고 나서 실패하면 그 턴을 버리게 되고, 사람이 제자리에 서 있는 프레임이 남는다. */
+const wfReach = k => !NAV.ready || navReachable(STATION[k].pos);
+/* 거리 가중 — w(s) = exp(-d/τ), τ=2m. 가까운 곳을 선호하되 먼 곳도 가끔 간다.
+   최근접 하나로 고정하면 결정적이 되고, 균등으로 두면 구조가 사라진다. */
+function wfWeightedPick(keys, from, rng) {
+  if (!keys.length) return null;
+  if (keys.length === 1) return keys[0];
+  const w = keys.map(k => Math.exp(
+    -Math.hypot(STATION[k].pos.x - from.x, STATION[k].pos.z - from.z) / WF.TAU));
+  const sum = w.reduce((a, b) => a + b, 0);
+  if (!(sum > 0)) return rng.pick(keys);
+  let r = rng.next() * sum;
+  for (let i = 0; i < keys.length; i++) { r -= w[i]; if (r <= 0) return keys[i]; }
+  return keys[keys.length - 1];
+}
+/* 현재 사이클 단계 — 사이클 밖에 서 있으면(모드 시작 직후·이탈 후) **가장 가까운 단계**로
+   붙인다. 못 찾았다고 넘기면 65% 분기가 죽어 구조 없는 근거리 랜덤으로 퇴화한다.
+
+   **키로 되짚는 것은 폴백이다.** 사이클이 왕복이라 같은 키가 두 단계에 나오고
+   (cook의 ntable은 1·3번), 키로 찾으면 늘 앞쪽만 걸려 뒷 절반이 죽는다.
+   진행도는 호출부가 숫자로 들고 다닌다 — 여기 오는 건 그 숫자가 없을 때뿐이다. */
+function wfStepIndex(plan, curKey, from) {
+  for (let i = 0; i < plan.steps.length; i++)
+    if (plan.steps[i].indexOf(curKey) >= 0) return i;
+  let best = 0, bd = Infinity;
+  for (let i = 0; i < plan.steps.length; i++) for (const k of plan.steps[i]) {
+    const d = Math.hypot(STATION[k].pos.x - from.x, STATION[k].pos.z - from.z);
+    if (d < bd) { bd = d; best = i; }
+  }
+  return best;
+}
+/* 다음 목표 — 반환 형태를 wanderTarget과 같게 맞춘다(+ 추적용 key·step).
+     p=0.65  사이클의 다음 단계          ← 구조(학습 가능)
+     p=0.30  직무 집합 안 거리 가중       ← 현실성
+     p=0.05  직무 밖 이탈                ← 예외
+   확률은 WF에 있다 — 3단계 베이스라인이 같은 값을 읽어야 한다.
+
+   `cur`는 지금 서 있는 곳 `{key, step}`이다. 돌려준 `step`을 호출부가 그대로
+   다음 호출에 넣어 주면 사이클 진행도가 이어진다(왕복 사이클에 필수). */
+function workflowTarget(job, cur, from, rng) {
+  const plan = wfPlan(job);
+  if (!plan) return null;
+  const R = rng || RNG, curKey = cur && cur.key;
+  const ok = pool => pool.filter(k => k !== curKey && wfReach(k));
+  const i = (cur && Number.isInteger(cur.step) && cur.step >= 0 && cur.step < plan.steps.length)
+          ? cur.step : wfStepIndex(plan, curKey, from);
+  const u = R.next();
+  let key = null, step = i;
+  if (u < WF.P_NEXT) {
+    step = (i + 1) % plan.steps.length;
+    key = wfWeightedPick(ok(plan.steps[step]), from, R);
+  } else if (u < WF.P_NEXT + WF.P_NEAR) {
+    key = wfWeightedPick(ok(plan.set), from, R);
+  } else {
+    key = wfWeightedPick(ok(plan.outside), from, R);
+  }
+  if (!key) { step = i; key = wfWeightedPick(ok(plan.set), from, R); }  // 세 분기 다 비면 집합 전체
+  if (!key) return null;
+  /* 사이클을 벗어난 곳으로 갔으면 진행도는 **그 자리에 둔다.** 다음 턴에 사이클로
+     돌아올 때 이어서 진행한다(0으로 되돌리면 늘 사이클 앞부분만 돌게 된다). */
+  if (step === i) { const j = plan.steps.findIndex(s => s.indexOf(key) >= 0); if (j >= 0) step = j; }
+  const s = STATION[key];
+  return { key, step, pos:s.pos.clone(), act:s.act,
+           dwell:s.dwell * R.range(0.6, 1.5), label:s.label };
+}
 /* 동선이 로봇에 가장 가까이 가는 거리로 데이터셋 라벨을 정한다 */
 function jobRole(jobKey) {
   const J = JOB[jobKey];
   if (!J) return "far";
   const B = LAYOUT.robot.base;
+  /* **실제로 걷는 곳**을 봐야 한다. WF 모드에서는 JOB.route가 아니라 WORKFLOW 사이클을
+     도는데, route로 라벨을 붙이면 어긋난다 — 실측: 세정 담당이 WF에서 로봇에 6.16m까지만
+     가는데도 route 기준으로는 1.49m라 danger가 붙었다. 라벨은 동선을 따라가야 한다. */
+  const plan = WF.on && wfPlan(jobKey);
+  const keys = plan ? plan.set : J.route;
   let min = Infinity;
-  for (const k of J.route) {
+  for (const k of keys) {
     const st = STATION[k];
     if (st) min = Math.min(min, Math.hypot(st.pos.x - B.x, st.pos.z - B.z));
   }
@@ -3155,16 +3287,20 @@ function makeRNG(seed) {
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
-  return { seed: seed >>> 0, next,
+  const o = { seed: seed >>> 0, next,
            range: (a, b) => a + next() * (b - a),
-           pick: arr => arr[(next() * arr.length) | 0] };
+           pick: arr => arr[(next() * arr.length) | 0],
+           /* 궤적 수집 하네스가 scene마다 전역 흐름을 같은 시드로 되돌린다.
+              고정 dt + 재시드라야 같은 시드의 scene 좌표가 글자 단위로 재현된다. */
+           reseed: k => { s = (k >>> 0) || 1; o.seed = s; } };
+  return o;
 }
 const SEED0 = (() => {
   const q = new URLSearchParams(location.search).get("seed");
   return (q !== null ? (parseInt(q, 10) >>> 0) : (Date.now() >>> 0)) || 1;
 })();
 const RNG = makeRNG(SEED0);                  // 주인공·전역용
-const WANDER = { on:false, last:null, count:0 };
+const WANDER = { on:false, last:null, count:0, job:null, step:null };
 /* 목적지 뽑기 — 70% 스테이션(작업 동작이 붙음) / 30% 통로 임의 지점(그냥 지나감).
    임의 지점은 설비 안이 아닌 곳이 나올 때까지 다시 뽑는다. */
 function wanderTarget() {
@@ -3185,10 +3321,26 @@ function wanderTarget() {
   return { pos:s.pos.clone(), act:s.act, dwell:s.dwell, label:s.label };
 }
 function wanderStep() {
-  const t = wanderTarget();
+  /* WF 모드가 꺼져 있으면 기존 경로 그대로다 — 기존 데이터셋 회차가 재현돼야 한다. */
+  let t = null;
+  if (WF.on && WANDER.job)
+    t = workflowTarget(WANDER.job, { key:WANDER.last, step:WANDER.step },
+                       person.node.position, RNG);
   WANDER.count++;
-  person.stations = [t];
-  personGo([t.pos], { speed: RNG.range(0.42, 0.88) });
+  if (!t) { t = wanderTarget(); person.stations = [t];
+            personGo([t.pos], { speed: RNG.range(0.42, 0.88) }); return; }
+  WANDER.last = t.key; WANDER.step = t.step;
+  /* 직무 전이는 방 반대편이 아니라 **작업 구역 안**을 오간다. 직선으로 가면 설비 측면을
+     긁는다(기존 균등 랜덤은 거리가 멀어 통로를 지나는 경우가 많았다). 추가 인원과 같은
+     A* 격자를 태워 돌아가게 한다 — 못 찾으면 직선으로 폴백한다.
+
+     **경유점에는 스테이션을 달지 않는다.** stations는 path와 같은 첨자로 읽히므로
+     [t] 하나만 넣으면 첫 경유점에서 작업 동작이 재생된다 — 목적지에 닿기도 전에
+     일을 시작하는 그림이 된다(extrasUpdate가 "경유점 소진이 먼저다"로 막는 것과 같은 함정). */
+  let route = navPath(person.node.position, t.pos);
+  if (!route || !route.length) route = [t.pos];
+  person.stations = route.map((_, i) => i === route.length - 1 ? t : null);
+  personGo(route, { speed: RNG.range(0.42, 0.88) });
 }
 /* ══ 인원 역할 ═══════════════════════════════════════════════════════════
    회의 요구: 여러 명이 **각기 다른 위험 수준**으로 움직여야 한다.
@@ -3301,6 +3453,17 @@ function personWander(on) {
          person.dwellT = 0; personIdle(); }
   setStatus(on ? "랜덤 움직임 시작 — seed " + RNG.seed + " (?seed=" + RNG.seed + " 로 재현)"
                : "랜덤 움직임 중지");
+}
+/* 직무 전이 모드 — personWander와 같은 뼈대를 쓰고 목표 선택만 바꾼다.
+   직무 배정이 없으면 WORKFLOW 첫 직무를 준다. 여기서 조용히 균등 랜덤으로 폴백하면
+   "켰는데 아무것도 안 달라졌다"가 되고, 그게 무엇 때문인지 화면으로는 알 수 없다. */
+function personWorkflow(on, job) {
+  WF.on = on;
+  WANDER.job = on ? (job || WANDER.job || Object.keys(WORKFLOW)[0]) : null;
+  WANDER.step = null;                       // 사이클 진행도는 켤 때마다 새로 잡는다
+  personWander(on);
+  if (on) setStatus("직무 전이 모드 — " + ((JOB[WANDER.job] || {}).label || WANDER.job)
+                    + " · seed " + RNG.seed + " (?seed=" + RNG.seed + " 로 재현)");
 }
 
 function personGo(points, opts) {
@@ -4937,6 +5100,10 @@ const PRED = { horizon:1.6, steps:12, vel:new V3(0,0,0), lastPos:null, lastT:0,
                vizHorizon:3.5, vizSteps:20, minSigma:0.24,
                /* 경로 좌표계 1σ 성장률(m/s) — along(진행)은 속도 불확실성, across(수직)는 좁게 */
                alongK:0.32, acrossK:0.08, mix:[], lineW:0.09,
+               /* 학습형 멀티모달 안전 운영점 — 정지/감속 판정에 쓴다(스파이크 spike_oppoint.py로 튜닝).
+                  진입 모드 확률질량 ≥ safeTau 면 위험, 거리에서 safeKsig·σ 빼 보수적으로 본다.
+                  실측: 단일 최빈 recall 0.43 → 이 운영점 0.93(σ팽창 k1·τ0.1). safety 우선이라 recall 높게. */
+               safeKsig:1.0, safeTau:0.1,
                /* 다봉(멀티모달) 예측 — 사람은 스테이션 사이를 오간다(SCENARIO/ROUTE). 그래서
                   "어느 스테이션으로 가는가"가 곧 Trajectron++이 말하는 high-level behavior mode다.
                   칼만 단일모드는 등방 구름 하나뿐이라 예측의 성과가 그림에 안 나타난다.
@@ -4971,7 +5138,7 @@ const PRED = { horizon:1.6, steps:12, vel:new V3(0,0,0), lastPos:null, lastT:0,
    비동기 호출이므로 매 프레임 부르지 않고 hz로 제한하며, 응답이 올 때까지는
    직전 경로를 계속 쓴다(실제 온디바이스 추론과 같은 조건). 등록이 없거나 실패하면
    **조용히 칼만으로 되돌아간다** — 예측기가 죽었다고 로봇이 못 서면 안 된다.        */
-const CPRED = { fn:null, hz:10, acc:0, busy:false, path:null, at:0, sigma:0,
+const CPRED = { fn:null, hz:10, acc:0, busy:false, path:null, modes:null, at:0, sigma:0,
                 lastMs:0, n:0, err:0, lastErr:null };
 function customPredictTick(srcPos, now, dtMs) {
   CPRED.fn = (typeof window.__customPredictor === "function") ? window.__customPredictor : null;
@@ -4987,16 +5154,63 @@ function customPredictTick(srcPos, now, dtMs) {
       if (res && Array.isArray(res.path) && res.path.length) {
         CPRED.path = res.path; CPRED.at = performance.now();
         CPRED.sigma = isFinite(res.sigma) ? res.sigma : 0;
+        CPRED.modes = Array.isArray(res.modes) ? res.modes : null;   // 밀도 구름(멀티모달) 소스
         CPRED.n++;
       }
       CPRED.lastMs = performance.now() - t0;
     }).catch(e => {
       CPRED.err++; CPRED.lastErr = String(e && e.message || e).slice(0, 120);
-      CPRED.path = null;                       // 실패하면 칼만으로 되돌아간다
+      CPRED.path = null; CPRED.modes = null;   // 실패하면 칼만으로 되돌아간다
     }).finally(() => { CPRED.busy = false; });
   }
   // 1초 넘게 갱신이 없으면 신뢰하지 않는다 (모델이 멈춘 채 옛 경로로 판정하면 위험)
   return !!(CPRED.path && performance.now() - CPRED.at < 1000);
+}
+/* ══ 학습형 예측기 배선 — detect_server /predict (이슈 #2 5단계) ═══════════════
+   dense PRED.hist(~60Hz)를 모델 학습과 같은 8점×0.4s로 리샘플해 POST하고, K모드를 받아
+   최빈 모드는 {path,sigma}(계약), 전체 모드는 밀도 구름용으로 돌려준다. 좌표는 씬 AU(모델 학습 단위와 동일).
+   서버가 죽으면 예외 → customPredictTick이 칼만으로 폴백. */
+function trajResample(hist, now, n = 8, dtMs = 400) {
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const target = now - (n - 1 - i) * dtMs;         // now-2800 … now
+    let a = hist[0], b = hist[hist.length - 1];
+    for (let j = 0; j < hist.length; j++) {
+      if (hist[j].t <= target) a = hist[j];
+      if (hist[j].t >= target) { b = hist[j]; break; }
+    }
+    const span = (b.t - a.t) || 1, u = Math.max(0, Math.min(1, (target - a.t) / span));
+    out.push([a.x + (b.x - a.x) * u, a.z + (b.z - a.z) * u]);
+  }
+  return out;
+}
+async function trajPredict(obs) {
+  const hist = (obs.hist && obs.hist.length) ? obs.hist : [{ t: obs.now, x: obs.pos.x, z: obs.pos.z }];
+  const pts = trajResample(hist, obs.now);
+  const r = await fetch("/predict", { method: "POST", headers: { "Content-Type": "application/json" },
+                                      body: JSON.stringify({ hist: pts }) });
+  if (!r.ok) throw new Error("/predict " + r.status);
+  const j = await r.json();
+  const modes = (j.modes || []).map(m => ({
+    path: m.path.map(([x, z], i) => ({ t: 0.4 * (i + 1), x, z })),   // 스텝 시각 0.4·i (now 기준)
+    w: m.w, sigma: m.sigma,
+  }));
+  if (!modes.length) throw new Error("/predict 모드 없음");
+  const ml = modes[0];                                // 서버가 가중치 내림차순으로 준다
+  return { path: ml.path, sigma: SCALE.m(ml.sigma[ml.sigma.length - 1]), modes };
+}
+if (!window.__customPredictor) window.__customPredictor = trajPredict;   // 팀 훅이 이미 있으면 존중, 없을 때만 기본 등록
+/* 학습형 모드 경로/σ 보간 — 밀도 구름이 실제 곡선 경로 점을 쓰게 한다(방향 근사 아님). */
+function modePosAt(m, t) {
+  const p = m.path; let a = p[0], b = p[p.length - 1];
+  for (let i = 0; i < p.length - 1; i++) if (p[i].t <= t && p[i + 1].t >= t) { a = p[i]; b = p[i + 1]; break; }
+  const span = (b.t - a.t) || 1, u = Math.max(0, Math.min(1, (t - a.t) / span));
+  return [a.x + (b.x - a.x) * u, a.z + (b.z - a.z) * u];
+}
+function modeSigAt(m, t) {
+  const s = m.sigma, f = t / 0.4 - 1;                 // 스텝 i의 시각 = 0.4·(i+1)
+  const i = Math.max(0, Math.min(s.length - 1, Math.floor(f)));
+  return s[i];
 }
 /* ══ 시각화 억제 — **모델 입력·데이터셋에서 반드시 빼야 하는 것** ═══════════════
    바닥에 칠한 예측 띠·모드 화살표·그래프 노드/엣지·로봇 기동 표시는 전부 **주석**이다.
@@ -5124,21 +5338,40 @@ function pmodeArrowsFor(node, idx, dt) {
   }
   st.x = p.x; st.z = p.z;
   const speed = Math.hypot(st.vx, st.vz);
-  const modes = goalModesAt(p, st.vx, st.vz, speed);
+  /* 학습형 예측기가 **이 사람(추적 대상)**을 예측 중이면 그 K모드를 쓴다 — 바닥 구름이
+     goalModesAt(목표 휴리스틱) 대신 학습형 봉우리를 그린다(이슈 #2 완료 조건). 추적 대상은
+     predictionUpdate가 PRED._learned.src에 남긴 위치로 판별(가장 가까운 사람). */
+  const L = (PRED._learned && idx === PRED._learnedIdx) ? PRED._learned.modes : null;
+  const modes = L
+    ? L.map((m, i) => { const e = m.path[m.path.length - 1];
+        const dx = e.x - p.x, dz = e.z - p.z, d = Math.hypot(dx, dz) || 1e-6;
+        return { name:"L" + i, w:m.w, dist:d, ux:dx / d, uz:dz / d }; })
+    : goalModesAt(p, st.vx, st.vz, speed);
   let n = 0;
   /* 이 사람의 **띠 성분**도 같이 만든다 — 화살표는 "몇 가지 가능성"을, 띠는 "어디쯤"을 말한다.
-     둘을 같은 사람에게 붙여야 그림이 대칭이 된다(종전엔 위협 1명만 띠가 있었다).
-     σ는 위협 트랙처럼 칼만 공분산을 쓰지 않고 경로 좌표계 성장률만 쓴다 — 사람마다
-     칼만을 돌리지 않기 때문이고, 표시용으로는 충분하다. */
-  modes.forEach((md, mi) => {
-    for (let k = 0; k <= PRED.vizSteps; k++) {
-      const t = PRED.vizHorizon * k / PRED.vizSteps;
-      const travel = Math.min(speed * t, md.dist);
-      PRED.bands.push({ x:p.x + md.ux*travel, z:p.z + md.uz*travel, ux:md.ux, uz:md.uz,
-                        sAlong:PRED.minSigma + PRED.alongK*t, sAcross:PRED.minSigma + PRED.acrossK*t,
-                        w:md.w * (1 - 0.35*(k/PRED.vizSteps)), ci:mi, pi:idx });
-    }
-  });
+     학습형이면 각 모드의 실제 곡선 경로 점(모델 σ)을, 아니면 방향 외삽 띠를 쓴다.
+     σ는 칼만 공분산 대신 경로 좌표계 성장률(또는 모델 σ) — 표시용으로 충분하다. */
+  if (L) {
+    L.forEach((m, mi) => {
+      for (let k = 0; k <= PRED.vizSteps; k++) {
+        const t = PRED.vizHorizon * k / PRED.vizSteps;
+        const [bx, bz] = modePosAt(m, t);
+        const sg = Math.max(modeSigAt(m, t), PRED.minSigma);
+        PRED.bands.push({ x:bx, z:bz, ux:0, uz:0, sAlong:sg, sAcross:sg,
+                          w:m.w * (1 - 0.35*(k/PRED.vizSteps)), ci:mi, pi:idx });
+      }
+    });
+  } else {
+    modes.forEach((md, mi) => {
+      for (let k = 0; k <= PRED.vizSteps; k++) {
+        const t = PRED.vizHorizon * k / PRED.vizSteps;
+        const travel = Math.min(speed * t, md.dist);
+        PRED.bands.push({ x:p.x + md.ux*travel, z:p.z + md.uz*travel, ux:md.ux, uz:md.uz,
+                          sAlong:PRED.minSigma + PRED.alongK*t, sAcross:PRED.minSigma + PRED.acrossK*t,
+                          w:md.w * (1 - 0.35*(k/PRED.vizSteps)), ci:mi, pi:idx });
+      }
+    });
+  }
   modes.forEach((md, mi) => {
     const len = Math.min(Math.max(speed * PRED.vizHorizon, PMODE.minLen), md.dist);
     if (!(len > 0.15)) return;
@@ -5162,7 +5395,19 @@ function predModeArrows(dtMs) {
   PRED.bands = [];
   if (!PMODE.on || vizSuppressed) return;
   const dt = Math.min(Math.max((dtMs || 16)/1000, 1e-3), 0.5);
-  peopleList().forEach((node, i) => pmodeArrowsFor(node, i, dt));
+  const nodes = peopleList();
+  /* 학습형 추적 대상 = src에 가장 가까운 사람 **1명**(임계 0.4 AU 내). 임계만 쓰면
+     지나가며 두 사람이 다 걸릴 수 있어 최근접 하나로 못박는다. */
+  PRED._learnedIdx = -1;
+  if (PRED._learned) {
+    let best = 0.4 * 0.4;
+    nodes.forEach((node, i) => {
+      const p = node.position, s = PRED._learned.src;
+      const d2 = (p.x - s.x) ** 2 + (p.z - s.z) ** 2;
+      if (d2 < best) { best = d2; PRED._learnedIdx = i; }
+    });
+  }
+  nodes.forEach((node, i) => pmodeArrowsFor(node, i, dt));
 }
 /* 진행 방향과 정렬된 스테이션들을 '행동 모드'로 뽑는다.
    정렬도(진행방향·목표방향 내적)를 제곱해 가중치로 쓴다 — 정면 목표가 확실히 더 진하게.
@@ -5348,7 +5593,9 @@ function predictionUpdate(srcPos, now) {
   PRED.lastPos = srcPos.clone(); PRED.lastT = now;
   // 최근 2초 관측 — 학습형 예측기는 속도 하나가 아니라 궤적 이력을 본다
   PRED.hist.push({ t: now, x: srcPos.x, z: srcPos.z });
-  while (PRED.hist.length && now - PRED.hist[0].t > 2000) PRED.hist.shift();
+  /* 학습형 예측기는 8스텝×0.4s(=2.8s) 관측을 먹으므로 최소 그만큼은 보관한다(여유 3.2s).
+     __customPredictor가 이 dense 이력을 8점으로 리샘플한다. */
+  while (PRED.hist.length && now - PRED.hist[0].t > 3200) PRED.hist.shift();
 
   const bx = LAYOUT.robot.base.x, bz = LAYOUT.robot.base.z;
   PRED.tStop = PRED.tSlow = Infinity;
@@ -5381,6 +5628,26 @@ function predictionUpdate(srcPos, now) {
     if (d < SAFE.slowR && PRED.tSlow === Infinity) PRED.tSlow = t;
   }
   PRED.pathPts = flat;
+  /* 학습형 멀티모달이면 정지/감속 판정을 **운영점**(진입 모드 확률질량 ≥ τ, σ팽창)으로 재계산.
+     단일 최빈 경로보다 접근 recall이 크게 높다(스파이크: 0.43→0.93). 시각화 선(pathPts)은 최빈 유지.
+     안전 지평선(PRED.horizon=1.6s) 안만 본다. tStop/tSlow = 조건 충족 모드들의 최이른 진입시각. */
+  if (useCustom && CPRED.modes && CPRED.modes.length) {
+    const K1 = PRED.safeKsig, tau = PRED.safeTau;
+    const entry = radiusAU => {
+      let mass = 0, tmin = Infinity;
+      for (const m of CPRED.modes) {
+        for (let i = 0; i < m.path.length; i++) {
+          const p = m.path[i];
+          if (p.t > PRED.horizon) break;                       // 안전 지평선 안만
+          const dAU = Math.hypot(p.x - bx, p.z - bz) - K1 * ((m.sigma && m.sigma[i]) || 0);
+          if (dAU < radiusAU) { mass += m.w; tmin = Math.min(tmin, p.t); break; }
+        }
+      }
+      return mass >= tau ? tmin : Infinity;
+    };
+    PRED.tStop = entry(SCALE.au(SAFE.stopR));
+    PRED.tSlow = entry(SCALE.au(SAFE.slowR));
+  }
   /* 표시 게이트에 히스테리시스 — 켜짐 0.08㎧↑, 꺼짐 0.04㎧↓. 검출/칼만 속도 추정은 프레임
      간격에 따라 출렁여서 단일 임계값이면 음영·선이 깜빡인다(실측 0.06~0.33㎧ 진동). */
   const mSpeed = SCALE.m(speed);
@@ -5406,7 +5673,14 @@ function predictionUpdate(srcPos, now) {
             Math.max(PRED.minSigma + PRED.acrossK * t, PRED.minSigma)];  // across
   };
   const mix = [];
-  const modes = predGoalModes(srcPos, speed);
+  /* 학습형 예측기가 K모드를 주면 그걸로 밀도 구름을 그린다 — 목표 휴리스틱(predGoalModes) 대체.
+     그래야 시각화에 **학습형의 멀티모달 봉우리**가 뜬다(이슈 #2 완료 조건). */
+  const cModes = (useCustom && CPRED.modes && CPRED.modes.length) ? CPRED.modes : null;
+  const modes = cModes
+    ? cModes.map((m, i) => { const e = m.path[m.path.length - 1];
+        const dx = e.x - srcPos.x, dz = e.z - srcPos.z, d = Math.hypot(dx, dz) || 1e-6;
+        return { name:"L" + i, w:m.w, dist:d, ux:dx / d, uz:dz / d }; })
+    : predGoalModes(srcPos, speed);
   const moving = SCALE.m(speed) >= 0.12;
   const vux = moving ? PRED.vel.x / speed : 0, vuz = moving ? PRED.vel.z / speed : 0;
   for (let k = 0; k <= PRED.vizSteps; k++) {
@@ -5416,7 +5690,13 @@ function predictionUpdate(srcPos, now) {
     const fade = 1 - 0.35*(k/PRED.vizSteps);
     const put = (px, pz, w, mode, ux, uz) => mix.push({ x:px, z:pz, t, w, mode,
                    ux, uz, sAlong, sAcross:Math.min(sAcross, sAlong) });
-    if (modes.length) {                          // 다봉 — 목표별로 한 성분씩
+    if (cModes) {                                // 학습형 — 각 모드의 **실제 경로 점**에 등방 블롭(모델 σ)
+      for (const m of cModes) {
+        const [px, pz] = modePosAt(m, t);
+        const sg = Math.max(modeSigAt(m, t), PRED.minSigma);
+        mix.push({ x:px, z:pz, t, w:m.w * fade, mode:"L", ux:0, uz:0, sAlong:sg, sAcross:sg });
+      }
+    } else if (modes.length) {                   // 다봉 — 목표별로 한 성분씩
       for (const md of modes) {
         const travel = Math.min(speed * t, md.dist);   // speed는 AU/s · 목표를 지나치지 않는다
         put(srcPos.x + md.ux*travel, srcPos.z + md.uz*travel, md.w * fade, md.name, md.ux, md.uz);
@@ -5429,7 +5709,10 @@ function predictionUpdate(srcPos, now) {
   PRED.mix = mix;
   PRED.modes = modes.map(m => ({ name:m.name, w:+m.w.toFixed(2), dist:+m.dist.toFixed(2),
                                  ux:m.ux, uz:m.uz,
-                                 len:Math.min(speed * PRED.vizHorizon, m.dist) }));
+                                 len: cModes ? m.dist : Math.min(speed * PRED.vizHorizon, m.dist) }));
+  /* 추적 대상 + 학습형 모드를 per-person 밴드 빌더(pmodeArrowsFor)에 넘긴다 →
+     바닥 구름이 이 사람만 학습형 봉우리로 그려진다. */
+  PRED._learned = cModes ? { src: { x: srcPos.x, z: srcPos.z }, modes: CPRED.modes } : null;
   predModeArrows(dtMs);
   graphUpdate();                     // 씬 그래프(노드 흰 원 + 상호작용 점선)
   densUpdate(dtMs);                  // 바닥 확률밀도 음영 (논문 그림)
@@ -7718,7 +8001,9 @@ function beMap(wx, wz, cx, cy, half) {          // 월드 AU → 패널 px
 }
 function drawBirdseye(ctx, W, H) {
   if (!BE.on) return;
-  const sz = BE.size, pad = 12, x0 = W - sz - pad, y0 = H - sz - pad;
+  /* **좌**하단이다. 우하단은 `#stats`(right:14 bottom:14)가 이미 쓰고 있어 겹쳤다 —
+     DOM인 #stats가 캔버스 위에 그려지므로 조감 패널의 예측 경로가 그 밑에 깔린다. */
+  const sz = BE.size, pad = 12, x0 = pad, y0 = H - sz - pad;
   const cx = x0 + sz/2, cy = y0 + sz/2, half = sz/2, pxPerM = half / BE.viewR;
   ctx.save();
   ctx.fillStyle = "rgba(13,17,23,0.82)"; ctx.fillRect(x0, y0, sz, sz);
@@ -8823,6 +9108,7 @@ $("hzPush").addEventListener("click",  () => demoHazard("push"));
 $("hzPinch").addEventListener("click", () => demoHazard("pinch"));
 $("hzClear").addEventListener("click", () => demoHazardClear());
 $("scWander").addEventListener("click", () => personWander(!WANDER.on));
+$("scWorkflow").addEventListener("click", () => personWorkflow(!WF.on));
 /* 작업 동선 — 스테이션마다 도착해서 실제 작업 동작을 재생한다 */
 $("scWork").addEventListener("click",   () => personRoute("work",     { loop:true }));
 $("scPushCart").addEventListener("click", () => demoPushCart());
@@ -9151,6 +9437,13 @@ $("gtPreviewBtn").addEventListener("click", async () => {
 $("gtGenBtn").addEventListener("click", () => {
   if (DATAGEN.running) { DATAGEN.abort = true; setStatus("중단 요청 — 현재 샘플까지 저장 후 종료"); }
   else generateDataset(+$("gtCount").value);
+});
+$("trajScenes").addEventListener("input", e => $("trajScenesV").textContent = e.target.value);
+$("trajRunBtn").addEventListener("click", async () => {
+  if (TRAJ.running) { setStatus("궤적 수집 이미 실행 중"); return; }
+  const btn = $("trajRunBtn"); btn.disabled = true; btn.textContent = "수집 중…";
+  try { await trajRun({ scenes: +$("trajScenes").value }); }
+  finally { btn.disabled = false; btn.textContent = "궤적 수집 시작"; }
 });
 $("inspectorBtn").addEventListener("click", showInspector);
 
@@ -9737,6 +10030,9 @@ window.__sim = {
      스크립트가 통째로 죽는다. getter로 감싸 접근 시점에 읽는다. */
   ROLE, roleStations, spawnRole, buildPersonColliders, transitPath,
   JOB, SCENARIO, spawnJob, runScenario, jobRole, jobNextTarget,
+  WF, WORKFLOW, wfPlan, workflowTarget, personWorkflow,
+  get TRAJ() { return TRAJ; },   // 선언이 이 블록보다 뒤 — TDZ 회피(EXTRAS·OVERLAP과 같은 규약)
+  trajRun, trajRunScene,         // 궤적 데이터 수집(이슈 #2 2단계) — 함수 선언이라 hoisted
   resolvePeopleSeparation, makeRNG, armClearance, armContactUpdate,
   demoHazard, demoHazardClear, findHazardSpot, workOverlapUpdate,
   get OVERLAP() { return OVERLAP; },   // 선언이 이 블록보다 뒤 — 직접 넣으면 TDZ로 스크립트가 죽는다
@@ -9878,7 +10174,8 @@ initPhysics();   // 비동기 — 파일 없으면 물리만 꺼진 채 계속 �
     /* 데이터 탭은 "데이터를 만든다 → 모델을 검증한다 → 회차를 비교한다" 순서로 읽히게 둔다.
        센서 리얼리즘·조리실 인원은 데이터셋의 다양성을 정하는 손잡이라 고급이 아니라 여기다.
        (고급에 있으면 데이터 만드는 사람이 영영 못 찾는다) */
-    { id:"data", label:"📊 데이터", secs:["데이터셋 · Ground Truth","센서 리얼리즘 (CCTV 특성)",
+    { id:"data", label:"📊 데이터", secs:["데이터셋 · Ground Truth","궤적 데이터 수집",
+                                         "센서 리얼리즘 (CCTV 특성)",
                                          "조리실 인원 (다양성)","모델 검증 (Model-in-the-Loop)",
                                          "궤적 예측","회차 기록 (Run Log)"] },
     { id:"adv",  label:"⚙ 고급",   secs:["전문가 기능","화면 품질","물리 · 안전 (Havok)","에셋 임포트 (선택)"] },
@@ -10137,7 +10434,11 @@ const EXTRAS = [];
    인원 시드를 (전역시드 + 인덱스)로만 잡으면 재추출을 눌러도 같은 사람이 다시 나온다.
    세대를 시드에 섞어 두면 재추출은 달라지면서도 (seed, 세대)만 같으면 그대로 재현된다. */
 let EXTRA_GEN = 0;
-const extraSeed = i => SEED0 + 7919 * (i + 1) + 104729 * EXTRA_GEN;
+/* 궤적 수집 하네스가 켜지면(TRAJ.seedBase != null) 전역 SEED0 대신 scene 시드를 기준으로
+   삼아 사람 시드가 scene마다 결정적이 되게 한다. 평소엔 SEED0 그대로. */
+const extraSeed = i =>
+  ((typeof TRAJ !== "undefined" && TRAJ.seedBase != null) ? TRAJ.seedBase : SEED0)
+  + 7919 * (i + 1) + 104729 * EXTRA_GEN;
 const RAND_PATHS = [
   [new V3(1.9,0,2.4), new V3(1.9,0,-1.2), new V3(-1.0,0,-1.7), new V3(-2.3,0,0.4), new V3(-2.2,0,2.4)],
   [new V3(-2.3,0,2.6), new V3(-0.9,0,2.2), new V3(1.4,0,1.4), new V3(2.2,0,-0.6)],
@@ -10272,6 +10573,7 @@ async function spawnExtraPerson(i) {
     // → 데이터셋 생성이 1명이라도 스폰되는 순간 크래시. 참조 제거.
     gear, shell: uni_shell, bones: bmap, height: H, uniform: null, wearCap, wearMask,
     ACT, role: "far", stations: null, dwellT: 0, acting: null, lastD: undefined, stallT: 0,
+    wfStep: null,                 // 직무 사이클 진행도 (WF 모드) — 키로 되짚으면 왕복이 죽는다
     /* 인원마다 독립 시드 — 전역 시드에서 파생시키되 간격을 크게 벌린다.
        한 명을 추가해도 기존 인원의 궤적이 바뀌지 않는다(각자 자기 흐름만 소비). */
     rng: prng,
@@ -10438,6 +10740,11 @@ function jobNextTarget(P, rng) {
   return null;
 }
 function extraNextTarget(P) {
+  /* 라벨을 여기서 다시 잡는다 — WF는 스폰 뒤에 켜지는데(runScenario 후 WF.on=true·버튼)
+     P.role은 spawnJob에서 한 번만 캐시된다. 안 잡으면 사람은 WORKFLOW 사이클로 걷는데
+     라벨은 JOB.route 기준으로 남아, jobRole의 WF 분기가 정상 흐름에서 죽는다.
+     jobRole은 결정적이라 재계산이 idempotent다. WF를 끄면 스폰 시 라벨(route 기준)로 둔다. */
+  if (P.job && WF.on) P.role = jobRole(P.job);
   const R = ROLE[P.role] || ROLE.far;
   const rng = P.rng || RNG;                  // 인원별 독립 난수 — 서로 간섭하지 않는다
   P.speed = rng.range(R.speed[0], R.speed[1]);
@@ -10452,6 +10759,25 @@ function extraNextTarget(P) {
     P.overlapUntil = 0;                       // 길이 없으면 포기하고 제 동선으로
   }
   // 직무가 배정돼 있으면 정해진 동선을 돈다 — 무작위 선택은 건너뛴다
+  /* WF 모드면 결정적 순회 대신 확률 전이를 쓴다. 꺼져 있으면 기존 경로 그대로 —
+     기존 데이터셋 회차가 jobNextTarget의 결정적 순서에 의존한다. */
+  if (P.job && WF.on) {
+    const cur = { key: P.station && P.station.key, step: P.wfStep };
+    for (let tries = 0; tries < 4; tries++) {
+      const t = workflowTarget(P.job, cur, P.root.position, rng);
+      if (!t) break;
+      /* 한 자리에 두 명은 못 선다 — jobNextTarget과 같은 규약. 다시 뽑는다. */
+      if (EXTRAS.some(o => o !== P && o.station && o.station.key === t.key)) continue;
+      if (setPathTo(P, t.pos)) {
+        P.wfStep = t.step;
+        /* dwell은 **원본**을 싣는다 — 도착 처리(extrasUpdate)가 rng.range(0.6,1.5)를 곱한다.
+           workflowTarget이 돌려준 t.dwell은 이미 지터가 곱해진 값이라 그걸 쓰면 두 번 곱해진다
+           (jobNextTarget은 원본 st.dwell을 실어 단일 지터만 걸린다 — 그쪽과 맞춘다). */
+        P.station = Object.assign({ dist:0 }, STATION[t.key], { key:t.key });
+        return P.station;
+      }
+    }
+  }
   if (P.job) { const t = jobNextTarget(P, rng); if (t) return t; }
 
   /* C(danger) — 접근과 물러남을 **번갈아** 한다.
@@ -10650,15 +10976,160 @@ async function spawnJob(jobKey) {
 }
 /* 근무 시나리오 한 회차 — 기존 인원을 비우고 배역대로 다시 세운다.
    같은 시드 + 같은 시나리오면 같은 회차가 재현된다. */
+/* 기존 인원을 비우고 jobs 목록대로 다시 세운다 — runScenario(이름 기반)와
+   trajSpawn(궤적 하네스)가 공유하는 스폰 코어. 같은 시드면 같은 회차가 재현된다. */
+async function spawnJobList(jobs) {
+  await setExtraCount(0);
+  for (const j of jobs) await spawnJob(j);
+  return EXTRAS.slice();
+}
 async function runScenario(name) {
   const S = SCENARIO[name];
   if (!S) { console.warn("[SCEN] 없는 시나리오:", name); return null; }
-  await setExtraCount(0);
-  for (const j of S.jobs) await spawnJob(j);
+  await spawnJobList(S.jobs);
   const labels = EXTRAS.map(P => (JOB[P.job] || {}).label + "(" + P.role + ")");
   setStatus("시나리오 — " + S.label + " · " + labels.join(" · ") + " · seed " + SEED0);
   console.log("[SCEN]", name, S.label, "—", labels.join(", "));
   return EXTRAS.slice();
+}
+/* ══ 궤적 데이터 수집 (이슈 #2 2단계) ═══════════════════════════════════════
+   1단계 WORKFLOW 동선을 고정 dt로 돌려 추가 인원 궤적을 2.5Hz로 기록 → /traj 서버 저장.
+   고정 dt인 이유: 가변 dt(실시간)면 같은 시드라도 좌표가 미세하게 달라져 재현이 안 된다.
+   궤적은 월드 좌표를 직접 읽으므로 GPU 렌더가 불필요해 탭 가시성과 무관하게, 실시간보다 빠르게 돈다.
+   설계: docs/chanwoo/specs/2026-08-19-trajectory-collection-design.md */
+const TRAJ = {
+  hz: 2.5, dt: 0.4, subDt: 0.04,       // 스냅 2.5Hz · 서브스텝 40ms(잘게 밟아 순간이동/끼임 방지)
+  stabilizeSec: 1.0,                   // 스폰 직후 안정화(첫 스냅 전, 기록 안 함)
+  teleportMax: 0.8,                    // 스텝 간 이동이 이보다 크면 코드 산물(순간이동)로 보고 폐기표시.
+                                       // 정상 최대 = 최대속도(~0.9)×0.4s≈0.36m라 급정지/급가속은 안 걸린다.
+  url: (location.origin || "") + "/traj",
+  seedBase: null,                      // 하네스 활성 시 scene 시드(평소 null → extraSeed가 SEED0 사용)
+  running: false,
+  /* 인원 조합 — 데이터 다양성용으로 2~4인 섞음(이웃·사람-스텝 증가). scene마다 순환. */
+  jobSets: [["cook","carry"], ["cook","lead","wash"], ["prep","wash"],
+            ["cook","carry","wash","lead"], ["prep","cook","carry"]],
+};
+/* 현재 씬의 레이아웃·기하 서명 — scene JSON 자기기술 + scene_id 충돌 방지용.
+   레이아웃은 로드 시 URL로 결정(ISLAND·ISLAND_HALF 상수)되므로 여기서 실제 값을 읽는다. */
+function trajGeom() {
+  const island = !(typeof ISLAND !== "undefined" && !ISLAND);
+  const lay = island ? "island" : "legacy";
+  // half는 island 방 크기 파라미터라 island에서만 의미. legacy는 실제 room 범위로만 기술.
+  const half = (island && typeof ISLAND_HALF !== "undefined" && isFinite(ISLAND_HALF)) ? +ISLAND_HALF.toFixed(2) : null;
+  const R = LAYOUT.room, b = LAYOUT.robot.base;
+  return { layout: lay, half,
+           tag: lay + (half != null ? "_h" + Math.round(half * 10) : ""),   // 예 island_h58 · legacy
+           room: { x0:+R.x0.toFixed(2), x1:+R.x1.toFixed(2), z0:+R.z0.toFixed(2), z1:+R.z1.toFixed(2) },
+           robot: { x:+b.x.toFixed(3), z:+b.z.toFixed(3) },
+           mPerAU: +SCALE.mPerAU.toFixed(4) };
+}
+/* 지금 기록할 노드 = 추가 인원. 주인공(person)은 WASD·카메라 종속이라 제외. */
+function trajNodes() {
+  return EXTRAS.map((P, i) => ({ P, id:"extra_" + i, job:P.job || null, role:P.role || null, frames:[] }));
+}
+/* 한 프레임 스냅 — moving은 실제로 걷는 중일 때만 true.
+   dwellT>0(작업 체류)뿐 아니라 crouch/idle(정지 동작) 프레임도 걷는 게 아니므로 제외한다
+   — dwellT만 보면 서 있는 crouch/idle 프레임이 moving:true로 잘못 찍힌다. */
+function trajSnap(nodes, t) {
+  for (const nd of nodes) {
+    const p = nd.P.root.position, st = nd.P.station, m = nd.P.mode;
+    nd.frames.push({
+      t:+t.toFixed(3), x:+p.x.toFixed(4), z:+p.z.toFixed(4),
+      goal:(st && st.key) || null,
+      gx: st && st.pos ? +st.pos.x.toFixed(4) : null,
+      gz: st && st.pos ? +st.pos.z.toFixed(4) : null,
+      moving: !(nd.P.dwellT > 0) && m !== "crouch" && m !== "idle",
+    });
+  }
+}
+/* 모션에 필요한 최소 집합만 고정 dt로 돌린다(로봇·조리·안전 판정 제외 → 전역 RNG 소비가
+   사람 모션에만 국한돼 결정성이 는다). */
+function trajStep(dtMs) { extrasUpdate(dtMs); resolvePeopleSeparation(); }
+/* scene 하나 생성 → JSON 반환(+ /traj POST). 하네스 상태(seedBase·WF·EXTRA_GEN)는
+   이 함수가 스스로 저장·복원한다 — 직접 호출해도 평소 스폰 시드가 오염되지 않게. */
+async function trajRunScene(sceneSeed, seconds, jobs, idx) {
+  const saved = { seedBase: TRAJ.seedBase, wf: WF.on, gen: EXTRA_GEN };
+  try {
+    TRAJ.seedBase = sceneSeed >>> 0; EXTRA_GEN = 0; RNG.reseed(sceneSeed); WF.on = true;
+    await spawnJobList(jobs);
+    const nodes = trajNodes();
+    if (!nodes.length) { console.warn("[TRAJ] 스폰된 인원이 없다 — ?person=1·시나리오 확인"); return null; }
+    const subMs = TRAJ.subDt * 1000;
+    for (let e = 0; e < TRAJ.stabilizeSec * 1000; e += subMs) trajStep(subMs);   // 안정화
+    /* 스냅 간 실제 시뮬 간격 = perSnap·subDt. subDt가 dt를 정수로 나누지 않으면 이 값이
+       TRAJ.dt와 달라지므로, t·hz·scene.dt를 이 실측 간격으로 적어 라벨과 실제가 어긋나지 않게 한다. */
+    const perSnap = Math.max(1, Math.round(TRAJ.dt / TRAJ.subDt));
+    const snapDt = perSnap * TRAJ.subDt;
+    const steps = Math.round(seconds / snapDt);
+    const prev = nodes.map(nd => ({ x:nd.P.root.position.x, z:nd.P.root.position.z }));
+    trajSnap(nodes, 0);
+    for (let s = 1; s <= steps - 1; s++) {
+      for (let k = 0; k < perSnap; k++) trajStep(subMs);
+      trajSnap(nodes, s * snapDt);
+      for (let n = 0; n < nodes.length; n++) {                  // 순간이동(코드 산물) 검사 — 노드별
+        const p = nodes[n].P.root.position;
+        if (Math.hypot(p.x - prev[n].x, p.z - prev[n].z) > TRAJ.teleportMax) nodes[n].discarded = true;
+        prev[n].x = p.x; prev[n].z = p.z;
+      }
+    }
+    const g = trajGeom();
+    const scene = {
+      scene_id: g.tag + "_seed" + (sceneSeed >>> 0) + "_" + String(idx).padStart(4, "0"),
+      schema:1, seed:sceneSeed >>> 0,
+      layout:g.layout, half:g.half, room:g.room, robot:g.robot, mPerAU:g.mPerAU,   // 자기기술 기하(다양성 데이터)
+      wf:true, hz:+(1 / snapDt).toFixed(4), dt:+snapDt.toFixed(4), steps,
+      discarded: nodes.some(nd => nd.discarded),   // 하나라도 오염되면 scene 표시(노드별 플래그로 정밀 필터 가능)
+      nodes: nodes.map(nd => ({ id:nd.id, job:nd.job, role:nd.role, discarded:!!nd.discarded, frames:nd.frames })),
+    };
+    try {
+      const r = await fetch(TRAJ.url, { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify(scene) });
+      const j = await r.json();
+      console.log("[TRAJ]", scene.scene_id, "— 노드", scene.nodes.length, "· 스텝", steps,
+                  (scene.discarded ? "· ⚠폐기노드 " + scene.nodes.filter(n=>n.discarded).length : ""), "· 저장", j.count || "?");
+    } catch (e) { console.warn("[TRAJ] /traj 저장 실패 — detect_server 떠 있나?", e); }
+    return scene;
+  } finally {
+    TRAJ.seedBase = saved.seedBase; WF.on = saved.wf; EXTRA_GEN = saved.gen;
+  }
+}
+/* 첫 스폰 워밍업 — 페이지 로드 후 최초 스폰은 GLB 디코드·스켈레톤 fit·첫 scene.render()가
+   함께 일어나 그 scene만 ~7cm 어긋난다(같은 세션의 2번째 생성부터는 글자 단위로 안정).
+   버리는 스폰 1회로 그 워밍업을 미리 소진해, 기록되는 첫 scene이 나머지와 같은 상태에서
+   출발하게 한다(세션 내 재생성과 일치). 단, 페이지 로드 시점 물리·렌더 비결정성 때문에
+   **로드가 다르면** 좌표가 소폭(≤~7cm) 드리프트한다 — 로드 간 바이트 재현은 불가. */
+async function trajWarmup() {
+  const saved = { seedBase: TRAJ.seedBase, wf: WF.on, gen: EXTRA_GEN };
+  try {
+    TRAJ.seedBase = 0; EXTRA_GEN = 0; RNG.reseed(1); WF.on = true;
+    await spawnJobList(["cook"]);
+    const subMs = TRAJ.subDt * 1000;
+    for (let e = 0; e < TRAJ.stabilizeSec * 1000; e += subMs) trajStep(subMs);
+    await setExtraCount(0);
+  } finally { TRAJ.seedBase = saved.seedBase; WF.on = saved.wf; EXTRA_GEN = saved.gen; }
+}
+/* 하네스 진입점 — 시드를 순환하며 scene 자동 생성. __sim.trajRun({scenes,seed,seconds,jobs}). */
+async function trajRun(opts) {
+  opts = opts || {};
+  const scenes = opts.scenes || 40, base = (opts.seed != null ? opts.seed : 1) >>> 0;
+  const seconds = opts.seconds || 60, jobsOverride = opts.jobs || null;
+  if (TRAJ.running) { console.warn("[TRAJ] 이미 실행 중"); return; }
+  TRAJ.running = true;                          // 하네스 상태(seedBase·WF·GEN) 복원은 trajRunScene이 담당
+  console.log("[TRAJ] 시작 — scene", scenes, "· 기준시드", base, "· 각", seconds + "초");
+  const out = [];
+  try {
+    await trajWarmup();                         // 첫 스폰 워밍업 소진 → scene 0도 재현 가능
+    for (let k = 0; k < scenes; k++) {
+      const jobs = jobsOverride || TRAJ.jobSets[k % TRAJ.jobSets.length];
+      setStatus("궤적 수집 — scene " + (k + 1) + "/" + scenes + " (seed " + (base + k) + ")");
+      const scene = await trajRunScene(base + k, seconds, jobs, k);
+      if (scene) out.push(scene);
+      await new Promise(r => setTimeout(r, 0));   // UI가 상태 갱신할 틈을 준다
+    }
+  } finally { TRAJ.running = false; }
+  const kept = out.filter(s => !s.discarded).length;
+  console.log("[TRAJ] 완료 — scene", out.length, "· 유효", kept, "· 폐기", out.length - kept);
+  setStatus("궤적 수집 완료 — scene " + out.length + " (유효 " + kept + ")");
+  return out;
 }
 /* 역할을 지정해 인원을 추가한다. 회의 요구의 A/B/C가 이것으로 만들어진다. */
 async function spawnRole(roleKey) {

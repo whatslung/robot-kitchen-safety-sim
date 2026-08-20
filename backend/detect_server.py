@@ -35,6 +35,7 @@ detect_server.py — 시뮬레이터 '모델 검증(http 모드)'용 어댑터 �
 """
 import base64
 import io
+import json
 import os
 import time
 import argparse
@@ -333,6 +334,74 @@ async def shot(req: Request):
         f = d / (name + ".png")
         f.write_bytes(base64.b64decode(b64))
         return {"saved": str(f), "bytes": f.stat().st_size}
+    except Exception as e:                # noqa: BLE001
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.post("/traj")
+async def traj(req: Request):
+    """시뮬이 만든 궤적 scene 하나를 dataset/trajectories/<scene_id>.json 에 쓴다.
+
+    /dataset·/shot과 같은 규약 — 시뮬이 scene 완결 시 scene JSON 전체를 POST하면 서버가
+    받아 쓴다(폴더 선택창 없음, 클릭 0회). dataset/이 gitignore라 궤적도 자동 제외된다.
+    요청: {"scene_id":"island_seed7_0000", "schema":1, "seed":7, ..., "nodes":[...]}
+    """
+    try:
+        body = await req.json()
+        safe = lambda v, d: "".join(c for c in str(v) if c.isalnum() or c in "-_")[:80] or d
+        sid = safe(body.get("scene_id", "scene"), "scene")
+        root = _ROOT / "dataset" / "trajectories"
+        root.mkdir(parents=True, exist_ok=True)
+        (root / (sid + ".json")).write_text(
+            json.dumps(body, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        n = len(list(root.glob("*.json")))
+        return {"ok": True, "count": n, "dir": str(root)}
+    except Exception as e:                # noqa: BLE001
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+_PREDICTOR = None
+_PREDICTOR_ERR = None
+
+
+def _get_predictor():
+    """학습형 궤적 예측기를 1회 로드(지연). 없으면 _PREDICTOR_ERR에 이유."""
+    global _PREDICTOR, _PREDICTOR_ERR
+    if _PREDICTOR is not None or _PREDICTOR_ERR is not None:
+        return _PREDICTOR
+    try:
+        import sys
+        sys.path.insert(0, str(_ROOT))
+        from trajectory.learned_predictor import LearnedPredictor
+        w = _ROOT / "training" / "traj_predictor" / "model.pt"
+        if not w.exists():
+            raise FileNotFoundError(f"가중치 없음: {w} (train/train_traj_predictor.py 먼저 실행)")
+        _PREDICTOR = LearnedPredictor(weights_path=str(w), device="cpu")
+        print(f"[detect_server] 궤적 예측기 로드: {w}")
+    except Exception as e:                # noqa: BLE001
+        _PREDICTOR_ERR = str(e)
+        print(f"[detect_server] 궤적 예측기 로드 실패 → /predict 비활성 ({e})")
+    return _PREDICTOR
+
+
+@app.post("/predict")
+async def predict(req: Request):
+    """학습형 멀티모달 궤적 예측. 이슈 #2 5단계.
+
+    시뮬의 window.__customPredictor가 관측 8점(씬 AU, 0.4s 간격으로 리샘플)을 보내면
+    K개 모드(각 경로+가중치+스텝별 σ)를 돌려준다. 좌표는 모델 학습 단위(AU)와 동일.
+    요청: {"hist": [[x,z], … 8개]}   응답: {"modes": [{"path":[[x,z]…], "w":.., "sigma":[…]}]}
+    """
+    p = _get_predictor()
+    if p is None:
+        return JSONResponse(status_code=503, content={"error": _PREDICTOR_ERR or "predictor 미로드"})
+    try:
+        body = await req.json()
+        hist = [(float(x), float(z)) for x, z in body["hist"]]
+        modes = p.predict_modes(hist)
+        return {"modes": [{"path": [[round(x, 4), round(z, 4)] for (x, z) in m["path"]],
+                           "w": round(m["w"], 4),
+                           "sigma": [round(s, 4) for s in m["sigma"]]} for m in modes]}
     except Exception as e:                # noqa: BLE001
         return JSONResponse(status_code=500, content={"error": str(e)})
 
