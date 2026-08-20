@@ -513,6 +513,21 @@
     <button id="inspectorBtn">Inspector</button>
   </div>
 
+  <div class="section">시각화 표시 <span class="note" style="font-weight:400">예측 오버레이</span></div>
+  <label class="row" style="cursor:pointer"><input type="checkbox" id="vizRarr" checked style="accent-color:#76b900">
+    <span style="width:auto;color:#c9d1d9">로봇 기동 화살표</span></label>
+  <label class="row" style="cursor:pointer"><input type="checkbox" id="vizPmode" checked style="accent-color:#76b900">
+    <span style="width:auto;color:#c9d1d9">사람 예측 화살표</span></label>
+  <label class="row" style="cursor:pointer"><input type="checkbox" id="vizDens" checked style="accent-color:#76b900">
+    <span style="width:auto;color:#c9d1d9">바닥 밀도 음영 (구름)</span></label>
+  <label class="row" style="cursor:pointer"><input type="checkbox" id="vizGraph" checked style="accent-color:#76b900">
+    <span style="width:auto;color:#c9d1d9">씬 그래프 <span class="note" style="font-weight:400">사람 위 흰 원·점선</span></span></label>
+  <label class="row" style="cursor:pointer"><input type="checkbox" id="vizLine" checked style="accent-color:#76b900">
+    <span style="width:auto;color:#c9d1d9">예측 경로선 <span class="note" style="font-weight:400">위협도별 색 (빨강=정지)</span></span></label>
+  <div class="hint">예측 파이프라인이 화면에 겹쳐 그리는 표시를 끄고 켭니다. 끄면 다음 프레임에 사라지고,
+    로봇 동작·안전 판단·학습 데이터에는 영향이 없습니다.<br>
+    로봇 주변 안전 구역 링(동심원)은 시뮬레이터 기본 요소라 여기서 다루지 않습니다.</div>
+
   <div class="section">화면 품질</div>
   <div class="row"><span>품질</span><select id="qualitySel">
     <option value="high">높음 — 부드러운 그림자 + MSAA 4x</option>
@@ -5091,7 +5106,7 @@ function kfStep(f, z, dt, sa2, sm2) {
   f.P10 = P10 - K1*P00; f.P11 = P11 - K1*P01;
 }
 const PRED = { horizon:1.6, steps:12, vel:new V3(0,0,0), lastPos:null, lastT:0,
-               tStop:Infinity, tSlow:Infinity, line:null, band:null, showBand:true, level:0,
+               tStop:Infinity, tSlow:Infinity, line:null, showLine:true, level:0,
                /* ── 논문 그림용 확률밀도 표시 (안전 판정과 분리) ─────────────────
                   vizHorizon: **그림 전용** 지평선. 안전 판정은 위의 horizon(1.6s)을 그대로 쓴다 —
                     행동을 바꾸지 않으면서 그림만 길게 뽑기 위해 일부러 나눴다.
@@ -5223,7 +5238,6 @@ function vizMeshList() {
   const out = [];
   if (typeof DENS !== "undefined" && DENS.plane) out.push(DENS.plane);
   if (PRED.line) out.push(PRED.line);
-  if (PRED.band) out.push(PRED.band);
   if (typeof PMODE !== "undefined") for (const k in PMODE.mesh) out.push(PMODE.mesh[k]);
   if (typeof GRAPH !== "undefined") for (const k in GRAPH.mesh) out.push(GRAPH.mesh[k]);
   if (typeof RARR !== "undefined") for (const k in RARR.mesh) out.push(RARR.mesh[k]);
@@ -5729,29 +5743,8 @@ function predictionUpdate(srcPos, now) {
     PRED.line.setPoints(pts);
   }
   if (PRED.line.greasedLineMaterial) PRED.line.greasedLineMaterial.color = predCol;
-  PRED.line.setEnabled(PRED.moving && !vizSuppressed);   // 이동 중일 때만(히스테리시스 적용)
-  // 3D σ 밴드 — 예측 경로를 따라 (t/horizon)·σ 만큼 좌우로 벌린 반투명 리본
-  const np = pts.length;
-  if (np > 1) {
-    const sAU = SCALE.au(PRED.sigma), left = [], right = [];
-    for (let k = 0; k < np; k++) {
-      const a = pts[Math.max(0,k-1)], b = pts[Math.min(np-1,k+1)];
-      const dx = b.x-a.x, dz = b.z-a.z, len = Math.hypot(dx,dz)||1;
-      const nx = -dz/len, nz = dx/len, w = sAU * (k/(np-1));
-      left.push(new V3(pts[k].x+nx*w, 0.05, pts[k].z+nz*w));
-      right.push(new V3(pts[k].x-nx*w, 0.05, pts[k].z-nz*w));
-    }
-    PRED.band = BABYLON.MeshBuilder.CreateRibbon("predBand",
-        { pathArray:[left, right], updatable:true, instance: PRED.band || undefined }, scene);
-    if (!PRED.band.material) {
-      const bm = new BABYLON.StandardMaterial("predBandMat", scene);
-      bm.backFaceCulling = false; bm.alpha = 0.22; bm.disableLighting = true;
-      PRED.band.material = bm; PRED.band.isPickable = false;
-    }
-    PRED.band.material.emissiveColor = predCol; PRED.band.material.diffuseColor = predCol;
-    // 바닥 음영(DENS)이 켜져 있으면 밴드는 중복이라 자동으로 끈다(showBand로 되돌릴 수 있음)
-    PRED.band.setEnabled(PRED.moving && PRED.showBand && !DENS.on && !vizSuppressed);
-  }
+  PRED.line.setEnabled(PRED.moving && PRED.showLine && !vizSuppressed);   // 이동 중일 때만(히스테리시스 적용)
+  // (예측 불확실성 표시는 바닥 밀도 음영 DENS 하나로 통일 — 예전 3D σ 밴드는 중복이라 제거)
 }
 
 /* 경고등 3단계 — 키오스크 시그널타워(GLB) 램프에 연동 */
@@ -5878,7 +5871,6 @@ function safetyUpdate() {
     else if (PRED.tSlow < PRED.horizon) predictive = 0.75;
   } else {   // 검출 없음/미탐 — 예측 시각화 전부 숨긴다
     if (PRED.line) PRED.line.setEnabled(false);
-    if (PRED.band) PRED.band.setEnabled(false);
     if (DENS.plane) DENS.plane.setEnabled(false);
   }
   SAFE.factor = Math.min(reactive, predictive);
@@ -6327,7 +6319,7 @@ async function groundTruth(camId, opt) {
 async function groundTruthImpl(camId, opt) {
   const noDepth = !!(opt && opt.noDepth);
   const cam = SURV[camId] ? SURV[camId].cam : camera;
-  /* 예측 시각화(바닥 확률밀도 음영·굵은 예측선·σ밴드)는 **캡처 전 구간에서** 뺀다.
+  /* 예측 시각화(바닥 확률밀도 음영·굵은 예측선)는 **캡처 전 구간에서** 뺀다.
      이건 그림용 오버레이일 뿐 라벨에 없는 픽셀이다. 특히 음영은 사람을 따라다니므로
      학습 이미지에 남으면 검출기가 "바닥 색번짐 = 사람"이라는 허위 상관을 배운다.
      gtOff()는 마스크/깊이 패스만 감싸므로 RGB가 새는데, 여기서 try 전체를 감싸 막는다. */
@@ -9516,6 +9508,28 @@ $("qualitySel").addEventListener("change", e => {
   setStatus("화면 품질: " + (p ? p.label : e.target.value));
 });
 
+/* 시각화 오버레이 on/off — 플래그만 바꾸면 렌더러가 매 프레임 알아서 숨긴다(로직 무수정). */
+$("vizRarr").addEventListener("change", e => {
+  RARR.on = e.target.checked;
+  setStatus("로봇 기동 화살표 " + (RARR.on ? "표시" : "숨김"));
+});
+$("vizPmode").addEventListener("change", e => {
+  PMODE.on = e.target.checked;
+  setStatus("사람 예측 화살표 " + (PMODE.on ? "표시" : "숨김"));
+});
+$("vizDens").addEventListener("change", e => {
+  DENS.on = e.target.checked;
+  setStatus("바닥 밀도 음영 " + (DENS.on ? "표시" : "숨김"));
+});
+$("vizGraph").addEventListener("change", e => {
+  GRAPH.on = e.target.checked;
+  setStatus("씬 그래프 " + (GRAPH.on ? "표시" : "숨김"));
+});
+$("vizLine").addEventListener("change", e => {
+  PRED.showLine = e.target.checked;
+  setStatus("예측 경로선 " + (PRED.showLine ? "표시" : "숨김"));
+});
+
 $("runCsvBtn").addEventListener("click", () => {
   if (!RUNLOG.runs.length) return setStatus("기록 없음");
   RUNLOG.download("sim_runlog.csv", RUNLOG.toCSV(), "text/csv;charset=utf-8");
@@ -10178,7 +10192,7 @@ initPhysics();   // 비동기 — 파일 없으면 물리만 꺼진 채 계속 �
                                          "센서 리얼리즘 (CCTV 특성)",
                                          "조리실 인원 (다양성)","모델 검증 (Model-in-the-Loop)",
                                          "궤적 예측","회차 기록 (Run Log)"] },
-    { id:"adv",  label:"⚙ 고급",   secs:["전문가 기능","화면 품질","물리 · 안전 (Havok)","에셋 임포트 (선택)"] },
+    { id:"adv",  label:"⚙ 고급",   secs:["전문가 기능","시각화 표시","화면 품질","물리 · 안전 (Havok)","에셋 임포트 (선택)"] },
   ];
   // 섹션 헤더 → [헤더, 다음 헤더 전까지의 형제들] 묶음 수집
   const heads = [...panel.querySelectorAll(":scope > .section")];
