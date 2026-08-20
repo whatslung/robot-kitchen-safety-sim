@@ -521,7 +521,7 @@
   <label class="row" style="cursor:pointer"><input type="checkbox" id="vizDens" checked style="accent-color:#76b900">
     <span style="width:auto;color:#c9d1d9">바닥 밀도 음영 (구름)</span></label>
   <label class="row" style="cursor:pointer"><input type="checkbox" id="vizBand" style="accent-color:#76b900">
-    <span style="width:auto;color:#c9d1d9">σ 밴드 <span class="note" style="font-weight:400">구름과 중복 — 기본 꺼짐</span></span></label>
+    <span style="width:auto;color:#c9d1d9">σ 밴드 <span class="note" style="font-weight:400">구름과 중복 — 구름 꺼야 보임</span></span></label>
   <label class="row" style="cursor:pointer"><input type="checkbox" id="vizGraph" checked style="accent-color:#76b900">
     <span style="width:auto;color:#c9d1d9">씬 그래프 <span class="note" style="font-weight:400">사람 위 흰 원·점선</span></span></label>
   <div class="hint">예측 파이프라인이 화면에 겹쳐 그리는 표시를 끄고 켭니다. 끄면 다음 프레임에 사라지고,
@@ -9546,7 +9546,11 @@ $("vizDens").addEventListener("change", e => {
 });
 $("vizBand").addEventListener("change", e => {
   PRED.showBand = e.target.checked;
-  setStatus("σ 밴드 " + (PRED.showBand ? "표시" : "숨김"));
+  // σ밴드는 바닥 음영(구름)과 같은 정보라 구름이 켜져 있으면 게이트에서 숨겨진다(~5768).
+  // 켰는데 안 보이는 상황을 상태 메시지로 정직하게 알린다.
+  setStatus(!PRED.showBand ? "σ 밴드 숨김"
+    : DENS.on ? "σ 밴드 켬 — 바닥 음영(구름)을 끄면 나타납니다"
+    : "σ 밴드 표시");
 });
 $("vizGraph").addEventListener("change", e => {
   GRAPH.on = e.target.checked;
