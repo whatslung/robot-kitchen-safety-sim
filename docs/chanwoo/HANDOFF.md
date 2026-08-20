@@ -1,6 +1,6 @@
 # 핸드오프 — 조리로봇 안전: 검출 학습 루프
 
-> 최종 갱신: 2026-08-19
+> 최종 갱신: 2026-08-20
 
 ## 한 줄 요약
 
@@ -8,6 +8,40 @@
 **2026-08-18: 직교 나디르(top-down) 데이터로 파인튜닝해 person 검출 make-or-break PASS**
 — recall **0.688** / precision **0.797** (stock 0.175 / 0.374 대비). 설비 오탐이 잡혀
 **나디르 top-down 채택 근거 확보**. 다음은 데이터 증량으로 recall↑ + sim-to-real.
+
+## 🟢 2026-08-20 — 이슈 #2 궤적 예측 파이프라인 **완결 (1~5단계)** + sim2real 조사
+
+로드맵 1~5단계 전부 완료. **PR #3**(제목 "궤적 예측 파이프라인 — 이슈 #2 전체").
+
+- **[2] 궤적 수집**: 고정 dt 동기 하네스 → `dataset/trajectories/*.json` (**좌표 시계열 JSON, 이미지 아님**).
+  scene 자기기술 메타(layout·half·room·robot·mPerAU) + 2~4인. 현재 island 40 + island_h58 40 + legacy 40 = **120 scene**.
+  진입 `__sim.trajRun({scenes,seed,seconds,jobs})` · 데이터 탭 버튼 · `backend /traj`. 고정 dt라 탭 무관·빠름.
+- **[3] 베이스라인 ADE/FDE**: `trajectory/`(cooking-robot-safety에서 이식) + `sim_traj.py` 로더 + 스테이션 휴리스틱.
+- **[4] 학습형**: 경량 LSTM + 멀티모달 MTP 헤드(K=3) `trajectory/learned_predictor.py`. 단일 파일 ONNX export.
+- **[5] 배포**: `backend /predict` + `window.__customPredictor`(dense→8×0.4s 리샘플·10Hz·칼만 폴백) +
+  바닥 밀도 구름을 학습형 K모드 봉우리로. 설계 `docs/chanwoo/specs/2026-08-{19,20}-*`.
+
+**현재 최고 성적** (val, 120 scene, m): 등속 1.11/2.13 · 칼만 1.03/2.07 · 스테이션(목표앎) 0.69/1.23 ·
+**학습형 최빈 0.75/1.42 · minADE@3 0.43/0.80**. 표 `docs/chanwoo/prediction-eval.md`.
+
+**Trajectron++ / sim2real 조사** (스파이크 3개 — `docs/chanwoo/prediction-sim2real-notes.md`):
+- 사회적 풀링: 개선 ~0(직무사이클 지배) → **안 지음**. 교차 레이아웃: island→legacy **+31%** → 레이아웃 다양성 필요(반영).
+- 검출 노이즈: 깨끗-학습이 0.06m 노이즈에서 **+36% 악화** → **노이즈 증강 반영**(악화 반토막: +36%→+14%, 깨끗 val 유지).
+- 결론: 모델을 키우기보다 **도메인 갭(레이아웃·노이즈)을 닫는 게 정답**. Trajectron++ CVAE는 지표 이득 없어 보류(원하면 방법론용).
+
+**중요 구분**: **예측 데이터 = 좌표 JSON**(예측기는 픽셀 아니라 움직임을 배움). **이미지는 검출(YOLO)용 별개 데이터셋**(`dataset/sim-person-island/`·`overhead-person-v3`).
+
+**다음 (예측 sim2real 완성)**:
+- 실사 오버헤드 트랙으로 평가/파인튜닝(옆 레포 `cooking-robot-safety/trajectory/overhead_lstm.py`가 실사 YOLO 클립 사용).
+- 렌더 프레임을 `detect_server`로 실제 검출·추적해 나온 트랙(드롭·ID스위치 포함)으로 학습 — 가우시안 근사보다 실제 노이즈에 가까움.
+- 레이아웃 추가(현재 island·legacy 2종뿐 — 새 배치는 지오메트리 제작 필요).
+- (선택) Trajectron++ CVAE — "해보고 싶다"면 방법론적 완결용(지표는 소폭).
+- **미결(1단계부터)**: `danger` 라벨 축퇴(`SAFE.NOM_STOP` 3.1m로 5직무 전부 danger) — 위험 라벨을 실제 학습에 쓸 때 정리.
+
+**실행**: `DETECT_MODEL=… uv run python backend/detect_server.py --port 8001` → `http://127.0.0.1:8001/sim.html?person=1`.
+예측만 볼 땐 `DETECT_MODEL=none`로 충분(GT 좌표 사용). 테스트: `uv run --with pytest python -m pytest tests/`.
+
+---
 
 ## 🟢 2026-08-19 결과 — 스테이션 전이 모델 (이슈 #2 1단계)
 
