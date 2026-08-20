@@ -36,8 +36,10 @@ uv run python backend/detect_server.py --port 8001
 
 → <http://127.0.0.1:8001/sim.html?person=1>
 
-가중치는 로컬 `training/`에 있으면 그걸, 없으면 허깅페이스에서 자동으로 받는다 —
-팀원은 파일 전달 없이 위 두 줄만 실행하면 된다. 예측만 볼 땐 `DETECT_MODEL=none`(GT 좌표 사용).
+가중치는 로컬 `training/`에 있으면 그걸, 없으면 허깅페이스
+[`chanubc/robot-kitchen-nadir-yolo11s`](https://huggingface.co/chanubc/robot-kitchen-nadir-yolo11s)(공개)에서
+자동으로 받는다 — 팀원은 파일 전달 없이 위 두 줄만 실행하면 된다. 저장소는 env
+`DETECT_MODEL_REPO`로 교체, 예측만 볼 땐 `DETECT_MODEL=none`(GT 좌표 사용).
 파이프라인·수집·학습·평가 상세는 아래 [검출·예측 파이프라인](#검출예측-파이프라인-백엔드) 참조.
 
 그냥 열면 **확정 배치(섬 배치)**가 뜬다 — 방 11.5×11.5 m · 천장 3.9 m ·
