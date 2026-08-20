@@ -513,6 +513,16 @@
     <button id="inspectorBtn">Inspector</button>
   </div>
 
+  <div class="section">시각화 표시 <span class="note" style="font-weight:400">예측·안전 오버레이</span></div>
+  <label class="row" style="cursor:pointer"><input type="checkbox" id="vizRarr" checked style="accent-color:#76b900">
+    <span style="width:auto;color:#c9d1d9">로봇 기동 화살표</span></label>
+  <label class="row" style="cursor:pointer"><input type="checkbox" id="vizPmode" checked style="accent-color:#76b900">
+    <span style="width:auto;color:#c9d1d9">사람 예측 화살표</span></label>
+  <label class="row" style="cursor:pointer"><input type="checkbox" id="vizDens" checked style="accent-color:#76b900">
+    <span style="width:auto;color:#c9d1d9">바닥 밀도 음영 (구름)</span></label>
+  <div class="hint">화면 위에 겹쳐 그리는 예측·안전 표시를 끄고 켭니다. 끄면 다음 프레임에 사라지고,
+    로봇 동작·안전 판단 자체에는 영향이 없습니다.</div>
+
   <div class="section">화면 품질</div>
   <div class="row"><span>품질</span><select id="qualitySel">
     <option value="high">높음 — 부드러운 그림자 + MSAA 4x</option>
@@ -9516,6 +9526,20 @@ $("qualitySel").addEventListener("change", e => {
   setStatus("화면 품질: " + (p ? p.label : e.target.value));
 });
 
+/* 시각화 오버레이 on/off — 플래그만 바꾸면 렌더러가 매 프레임 알아서 숨긴다(로직 무수정). */
+$("vizRarr").addEventListener("change", e => {
+  RARR.on = e.target.checked;
+  setStatus("로봇 기동 화살표 " + (RARR.on ? "표시" : "숨김"));
+});
+$("vizPmode").addEventListener("change", e => {
+  PMODE.on = e.target.checked;
+  setStatus("사람 예측 화살표 " + (PMODE.on ? "표시" : "숨김"));
+});
+$("vizDens").addEventListener("change", e => {
+  DENS.on = e.target.checked;
+  setStatus("바닥 밀도 음영 " + (DENS.on ? "표시" : "숨김"));
+});
+
 $("runCsvBtn").addEventListener("click", () => {
   if (!RUNLOG.runs.length) return setStatus("기록 없음");
   RUNLOG.download("sim_runlog.csv", RUNLOG.toCSV(), "text/csv;charset=utf-8");
@@ -10178,7 +10202,7 @@ initPhysics();   // 비동기 — 파일 없으면 물리만 꺼진 채 계속 �
                                          "센서 리얼리즘 (CCTV 특성)",
                                          "조리실 인원 (다양성)","모델 검증 (Model-in-the-Loop)",
                                          "궤적 예측","회차 기록 (Run Log)"] },
-    { id:"adv",  label:"⚙ 고급",   secs:["전문가 기능","화면 품질","물리 · 안전 (Havok)","에셋 임포트 (선택)"] },
+    { id:"adv",  label:"⚙ 고급",   secs:["전문가 기능","시각화 표시","화면 품질","물리 · 안전 (Havok)","에셋 임포트 (선택)"] },
   ];
   // 섹션 헤더 → [헤더, 다음 헤더 전까지의 형제들] 묶음 수집
   const heads = [...panel.querySelectorAll(":scope > .section")];
