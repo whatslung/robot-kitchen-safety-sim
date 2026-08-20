@@ -45,6 +45,38 @@ WebGPU가 없으면 wasm으로 자동 폴백된다. 브라우저 탭을 앞에 �
 
 ---
 
+## 검출·예측 파이프라인 (백엔드)
+
+정적 서버는 시뮬만 띄운다. **검출·추적·궤적 예측까지 돌리려면 백엔드 서버**를 쓴다
+— 한 서버가 시뮬 정적 파일 + `/detect`·`/traj`·`/predict`를 동일 출처로 서빙한다.
+
+```bash
+uv sync --group serve
+uv run python backend/detect_server.py --port 8001
+# → http://127.0.0.1:8001/sim.html?person=1
+```
+
+가중치는 로컬 `training/`에 있으면 그걸, 없으면 허깅페이스에서 자동으로 받는다 —
+팀원은 파일 전달 없이 위 두 줄만 실행하면 된다. 예측만 볼 땐 `DETECT_MODEL=none`(GT 좌표 사용).
+
+**파이프라인**: 나디르 CCTV → 검출(YOLO) → 추적(ByteTrack) → 사람별 (x,z) 궤적
+→ **학습형 멀티모달 예측(경량 LSTM)** → 선제 안전(감속·회피).
+
+- **궤적 데이터 수집**(예측기 학습용): 📊 데이터 탭 → *궤적 수집 시작*
+  (또는 콘솔 `__sim.trajRun({scenes:40})`) → `dataset/trajectories/*.json`
+  (좌표 시계열 JSON — 이미지 아님). 다양성은 `?layout=legacy`·`?half=`로 열어 각각 수집.
+- **학습·평가**:
+  ```bash
+  uv run python train/train_traj_predictor.py    # 학습 + val ADE/FDE → docs/chanwoo/prediction-eval.md
+  uv run --with pytest python -m pytest tests/   # 예측 코어 테스트
+  ```
+- **브라우저에서 학습형 쓰기**: 예측 소스 드롭다운 → *학습형 — window.\_\_customPredictor*
+  (백엔드 `/predict` 사용). 밀도 구름에 멀티모달 봉우리가 뜨고 로봇이 선제 감속한다.
+
+설계·평가·sim2real 조사 문서 색인: **[docs/chanwoo/](docs/chanwoo/README.md)**.
+
+---
+
 ## 폴더 구성
 
 ```
