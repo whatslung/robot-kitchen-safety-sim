@@ -23,6 +23,10 @@ from trajectory.learned_predictor import (build_net, mtp_loss, frame_of, to_fram
 from eval_traj_baselines import evaluate as eval_baselines   # 베이스라인 표 재사용
 
 EPOCHS, BATCH, HIDDEN, LR, SEED = 140, 512, 64, 1e-3, 0
+# 검출 노이즈 증강(sim-to-real) — 관측에 σ=0.06m(=PRED.sigM) 가우시안을 정규화 전에 주입한
+# 사본을 train에만 추가. 실제 나디르→YOLO→추적 좌표의 흔들림에 강해지게. 스파이크 실측:
+# 깨끗-학습은 0.06 노이즈에서 +36% 악화, 노이즈 증강이 -16% 회복. val은 깨끗 유지(베이스라인 비교).
+NOISE_STD, NOISE_COPIES = 0.06, 2
 WEIGHTS = ROOT / "training" / "traj_predictor" / "model.pt"
 
 
@@ -31,14 +35,23 @@ def _xz(seq):
 
 
 def build_xy(split):
-    """정규화된 관측/미래 텐서 + 원본 윈도우(미터 eval용)."""
+    """정규화된 관측/미래 텐서 + 원본 윈도우(미터 eval용).
+    train은 노이즈 증강 사본을 추가(깨끗 1 + 노이즈 NOISE_COPIES). val은 깨끗만."""
     wins = load_windows(split)
+    aug = (split == "train") and NOISE_STD > 0
+    rng = np.random.default_rng(SEED)
     X, Y = [], []
     for w in wins:
-        hist, gt = _xz(w.scene.agents[0].history), _xz(w.gt)
-        origin, ang = frame_of(hist)
-        X.append(to_frame(hist, origin, ang))
-        Y.append(to_frame(gt, origin, ang))
+        hist = np.asarray(_xz(w.scene.agents[0].history), float)   # (OBS,2) 미터
+        gt = _xz(w.gt)
+        variants = [hist]
+        if aug:
+            for _ in range(NOISE_COPIES):
+                variants.append(hist + rng.normal(0, NOISE_STD, hist.shape))  # 정규화 전 노이즈
+        for h in variants:
+            origin, ang = frame_of(h)
+            X.append(to_frame(h, origin, ang))
+            Y.append(to_frame(gt, origin, ang))    # 미래=참값(관측과 같은 프레임)
     return np.asarray(X, np.float32), np.asarray(Y, np.float32), wins
 
 
