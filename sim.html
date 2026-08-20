@@ -513,15 +513,20 @@
     <button id="inspectorBtn">Inspector</button>
   </div>
 
-  <div class="section">시각화 표시 <span class="note" style="font-weight:400">예측·안전 오버레이</span></div>
+  <div class="section">시각화 표시 <span class="note" style="font-weight:400">예측 오버레이</span></div>
   <label class="row" style="cursor:pointer"><input type="checkbox" id="vizRarr" checked style="accent-color:#76b900">
     <span style="width:auto;color:#c9d1d9">로봇 기동 화살표</span></label>
   <label class="row" style="cursor:pointer"><input type="checkbox" id="vizPmode" checked style="accent-color:#76b900">
     <span style="width:auto;color:#c9d1d9">사람 예측 화살표</span></label>
   <label class="row" style="cursor:pointer"><input type="checkbox" id="vizDens" checked style="accent-color:#76b900">
     <span style="width:auto;color:#c9d1d9">바닥 밀도 음영 (구름)</span></label>
-  <div class="hint">화면 위에 겹쳐 그리는 예측·안전 표시를 끄고 켭니다. 끄면 다음 프레임에 사라지고,
-    로봇 동작·안전 판단 자체에는 영향이 없습니다.</div>
+  <label class="row" style="cursor:pointer"><input type="checkbox" id="vizBand" style="accent-color:#76b900">
+    <span style="width:auto;color:#c9d1d9">σ 밴드 <span class="note" style="font-weight:400">구름과 중복 — 기본 꺼짐</span></span></label>
+  <label class="row" style="cursor:pointer"><input type="checkbox" id="vizGraph" checked style="accent-color:#76b900">
+    <span style="width:auto;color:#c9d1d9">씬 그래프 <span class="note" style="font-weight:400">사람 위 흰 원·점선</span></span></label>
+  <div class="hint">예측 파이프라인이 화면에 겹쳐 그리는 표시를 끄고 켭니다. 끄면 다음 프레임에 사라지고,
+    로봇 동작·안전 판단·학습 데이터에는 영향이 없습니다.<br>
+    예측 경로선·안전 구역 링은 시뮬레이터 기본 요소라 여기서 다루지 않습니다.</div>
 
   <div class="section">화면 품질</div>
   <div class="row"><span>품질</span><select id="qualitySel">
@@ -5101,7 +5106,7 @@ function kfStep(f, z, dt, sa2, sm2) {
   f.P10 = P10 - K1*P00; f.P11 = P11 - K1*P01;
 }
 const PRED = { horizon:1.6, steps:12, vel:new V3(0,0,0), lastPos:null, lastT:0,
-               tStop:Infinity, tSlow:Infinity, line:null, band:null, showBand:true, level:0,
+               tStop:Infinity, tSlow:Infinity, line:null, band:null, showBand:false, level:0,
                /* ── 논문 그림용 확률밀도 표시 (안전 판정과 분리) ─────────────────
                   vizHorizon: **그림 전용** 지평선. 안전 판정은 위의 horizon(1.6s)을 그대로 쓴다 —
                     행동을 바꾸지 않으면서 그림만 길게 뽑기 위해 일부러 나눴다.
@@ -9538,6 +9543,14 @@ $("vizPmode").addEventListener("change", e => {
 $("vizDens").addEventListener("change", e => {
   DENS.on = e.target.checked;
   setStatus("바닥 밀도 음영 " + (DENS.on ? "표시" : "숨김"));
+});
+$("vizBand").addEventListener("change", e => {
+  PRED.showBand = e.target.checked;
+  setStatus("σ 밴드 " + (PRED.showBand ? "표시" : "숨김"));
+});
+$("vizGraph").addEventListener("change", e => {
+  GRAPH.on = e.target.checked;
+  setStatus("씬 그래프 " + (GRAPH.on ? "표시" : "숨김"));
 });
 
 $("runCsvBtn").addEventListener("click", () => {
