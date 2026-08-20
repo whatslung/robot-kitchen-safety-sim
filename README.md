@@ -9,6 +9,12 @@
 
 ## 실행
 
+목적에 따라 두 가지로 띄운다.
+
+### 방법 A — 시뮬만 (정적, 빌드 불필요)
+
+3D 시뮬레이터만 본다. 검출·예측은 안 돈다.
+
 ```bash
 python -m http.server 5173
 ```
@@ -17,6 +23,24 @@ python -m http.server 5173
 
 더블클릭 실행이 필요하면 `launch/` 안의 스크립트를 쓴다 (macOS: `실행하기_Mac.command`,
 Windows: `실행하기_Windows.bat`). 빈 포트를 찾아 서버를 띄우고 Chrome/Edge로 열어준다.
+
+### 방법 B — 검출·예측까지 (백엔드 서버)
+
+검출(YOLO)·추적·궤적 예측을 함께 돌린다. **한 서버가 시뮬 정적 파일 +
+`/detect`·`/traj`·`/predict`를 동일 출처로 서빙**한다(별도 http 서버 불필요).
+
+```bash
+uv sync --group serve
+uv run python backend/detect_server.py --port 8001
+```
+
+→ <http://127.0.0.1:8001/sim.html?person=1>
+
+가중치는 로컬 `training/`에 있으면 그걸, 없으면 허깅페이스
+[`chanubc/robot-kitchen-nadir-yolo11s`](https://huggingface.co/chanubc/robot-kitchen-nadir-yolo11s)(공개)에서
+자동으로 받는다 — 팀원은 파일 전달 없이 위 두 줄만 실행하면 된다. 저장소는 env
+`DETECT_MODEL_REPO`로 교체, 예측만 볼 땐 `DETECT_MODEL=none`(GT 좌표 사용).
+파이프라인·수집·학습·평가 상세는 아래 [검출·예측 파이프라인](#검출예측-파이프라인-백엔드) 참조.
 
 그냥 열면 **확정 배치(섬 배치)**가 뜬다 — 방 11.5×11.5 m · 천장 3.9 m ·
 구역담당 CCTV 15대 · 안전링 3단계 · 로봇 팔 1.70 m. 화면 우측 정보줄에서 `방 11.5m`로 확인된다.
@@ -42,6 +66,29 @@ sim.html?layout=legacy
 **브라우저**: Chrome 또는 Edge 113+ 권장 (WebGPU). Safari는 그림자·MSAA에서 느리고,
 WebGPU가 없으면 wasm으로 자동 폴백된다. 브라우저 탭을 앞에 두어야 한다 —
 백그라운드로 내리면 렌더 루프가 멈춰 불·연기가 자라지 않고 캡처도 느려진다.
+
+---
+
+## 검출·예측 파이프라인 (백엔드)
+
+백엔드 서버를 띄우는 법은 위 [실행 · 방법 B](#방법-b--검출예측까지-백엔드-서버). 이 절은 그 위에서
+데이터를 만들고 모델을 학습·검증하는 흐름이다.
+
+**파이프라인**: 나디르 CCTV → 검출(YOLO) → 추적(ByteTrack) → 사람별 (x,z) 궤적
+→ **학습형 멀티모달 예측(경량 LSTM)** → 선제 안전(감속·회피).
+
+- **궤적 데이터 수집**(예측기 학습용): 📊 데이터 탭 → *궤적 수집 시작*
+  (또는 콘솔 `__sim.trajRun({scenes:40})`) → `dataset/trajectories/*.json`
+  (좌표 시계열 JSON — 이미지 아님). 다양성은 `?layout=legacy`·`?half=`로 열어 각각 수집.
+- **학습·평가**:
+  ```bash
+  uv run python train/train_traj_predictor.py    # 학습 + val ADE/FDE → docs/chanwoo/prediction-eval.md
+  uv run --with pytest python -m pytest tests/   # 예측 코어 테스트
+  ```
+- **브라우저에서 학습형 쓰기**: 예측 소스 드롭다운 → *학습형 — window.\_\_customPredictor*
+  (백엔드 `/predict` 사용). 밀도 구름에 멀티모달 봉우리가 뜨고 로봇이 선제 감속한다.
+
+설계·평가·sim2real 조사 문서 색인: **[docs/chanwoo/](docs/chanwoo/README.md)**.
 
 ---
 
