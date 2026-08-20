@@ -5100,6 +5100,10 @@ const PRED = { horizon:1.6, steps:12, vel:new V3(0,0,0), lastPos:null, lastT:0,
                vizHorizon:3.5, vizSteps:20, minSigma:0.24,
                /* 경로 좌표계 1σ 성장률(m/s) — along(진행)은 속도 불확실성, across(수직)는 좁게 */
                alongK:0.32, acrossK:0.08, mix:[], lineW:0.09,
+               /* 학습형 멀티모달 안전 운영점 — 정지/감속 판정에 쓴다(스파이크 spike_oppoint.py로 튜닝).
+                  진입 모드 확률질량 ≥ safeTau 면 위험, 거리에서 safeKsig·σ 빼 보수적으로 본다.
+                  실측: 단일 최빈 recall 0.43 → 이 운영점 0.93(σ팽창 k1·τ0.1). safety 우선이라 recall 높게. */
+               safeKsig:1.0, safeTau:0.1,
                /* 다봉(멀티모달) 예측 — 사람은 스테이션 사이를 오간다(SCENARIO/ROUTE). 그래서
                   "어느 스테이션으로 가는가"가 곧 Trajectron++이 말하는 high-level behavior mode다.
                   칼만 단일모드는 등방 구름 하나뿐이라 예측의 성과가 그림에 안 나타난다.
@@ -5624,6 +5628,26 @@ function predictionUpdate(srcPos, now) {
     if (d < SAFE.slowR && PRED.tSlow === Infinity) PRED.tSlow = t;
   }
   PRED.pathPts = flat;
+  /* 학습형 멀티모달이면 정지/감속 판정을 **운영점**(진입 모드 확률질량 ≥ τ, σ팽창)으로 재계산.
+     단일 최빈 경로보다 접근 recall이 크게 높다(스파이크: 0.43→0.93). 시각화 선(pathPts)은 최빈 유지.
+     안전 지평선(PRED.horizon=1.6s) 안만 본다. tStop/tSlow = 조건 충족 모드들의 최이른 진입시각. */
+  if (useCustom && CPRED.modes && CPRED.modes.length) {
+    const K1 = PRED.safeKsig, tau = PRED.safeTau;
+    const entry = radiusAU => {
+      let mass = 0, tmin = Infinity;
+      for (const m of CPRED.modes) {
+        for (let i = 0; i < m.path.length; i++) {
+          const p = m.path[i];
+          if (p.t > PRED.horizon) break;                       // 안전 지평선 안만
+          const dAU = Math.hypot(p.x - bx, p.z - bz) - K1 * ((m.sigma && m.sigma[i]) || 0);
+          if (dAU < radiusAU) { mass += m.w; tmin = Math.min(tmin, p.t); break; }
+        }
+      }
+      return mass >= tau ? tmin : Infinity;
+    };
+    PRED.tStop = entry(SCALE.au(SAFE.stopR));
+    PRED.tSlow = entry(SCALE.au(SAFE.slowR));
+  }
   /* 표시 게이트에 히스테리시스 — 켜짐 0.08㎧↑, 꺼짐 0.04㎧↓. 검출/칼만 속도 추정은 프레임
      간격에 따라 출렁여서 단일 임계값이면 음영·선이 깜빡인다(실측 0.06~0.33㎧ 진동). */
   const mSpeed = SCALE.m(speed);
