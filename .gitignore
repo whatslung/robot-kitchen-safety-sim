@@ -25,12 +25,23 @@ assets/cook_cc_*.glb
 
 # 시뮬레이터가 생성한 데이터셋 / 실행 기록
 dataset/
+sim-person/
 runs/
 captures/
 *.zip
+
+# YOLO 학습 산출물 (용량 큼 — 가중치·플롯·로그)
+training/
+yolo*.pt
+*.log
 
 # 파이썬
 __pycache__/
 *.pyc
 .venv/
 venv/
+
+# 시크릿 — 절대 커밋 금지 (.env.example만 커밋)
+.env
+.env.local
+.env.*.local

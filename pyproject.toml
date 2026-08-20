@@ -1,0 +1,34 @@
+[project]
+name = "robot-kitchen-safety-sim-tools"
+version = "0.1.0"
+description = "시뮬 합성 데이터로 YOLO11 파인튜닝 + 검출 서버(detect_server) 도구"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    # 학습·평가·ONNX export
+    "ultralytics>=8.3.0",
+    "torch>=2.7.0",        # RTX 5070(Blackwell, sm_120)는 torch 2.7+/cu128부터 지원
+    "torchvision>=0.22.0",
+    "onnx>=1.16.0",
+    "onnxslim>=0.1.34",    # ultralytics export(simplify=True)가 사용
+]
+
+# detect_server.py(FastAPI + ByteTrack) 실행용 — 학습과 분리해 학습 설치를 가볍게 유지.
+#   설치: uv sync --group serve
+[dependency-groups]
+serve = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
+    "supervision>=0.24.0",
+    "trackers>=0.1.0",     # roboflow ByteTrack (Apache-2.0)
+]
+
+# RTX 5070(Blackwell)용 CUDA 12.8 휠. 일반 PyPI torch는 sm_120 커널이 없어
+# "no kernel image available" 오류가 난다 — 반드시 cu128 인덱스에서 받는다.
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
