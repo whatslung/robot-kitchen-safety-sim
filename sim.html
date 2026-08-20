@@ -513,19 +513,21 @@
     <button id="inspectorBtn">Inspector</button>
   </div>
 
-  <div class="section">시각화 표시 <span class="note" style="font-weight:400">예측 오버레이</span></div>
-  <label class="row" style="cursor:pointer"><input type="checkbox" id="vizRarr" checked style="accent-color:#76b900">
+  <div class="section">시각화 표시 <span class="note" style="font-weight:400">기본 꺼짐 — 필요할 때 켜기</span></div>
+  <label class="row" style="cursor:pointer"><input type="checkbox" id="vizRarr" style="accent-color:#76b900">
     <span style="width:auto;color:#c9d1d9">로봇 기동 화살표</span></label>
-  <label class="row" style="cursor:pointer"><input type="checkbox" id="vizPmode" checked style="accent-color:#76b900">
+  <label class="row" style="cursor:pointer"><input type="checkbox" id="vizPmode" style="accent-color:#76b900">
     <span style="width:auto;color:#c9d1d9">사람 예측 화살표</span></label>
-  <label class="row" style="cursor:pointer"><input type="checkbox" id="vizDens" checked style="accent-color:#76b900">
+  <label class="row" style="cursor:pointer"><input type="checkbox" id="vizDens" style="accent-color:#76b900">
     <span style="width:auto;color:#c9d1d9">바닥 밀도 음영 (구름)</span></label>
-  <label class="row" style="cursor:pointer"><input type="checkbox" id="vizGraph" checked style="accent-color:#76b900">
+  <label class="row" style="cursor:pointer"><input type="checkbox" id="vizGraph" style="accent-color:#76b900">
     <span style="width:auto;color:#c9d1d9">씬 그래프 <span class="note" style="font-weight:400">사람 위 흰 원·점선</span></span></label>
-  <label class="row" style="cursor:pointer"><input type="checkbox" id="vizLine" checked style="accent-color:#76b900">
+  <label class="row" style="cursor:pointer"><input type="checkbox" id="vizLine" style="accent-color:#76b900">
     <span style="width:auto;color:#c9d1d9">예측 경로선 <span class="note" style="font-weight:400">위협도별 색 (빨강=정지)</span></span></label>
-  <div class="hint">예측 파이프라인이 화면에 겹쳐 그리는 표시를 끄고 켭니다. 끄면 다음 프레임에 사라지고,
-    로봇 동작·안전 판단·학습 데이터에는 영향이 없습니다.<br>
+  <label class="row" style="cursor:pointer"><input type="checkbox" id="vizRadar" style="accent-color:#76b900">
+    <span style="width:auto;color:#c9d1d9">레이더 패널 <span class="note" style="font-weight:400">좌측 하단 조감 미니맵</span></span></label>
+  <div class="hint">예측 파이프라인이 화면에 겹쳐 그리는 표시를 끄고 켭니다. <b>작업자 화면을 깨끗이 하려고 기본은 전부 꺼짐</b>입니다.
+    켜고 끄는 것은 로봇 동작·안전 판단·학습 데이터에 영향이 없습니다.<br>
     로봇 주변 안전 구역 링(동심원)은 시뮬레이터 기본 요소라 여기서 다루지 않습니다.</div>
 
   <div class="section">화면 품질</div>
@@ -5106,7 +5108,7 @@ function kfStep(f, z, dt, sa2, sm2) {
   f.P10 = P10 - K1*P00; f.P11 = P11 - K1*P01;
 }
 const PRED = { horizon:1.6, steps:12, vel:new V3(0,0,0), lastPos:null, lastT:0,
-               tStop:Infinity, tSlow:Infinity, line:null, showLine:true, level:0,
+               tStop:Infinity, tSlow:Infinity, line:null, showLine:false, level:0,
                /* ── 논문 그림용 확률밀도 표시 (안전 판정과 분리) ─────────────────
                   vizHorizon: **그림 전용** 지평선. 안전 판정은 위의 horizon(1.6s)을 그대로 쓴다 —
                     행동을 바꾸지 않으면서 그림만 길게 뽑기 위해 일부러 나눴다.
@@ -5263,7 +5265,7 @@ function vizSuppressEnd() {
             Fig.1에서 **검은 점선**. 영향은 이진이고 거리 가중은 없다(논문 §3).
    여기서 지각 반경은 우리 셀 규모로 잡는다 — 사람 2.8m, 로봇은 감속링(SAFE.slowR).
    방향성은 선 하나로 합쳐 그린다(그림도 무향처럼 보인다).                          */
-const GRAPH = { on:true, y:0.115, nodeR:0.34, nodeSeg:22, nodeW:0.028, edgeW:0.022,
+const GRAPH = { on:false, y:0.115, nodeR:0.34, nodeSeg:22, nodeW:0.028, edgeW:0.022,
                 dash:0.17, gap:0.13, pedR:2.8, mesh:{} };
 function graphDraw(key, pointsArr, hex, width) {
   const col = C3.FromHexString(hex);
@@ -5320,7 +5322,7 @@ function graphUpdate() {
 /* 모드별 화살표 — Fig.1에서 보행자는 **색이 다른 화살표 다발**로 미래 행동 모드를 보여준다.
    음영(띠)만 있으면 "어디쯤"은 보이지만 "몇 가지 선택지가 있나"가 안 읽힌다. 둘을 같이 그린다.
    설비에 가리지 않게 오버레이(renderingGroupId 1)로 얹는다 — 주석이니까. */
-const PMODE = { on:true, y:0.09, w:0.055, headFrac:0.26, minLen:1.2, mesh:{} };
+const PMODE = { on:false, y:0.09, w:0.055, headFrac:0.26, minLen:1.2, mesh:{} };
 function pmodeDraw(key, pts, hex, width) {
   const col = C3.FromHexString(hex);
   let m = PMODE.mesh[key];
@@ -5475,7 +5477,7 @@ let vizSuppressed = false;
    pow(gamma)로 감쇠시키면 중심만 진하고 사방으로 흐려져 '물 빠진 얼룩'이 된다.
    논문 그림의 띠는 **내부가 고르게 진하고 경계가 뚜렷**하다 — 그건 지수감쇠가 아니라
    문턱(edge0)에서 올라와 edge1에서 포화되는 곡선이다. */
-const DENS = { on:true, res:128, hz:10, acc:0, alpha:0.58, edge0:0.26, edge1:0.62,
+const DENS = { on:false, res:128, hz:10, acc:0, alpha:0.58, edge0:0.26, edge1:0.62,
                plane:null, tex:null, img:null,
                cx:1.375, cz:1.85, size:11 };  // 평면 중심·한 변(AU) — CAM11 프레임(8.9×6.675)+여유.
                                               // 16m는 1텍셀 12.5cm(≈13px)로 계단이 보였다 → 11m로 좁혀 8.6cm
@@ -7985,7 +7987,7 @@ function drawOverlay() {
    s는 해상도 배율 — 1280px 캡처에서도 글씨가 읽히게 한다. */
 /* 조감(bird's-eye) 예측 패널 — 위에서 내려다본 미니맵. 로봇 중심, 정지/감속 원,
    추적 사람 점, 위협 트랙의 예측 경로 + σ 음영. 월드(x,z)[AU]→패널px 선형 매핑. */
-const BE = { on:true, size:220, viewR:3.5 };   // viewR = 패널 반폭이 담는 반경(m)
+const BE = { on:false, size:220, viewR:3.5 };   // viewR = 패널 반폭이 담는 반경(m)
 const BE_IDCOL = ["#2ecc71","#3498db","#e67e22","#9b59b6","#1abc9c","#f39c12"];
 function beMap(wx, wz, cx, cy, half) {          // 월드 AU → 패널 px
   const dxm = SCALE.m(wx - LAYOUT.robot.base.x), dzm = SCALE.m(wz - LAYOUT.robot.base.z);
@@ -8279,7 +8281,7 @@ function avoidDecide(dtMs) {
    화살표 원점은 베이스가 아니라 **TCP(팔 끝)의 바닥 투영**이다. 실제로 움직이는 게 팔 끝이고,
    사람 예측 음영과 겹치는지도 팔 끝 궤적이 결정한다. 길이는 TCP 속도에 비례(정지 시 최소값).
    선택된 기동만 굵고 진하게, 나머지는 얇고 흐리게 — "지금 무엇을 골랐나"가 한눈에 보이게. */
-const RARR = { on:true, y:0.10, w:0.05, wSel:0.15, minLen:0.7, maxLen:2.1, headFrac:0.3,
+const RARR = { on:false, y:0.10, w:0.05, wSel:0.15, minLen:0.7, maxLen:2.1, headFrac:0.3,
                dir:new V3(0,0,1), prev:null, mesh:{},
                /* eff(실제 거동)별 색 — hold(선제 보류)와 stop(반응형 정지)을 일부러 다른 색으로 둔다.
                   둘 다 "지금 안 움직인다"지만, 예측으로 미리 멈춘 것과 사람이 반경에 들어와
@@ -9528,6 +9530,10 @@ $("vizGraph").addEventListener("change", e => {
 $("vizLine").addEventListener("change", e => {
   PRED.showLine = e.target.checked;
   setStatus("예측 경로선 " + (PRED.showLine ? "표시" : "숨김"));
+});
+$("vizRadar").addEventListener("change", e => {
+  BE.on = e.target.checked;
+  setStatus("레이더 패널 " + (BE.on ? "표시" : "숨김"));
 });
 
 $("runCsvBtn").addEventListener("click", () => {
