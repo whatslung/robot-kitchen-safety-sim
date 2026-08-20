@@ -522,9 +522,11 @@
     <span style="width:auto;color:#c9d1d9">바닥 밀도 음영 (구름)</span></label>
   <label class="row" style="cursor:pointer"><input type="checkbox" id="vizGraph" checked style="accent-color:#76b900">
     <span style="width:auto;color:#c9d1d9">씬 그래프 <span class="note" style="font-weight:400">사람 위 흰 원·점선</span></span></label>
+  <label class="row" style="cursor:pointer"><input type="checkbox" id="vizLine" checked style="accent-color:#76b900">
+    <span style="width:auto;color:#c9d1d9">예측 경로선 <span class="note" style="font-weight:400">위협도별 색 (빨강=정지)</span></span></label>
   <div class="hint">예측 파이프라인이 화면에 겹쳐 그리는 표시를 끄고 켭니다. 끄면 다음 프레임에 사라지고,
     로봇 동작·안전 판단·학습 데이터에는 영향이 없습니다.<br>
-    예측 경로선·안전 구역 링은 시뮬레이터 기본 요소라 여기서 다루지 않습니다.</div>
+    로봇 주변 안전 구역 링(동심원)은 시뮬레이터 기본 요소라 여기서 다루지 않습니다.</div>
 
   <div class="section">화면 품질</div>
   <div class="row"><span>품질</span><select id="qualitySel">
@@ -5104,7 +5106,7 @@ function kfStep(f, z, dt, sa2, sm2) {
   f.P10 = P10 - K1*P00; f.P11 = P11 - K1*P01;
 }
 const PRED = { horizon:1.6, steps:12, vel:new V3(0,0,0), lastPos:null, lastT:0,
-               tStop:Infinity, tSlow:Infinity, line:null, level:0,
+               tStop:Infinity, tSlow:Infinity, line:null, showLine:true, level:0,
                /* ── 논문 그림용 확률밀도 표시 (안전 판정과 분리) ─────────────────
                   vizHorizon: **그림 전용** 지평선. 안전 판정은 위의 horizon(1.6s)을 그대로 쓴다 —
                     행동을 바꾸지 않으면서 그림만 길게 뽑기 위해 일부러 나눴다.
@@ -5741,7 +5743,7 @@ function predictionUpdate(srcPos, now) {
     PRED.line.setPoints(pts);
   }
   if (PRED.line.greasedLineMaterial) PRED.line.greasedLineMaterial.color = predCol;
-  PRED.line.setEnabled(PRED.moving && !vizSuppressed);   // 이동 중일 때만(히스테리시스 적용)
+  PRED.line.setEnabled(PRED.moving && PRED.showLine && !vizSuppressed);   // 이동 중일 때만(히스테리시스 적용)
   // (예측 불확실성 표시는 바닥 밀도 음영 DENS 하나로 통일 — 예전 3D σ 밴드는 중복이라 제거)
 }
 
@@ -9522,6 +9524,10 @@ $("vizDens").addEventListener("change", e => {
 $("vizGraph").addEventListener("change", e => {
   GRAPH.on = e.target.checked;
   setStatus("씬 그래프 " + (GRAPH.on ? "표시" : "숨김"));
+});
+$("vizLine").addEventListener("change", e => {
+  PRED.showLine = e.target.checked;
+  setStatus("예측 경로선 " + (PRED.showLine ? "표시" : "숨김"));
 });
 
 $("runCsvBtn").addEventListener("click", () => {
