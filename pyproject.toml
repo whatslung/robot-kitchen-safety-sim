@@ -20,6 +20,7 @@ serve = [
     "uvicorn>=0.30.0",
     "supervision>=0.24.0",
     "trackers>=0.1.0",     # roboflow ByteTrack (Apache-2.0)
+    "huggingface-hub>=0.25.0",  # 가중치가 로컬에 없으면 허브에서 받아온다
 ]
 
 # RTX 5070(Blackwell)용 CUDA 12.8 휠. 일반 PyPI torch는 sm_120 커널이 없어

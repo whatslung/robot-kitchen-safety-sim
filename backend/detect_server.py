@@ -13,6 +13,8 @@ detect_server.py — 시뮬레이터 '모델 검증(http 모드)'용 어댑터 �
     uv run python backend/detect_server.py --port 8001
     # → 시뮬:  http://127.0.0.1:8001/sim.html?person=1
     # → 검출:  http://127.0.0.1:8001/detect   (시뮬과 동일 출처라 CORS 불필요)
+    # 가중치는 로컬 training/ 에 있으면 그걸 쓰고, 없으면 허깅페이스에서 자동으로 받는다
+    #   → 팀원은 별도 파일 전달 없이 위 두 줄만 실행하면 된다 (chanubc/robot-kitchen-nadir-yolo11s)
     # 모델 교체:  DETECT_MODEL=training/real_sim/weights/best.pt uv run python backend/detect_server.py --port 8001
 
 시뮬 쪽 계약 (하위호환 — 기존 필드는 그대로, id·vx·vy 만 추가):
@@ -49,13 +51,31 @@ TRACKER_CLS = None
 sv = None
 MODE = "dummy"
 
-# 모델 경로: env DETECT_MODEL 로 교체 가능. 기본 = 시뮬 파인튜닝(orthotop) best.pt.
+# 모델 경로: env DETECT_MODEL 로 교체 가능. 기본 = 섬 배치 파인튜닝 best.pt.
 #   real+sim 모델로 스왑:  DETECT_MODEL=training/real_sim/weights/best.pt
+# 학습 산출물(training/)은 용량이 커서 git에 없다. 로컬에 없으면 허깅페이스에서 받아온다
+# → 팀원은 아무것도 내려받지 않고 서버만 켜면 된다.
 _ROOT = Path(__file__).resolve().parent.parent
 _MODEL_PATH = os.environ.get(
-    "DETECT_MODEL", str(_ROOT / "training" / "yolo11s_orthotop" / "weights" / "best.pt"))
+    "DETECT_MODEL", str(_ROOT / "training" / "island_yolo11s" / "weights" / "best.pt"))
+_HUB_REPO = os.environ.get("DETECT_MODEL_REPO", "chanubc/robot-kitchen-nadir-yolo11s")
+_HUB_FILE = os.environ.get("DETECT_MODEL_FILE", "best.pt")
+
+
+def _resolve_model_path(path: str) -> str:
+    """로컬 가중치가 있으면 그대로, 없으면 허깅페이스 허브에서 받아 캐시 경로를 준다."""
+    if Path(path).exists():
+        return path
+    print(f"[detect_server] 로컬 가중치 없음 ({path}) → 허브에서 받는다: {_HUB_REPO}/{_HUB_FILE}")
+    from huggingface_hub import hf_hub_download   # pip install huggingface_hub
+    got = hf_hub_download(repo_id=_HUB_REPO, filename=_HUB_FILE)
+    print(f"[detect_server] 허브 캐시: {got}")
+    return got
+
+
 try:
     from ultralytics import YOLO          # pip install ultralytics
+    _MODEL_PATH = _resolve_model_path(_MODEL_PATH)
     MODEL = YOLO(_MODEL_PATH)
     MODE = "yolo"
     print(f"[detect_server] 모델 로드: {_MODEL_PATH} · 클래스 {list(MODEL.names.values())}")
