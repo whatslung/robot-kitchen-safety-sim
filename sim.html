@@ -10980,9 +10980,25 @@ const TRAJ = {
                                        // 정상 최대 = 최대속도(~0.9)×0.4s≈0.36m라 급정지/급가속은 안 걸린다.
   url: (location.origin || "") + "/traj",
   seedBase: null,                      // 하네스 활성 시 scene 시드(평소 null → extraSeed가 SEED0 사용)
-  running: false, layout: "island",
-  jobSets: [["cook","carry"], ["cook","lead"], ["prep","wash"], ["cook","carry","wash"]],
+  running: false,
+  /* 인원 조합 — 데이터 다양성용으로 2~4인 섞음(이웃·사람-스텝 증가). scene마다 순환. */
+  jobSets: [["cook","carry"], ["cook","lead","wash"], ["prep","wash"],
+            ["cook","carry","wash","lead"], ["prep","cook","carry"]],
 };
+/* 현재 씬의 레이아웃·기하 서명 — scene JSON 자기기술 + scene_id 충돌 방지용.
+   레이아웃은 로드 시 URL로 결정(ISLAND·ISLAND_HALF 상수)되므로 여기서 실제 값을 읽는다. */
+function trajGeom() {
+  const island = !(typeof ISLAND !== "undefined" && !ISLAND);
+  const lay = island ? "island" : "legacy";
+  // half는 island 방 크기 파라미터라 island에서만 의미. legacy는 실제 room 범위로만 기술.
+  const half = (island && typeof ISLAND_HALF !== "undefined" && isFinite(ISLAND_HALF)) ? +ISLAND_HALF.toFixed(2) : null;
+  const R = LAYOUT.room, b = LAYOUT.robot.base;
+  return { layout: lay, half,
+           tag: lay + (half != null ? "_h" + Math.round(half * 10) : ""),   // 예 island_h58 · legacy
+           room: { x0:+R.x0.toFixed(2), x1:+R.x1.toFixed(2), z0:+R.z0.toFixed(2), z1:+R.z1.toFixed(2) },
+           robot: { x:+b.x.toFixed(3), z:+b.z.toFixed(3) },
+           mPerAU: +SCALE.mPerAU.toFixed(4) };
+}
 /* 지금 기록할 노드 = 추가 인원. 주인공(person)은 WASD·카메라 종속이라 제외. */
 function trajNodes() {
   return EXTRAS.map((P, i) => ({ P, id:"extra_" + i, job:P.job || null, role:P.role || null, frames:[] }));
@@ -11032,10 +11048,12 @@ async function trajRunScene(sceneSeed, seconds, jobs, idx) {
         prev[n].x = p.x; prev[n].z = p.z;
       }
     }
+    const g = trajGeom();
     const scene = {
-      scene_id: TRAJ.layout + "_seed" + (sceneSeed >>> 0) + "_" + String(idx).padStart(4, "0"),
-      schema:1, seed:sceneSeed >>> 0, layout:TRAJ.layout, wf:true,
-      hz:+(1 / snapDt).toFixed(4), dt:+snapDt.toFixed(4), steps,
+      scene_id: g.tag + "_seed" + (sceneSeed >>> 0) + "_" + String(idx).padStart(4, "0"),
+      schema:1, seed:sceneSeed >>> 0,
+      layout:g.layout, half:g.half, room:g.room, robot:g.robot, mPerAU:g.mPerAU,   // 자기기술 기하(다양성 데이터)
+      wf:true, hz:+(1 / snapDt).toFixed(4), dt:+snapDt.toFixed(4), steps,
       discarded: nodes.some(nd => nd.discarded),   // 하나라도 오염되면 scene 표시(노드별 플래그로 정밀 필터 가능)
       nodes: nodes.map(nd => ({ id:nd.id, job:nd.job, role:nd.role, discarded:!!nd.discarded, frames:nd.frames })),
     };
