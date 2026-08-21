@@ -1,6 +1,6 @@
 """[SPIKE — 버리는 실험] 안전 운영점 튜닝. 이슈 #2 — recall/precision 곡선.
 
-spike_safety의 "전모드 합집합"은 너무 보수적(recall 0.76 · precision 0.44). 여기선
+정식 안전 eval(eval_traj_safety.py)의 "전모드 합집합"은 너무 보수적(recall 0.76 · precision 0.44). 여기선
 **진입하는 모드의 확률질량 합 >= τ** 로 경보를 내고 τ를 훑어 recall/precision 곡선을 그린다.
 τ→0 이면 "아무 모드나 진입"(recall↑·precision↓), τ↑ 이면 "확신할 때만"(precision↑·recall↓).
 선제 안전층이라 recall 우선 — recall을 최대한 지키며 헛정지(1-precision)를 줄이는 지점을 찾는다.

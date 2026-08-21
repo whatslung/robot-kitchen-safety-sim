@@ -51,3 +51,17 @@ def recall_precision(tp: int, fp: int, fn: int):
     rec = tp / (tp + fn) if (tp + fn) else float("nan")
     pre = tp / (tp + fp) if (tp + fp) else float("nan")
     return rec, pre
+
+
+def entry_confusion(cur_dist: float, gt_entry: bool, pred_entry: bool, radius: float):
+    """정지반경 진입 예측의 혼동행렬 셀. 현재 반경 **밖**(cur>=radius)인 사람만 대상.
+    반환: None(대상 아님, 이미 반경 안) | 'TP' | 'FP' | 'FN' | 'TN'."""
+    if cur_dist < radius:
+        return None                 # 이미 반경 안 → 반응형 몫, 진입 예측 대상 아님
+    if pred_entry and gt_entry:
+        return "TP"
+    if pred_entry:
+        return "FP"
+    if gt_entry:
+        return "FN"
+    return "TN"
