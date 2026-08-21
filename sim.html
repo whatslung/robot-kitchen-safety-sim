@@ -3168,6 +3168,52 @@ function smokeConfineTick() {
   }
 }
 
+/* ══ 화재를 특정 진행 시점으로 즉시 맞춘다 (데이터셋 생성용) ═══════════════
+   왜 필요한가 — generateDataset은 `randomizeScene(); 4프레임 렌더; 촬영`이다.
+   연기는 정상 상태까지 수 초가 걸리므로 4프레임으로는 자라지 못한다. 게다가
+   setFire(true)는 이미 화재 중이면 fireFogStart()에서 조기 return 하여 진행 시계가
+   리셋되지 않는다 → **화재 표본의 모습이 "직전 샘플이 무엇이었냐"에 끌려다닌다.**
+
+   실측(2026-08-21, 같은 '화재 샘플'인데):
+     직전에 화재 없었음 → 경과 4.9s · 연기 25개 · 연무 0.003 · 방이 말끔
+     직전에도 화재였음  → 경과 603s · 연기 3548개 · 연무 0.22 · 자욱
+   그리고 화재 아닌 샘플이 하나만 끼면 시계가 0으로 돌아가, **연기가 옅게 낀 중간 구간**이
+   거의 안 나온다. 이 프로젝트가 증명하려는 게 정확히 그 구간인데도.
+
+   그래서 진행 시점을 **샘플마다 명시적으로 뽑아** 여기서 그 상태를 만들어 준다.
+   상세: analysis/fire_dataset_capture_gap.md */
+function fireSeekTo(sec) {
+  if (!state.fire) return;
+  const t = Math.max(0, sec) * 1000;
+  /* 입자를 먼저 비운다. 직전 샘플이 최성기였다면 3500개가 남아 있어, 초기 발화를
+     만들려 해도 그 덩어리가 그대로 찍힌다. reset()은 내부 재고 풀을 지키는 정식 API다
+     (particles.length=0 으로 비우면 풀이 깨져 배출이 멈춘다 — 실측). */
+  fsmoke.reset(); firePS.reset();
+  FIRE_FOG.t = t;
+  /* 입자를 목표 개수까지 채운다 — updateSpeed를 올려 시간을 빨리 감는다.
+     고정 프레임 수로 돌렸더니 초기 단계(10초)에서도 상한 4000까지 차 버려서,
+     단계가 달라도 연기 양이 똑같아졌다. 목표치를 정하고 **닿으면 멈춘다.**
+     목표 = emitRate × 5 — 최대 배출 700에서 정상 상태가 3500이었던 실측 비례. */
+  fireFogTick(0);                                    // 이 시점의 배출량부터 확정
+  const target = Math.min(fsmoke.getCapacity() * 0.9, fsmoke.emitRate * 5);
+  const sv = [firePS, fsmoke, steam, bubbles].map(P => ({ P, s: P.updateSpeed }));
+  sv.forEach(x => { x.P.updateSpeed = x.s * 10; });
+  let guard = 0;
+  while (fsmoke.particles.length < target && guard++ < 90) scene.render();
+  sv.forEach(x => { x.P.updateSpeed = x.s; });
+  FIRE_FOG.t = t;                 // 빨리감기 동안 틱이 밀어 놓은 값을 목표로 되돌린다
+  fireFogTick(0);                 // 연무 농도·배출량을 그 시점 값으로 확정
+}
+/* 데이터셋 표본용 무작위 진행 시점(초). 0 = 막 붙은 불, full = 완전히 자욱.
+   **앞구간을 촘촘히** 본다 — 지수 1.5로 0쪽에 몰리게 한다.
+   (처음에 Math.sqrt를 썼는데 그건 반대로 뒤쪽에 몰린다: √0.5=0.71. 실측에서 6표본 중
+    화재 3개가 전부 55~79초로 나와 초기 구간이 비었다.)
+   왜 앞을 촘촘히 — 연기가 옅게 낀 구간이 **검출이 가능하면서도 어려운** 지점이라 표본이
+   더 필요하다. 완전히 자욱한 프레임은 사실 사람도 못 보고, 배우기도 쉽다. */
+function fireRandomStage() {
+  return Math.pow(Math.random(), 1.5) * (FIRE_FOG.full / 1000);
+}
+
 function setFire(on) {
   state.fire = on;
   firePS.emitRate = on ? 420 : 0;
@@ -7084,7 +7130,13 @@ function randomizeScene() {
      1/3도 안 돼 클래스 불균형이 커진다(실측: 2샘플에서 fire 3박스 vs equipment 296박스).
      화재 감지가 이 프로젝트 목적의 절반이므로 절반은 화재 장면이어야 한다.
      sim.html?fire=0.7 처럼 회차별로 조절할 수 있게 열어 둔다. */
-  setFire(Math.random() < FIRE_P);
+  const wantFire = Math.random() < FIRE_P;
+  setFire(wantFire);
+  /* 화재 표본은 **진행 단계를 여기서 뽑는다.** 안 하면 직전 샘플 상태가 그대로 이어져
+     초기 발화(연기 25개)와 최성기(연기 3548개) 두 극단만 나오고, 정작 필요한
+     "연기가 옅게 낀" 중간 구간이 비어 버린다. fireSeekTo가 그 상태를 즉시 만든다. */
+  if (wantFire) fireSeekTo(fireRandomStage());
+  else { fsmoke.reset(); firePS.reset(); }   // 꺼진 표본에 직전 연기가 남지 않게
   // 센서 특성 랜덤화 — 카메라 개체차·설치환경 차이를 데이터에 반영
   SENSOR.grain = 2 + Math.random() * 22;
   SENSOR.distortion = Math.random() * 0.30;
@@ -10393,7 +10445,7 @@ window.__sim = {
   SURV, capture, captureBoth, applyCameras, camOf, pipRect, swapViews, cyclePip, pickView,
   setView: v => { mainView = v; viewSel.value = v; applyCameras(); },
   setPip:  v => { pipView = v; pipSel.value = v; applyCameras(); },
-  person, personGo, SCN, SAFE, setFire, FIRE_FOG,
+  person, personGo, SCN, SAFE, setFire, FIRE_FOG, SMOKE_LAYER, fireSeekTo, fireRandomStage,
   // Ground Truth · 데이터셋
   groundTruth, generateDataset, DATAGEN, randomizeScene, restoreAfterDataset,
   GT_CLASSES, classOfMesh, showInspector,
