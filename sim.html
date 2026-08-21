@@ -80,6 +80,11 @@
   button:active{transform:translateY(1px)}
   button.primary{background:#1f6feb;border-color:#1f6feb}button.primary:hover{background:#388bfd}
   button.danger{background:#8b2c2c;border-color:#a03535}button.danger:hover{background:#a03535}
+  /* 화재 토글이 켜진 상태 — 같은 버튼이 on/off라는 걸 색으로 알린다.
+     라벨만 🔥↔🧯로 바뀌면 "버튼이 두 개"로 오해된다(실제 사용자 피드백). */
+  button.fireon{background:#c2410c;border-color:#ea580c;color:#fff;font-weight:600;
+                box-shadow:0 0 0 2px rgba(234,88,12,.35)}
+  button.fireon:hover{background:#ea580c}
   button:disabled{opacity:.38;cursor:not-allowed}
   .row{display:flex;align-items:center;gap:7px;margin:5px 0}
   .row span{width:64px;color:#8b949e;font-size:11px;flex-shrink:0}
@@ -450,7 +455,7 @@
     <button id="scPersonReset">초기 위치</button>
   </div>
   <div class="btnrow">
-    <button id="fireBtn" class="danger">화재 씬</button>
+    <button id="fireBtn" class="danger">🔥 화재 씬</button>
   </div>
 
   <div class="section">조리실 인원 (다양성)</div>
@@ -1241,6 +1246,9 @@ function placeholder(anchorName, mesh) {
 
 /* ══ 주방 ════════════════════════════════════════════════════════════════ */
 let PERSON_RIG = null;
+/* 후드 하단 박스 — buildRoom()이 채운다. 연기 파티클을 후드에 가두는 데 쓴다
+   (연기가 후드를 뚫고 천장 위로 나가던 문제). 값은 HD 한 곳에서만 나오게 한다. */
+let HOOD_BOX = null;
 /* ══ 방 껍데기 — 실사 근거: 참조 현장 CCTV(셀 전경)·참조 현장(타일벽+트렌치)·
       복수 참조 현장(백스플래시+창)·참조 현장(게시물벽). 전부 절차 생성. ════════ */
 function buildRoom() {
@@ -1496,6 +1504,7 @@ function buildRoom() {
   const HD = ISLAND ? { x0:-1.60, x1:4.05, z:-0.03, d:2.10, y:2.20, h:0.38 }
                     : { x0:-1.70, x1:3.90, z:-0.55, d:1.55, y:2.20, h:0.38 };
   const hw = HD.x1 - HD.x0, hcx = (HD.x0+HD.x1)/2;
+  HOOD_BOX = { x0:HD.x0, x1:HD.x1, z0:HD.z - HD.d/2, z1:HD.z + HD.d/2, y:HD.y, cx:hcx, cz:HD.z };
   const canopy = chamferBox("hoodCanopy", hw, HD.h, HD.d, 0.012, scene);
   canopy.position.set(hcx, HD.y + HD.h/2, HD.z);
   canopy.material = MAT.steel; canopy.receiveShadows = true; canopy.isPickable = false;
@@ -1989,7 +1998,12 @@ function dotTexture() {
 }
 const DOT = dotTexture();
 function makeParticles(name, emitterPos, opts) {
-  const ps = new BABYLON.ParticleSystem(name, 400, scene);
+  /* 용량은 opts.cap으로 올릴 수 있다. 기본 400은 조리 수증기·기포용 값이고,
+     화재 연기는 그걸로 모자란다 — 실측(2026-08-20): emitRate 700 · 수명 3~7s면
+     정상 상태에 3500개가 필요한데 400에서 막히면 연기가 조각조각 끊겨 **먼지처럼** 보인다.
+     비용은 쟀다: 연기 0개 26fps · 400개 25fps · 3546개 26fps — **파티클은 사실상 공짜**다.
+     이 씬의 프레임을 잡아먹는 건 활성 메시 1269개지 파티클이 아니다. */
+  const ps = new BABYLON.ParticleSystem(name, opts.cap || 400, scene);
   ps.particleTexture = DOT;
   ps.emitter = emitterPos;
   ps.minEmitBox = opts.box.scale(-1); ps.maxEmitBox = opts.box;
@@ -2881,20 +2895,55 @@ async function capture(id, opt) {
 const firePS = makeParticles("fire", new V3(F.pos.x, F.oilY + 0.02, F.pos.z), {
   box: new V3(F.w*0.3, 0.01, F.d*0.3),
   c1: new C4(1,0.62,0.12,0.95), c2: new C4(0.92,0.18,0.03,0.7),
-  size:[0.05,0.17], life:[0.25,0.75], gravity:new V3(0,1.6,0),
-  dir:[new V3(-0.15,1.2,-0.15), new V3(0.15,2.2,0.15)], power:[0.3,0.9]
+  /* 불꽃 확대 (2026-08-20). 종전 0.05~0.17m는 지름 0.9m 교반솥의 유면 화재로는
+     너무 작아, 연기를 제대로 피우자 그 밑에 묻혀 화면에서 사라졌다.
+     불꽃 자체가 fire 클래스 라벨의 근거이므로 안 보이면 표본이 사라진다.
+
+     ⚠️ 한 번에 0.14~0.42까지 키웠더니 **반대 문제**가 났다 — 불꽃이 후드까지 치솟아
+     화면을 채우고, ADD 블렌딩이라 밝아서 **연기가 안 보였다**("화재만 나고 연기는 안 난다").
+     연기는 정상 배출 중이었고(점화 1초에 1016개) 불꽃에 묻힌 것이었다.
+     0.10~0.28로 낮추니 점화 1초에 불·연기가 같이 읽힌다. */
+  size:[0.10,0.28], life:[0.35,0.85], gravity:new V3(0,1.6,0),
+  dir:[new V3(-0.15,1.2,-0.15), new V3(0.15,2.2,0.15)], power:[0.4,1.2],
+  cap: 1200
 });
 const fsmoke = makeParticles("fsmoke", new V3(F.pos.x, F.oilY + 0.28, F.pos.z), {
   box: new V3(F.w*0.28, 0.02, F.d*0.28),
-  c1: new C4(0.10,0.10,0.11,0.5), c2: new C4(0.04,0.04,0.05,0.32),
-  /* 수명·상승속도 하향 (2026-08-13). 종전 값(life 1.8~4.2s, vy 0.2~1.2, g +0.5)은
-     연기를 **천장 위로** 보냈다 — 실측 높이분포 중앙 2.15m / 상위10% 4.14m / 최대 5.34m,
-     천장 3.3m·후드 하단 2.2m. 연기가 후드와 천장을 관통하는 그림이 나오고,
-     라벨 박스도 그 빈 공간을 감쌌다. 후드 아래에서 걷히도록 줄인다. */
-  size:[0.16,0.55], life:[0.8,1.8], gravity:new V3(0,0.2,0),
-  dir:[new V3(-0.25,0.5,-0.2), new V3(0.25,1.0,0.2)], power:[0.2,0.6]
+  /* ── 진하기는 입자 하나가 아니라 **겹침**으로 만든다 (2026-08-20) ──────────
+     종전 값(알파 0.5→0.32)은 입자 하나하나가 진해서 400개가 서로 구분돼 보였다.
+     그림이 연기가 아니라 **먼지·먹칠**이 됐고, 검은 덩어리가 불꽃까지 덮었다.
+     (불꽃이 안 잡히는 원인이 카메라 각도만이 아니었다 — 연기가 가리고 있었다.)
+
+     실사 연기가 진해지는 원리는 옅은 매질이 시선 방향으로 겹겹이 쌓이는 것이다.
+     그래서 **입자 하나는 아주 옅게(0.10) 두고 개수를 늘려** 같은 농도를 만든다.
+     라이브 비교로 확정한 값이다: 0.50/400개 = 먼지, 0.10/3500개 = 연기.
+
+     0.10에서 0.18로 올렸다 — 0.10은 정상 상태(3500개)에서는 맞는데 **점화 직후**
+     몇 백 개일 때 화면에 아무것도 안 보였다. 불꽃은 즉시 밝게 나오므로 대비가 심했다. */
+  c1: new C4(0.12,0.12,0.13,0.18), c2: new C4(0.05,0.05,0.06,0.10),
+  /* 수명 상향의 배경 — 2026-08-13에는 반대로 내렸었다(1.8~4.2s → 0.8~1.8s).
+     당시 문제는 연기가 후드·천장을 관통하는 것이었고, 해법으로 **빨리 죽였다**.
+     그건 증상만 가린 것이다. 화재 연기는 공간에 퍼져야 맞고, 짧은 수명으로는
+     퍼질 시간 자체가 없다. 수명을 되돌리고 관통 문제는 따로 잡는다. */
+  size:[0.45,1.30], life:[3.0,7.0], gravity:new V3(0,0.2,0),
+  dir:[new V3(-1.1,0.5,-1.1), new V3(1.1,1.3,1.1)], power:[0.2,0.7],
+  cap: 4000
 });
 fsmoke.blendMode = BABYLON.ParticleSystem.BLENDMODE_STANDARD;
+/* ══ 불꽃을 연기보다 **나중에** 그린다 — fire 라벨이 통째로 사라지던 원인 ═══════
+   마스크 패스는 모든 파티클을 **불투명**으로 찍는다(색 == 클래스라야 읽히므로).
+   그런데 화면에서는 연기가 반투명(입자당 α 0.10)이라 불이 비쳐 보인다.
+   즉 **RGB에는 불이 보이는데 라벨에는 "불 없음"**이 되고, fire 표본이 0이 된다.
+   실측(2026-08-20, fireNW): 연기 배출 0 → fire 9148px · 연기 정상(3480개) → **fire 0**.
+
+   파티클은 깊이를 쓰지 않으므로 가림은 순수하게 **그리기 순서** 문제다.
+   불꽃을 뒤 그룹으로 빼면 연기 위에 찍힌다 → fire 0 → 264px.
+   깊이 클리어는 끈다. 켜면 불꽃이 솥·로봇 **앞으로도** 튀어나와 벽 너머의 불까지 라벨된다.
+
+   근거: 불꽃은 자체발광이라 옅은 조리연기 너머로도 실제 CCTV에 보인다.
+   다만 **연기가 아주 짙을 때도 fire가 잡히는** 부작용이 있다 — 아래 남은 과제 참고. */
+firePS.renderingGroupId = 1;
+scene.setRenderingAutoClearDepthStencil(1, false, false, false);
 const fireLight = new BABYLON.PointLight("fireLight", new V3(F.pos.x, F.oilY + 0.4, F.pos.z), scene);
 fireLight.diffuse = C3.FromHexString("#ff7a2a"); fireLight.intensity = 0; fireLight.range = 3.5;
 /* ══ 불·연기 GT — **파티클을 그대로 마스크에 찍는다** ═══════════════════════
@@ -2919,17 +2968,69 @@ const GT_PS_LIST = [{ ps: () => firePS, key: "fire" }, { ps: () => fsmoke, key: 
 let GT_PS_SAVED = null;
 /* on: 살아 있는 입자를 지정 색으로 덮어쓴다. colorAt(key) → [r,g,b] 0~255
    off: 원래 색·텍스처·블렌딩으로 되돌린다. */
-function gtParticleMask(on, colorAt) {
+/* opts.only  — 이 키의 파티클만 그리고 나머지는 **알파 0으로 숨긴다**.
+   opts.keepAlpha — 불투명(1)으로 덮지 않고 입자 **본래 알파**를 쓴다.
+
+   왜 필요한가: 마스크는 전 파티클을 불투명으로 찍는데, 화면에서 연기는 반투명이다.
+   그래서 옅은 연기 뒤의 사람이 **화면엔 보이는데 라벨에서는 지워진다**.
+   실측(2026-08-20, 천장캠·사람 고정): 연기 0 → 3445개로 늘렸을 때
+     솥에서 3.1m(안전)  person 20421 → 18527 (−9%)  robot 11787 → 7463 (−37%)
+     솥에서 1.25m(위험) person 11324 →  7172 (−37%) robot 12217 → 7502 (−39%)
+   **위험한 위치일수록 더 많이 지워진다** — 가장 중요한 표본이 가장 부실해진다.
+   그래서 연기를 따로(keepAlpha) 찍어 농도를 재고, 짙은 곳만 smoke로 덮는다. */
+/* ══ 캡처 동안 파티클을 얼린다 ═══════════════════════════════════════════
+   GT 한 장은 패스를 여러 번 나눠 찍는다(클래스 마스크 · 인스턴스 마스크 · 연기 농도 · 깊이).
+   패스마다 renderWith가 whenReadyAsync + 예열 렌더 3회를 돌리고, 패스와 패스 사이의
+   await 경계에서는 메인 rAF 렌더 루프가 돈다. 그동안 **입자가 계속 움직이고 태어난다.**
+
+   그래서 패스끼리 좌표가 어긋난다 — 실측(2026-08-21):
+     · 클래스 마스크에는 fire가 7,545px 있는데 인스턴스 마스크의 fire_0은 **0**.
+       불꽃 수명이 0.35~0.85s라 두 패스 사이에 자리를 완전히 옮겨 버린다.
+     · 새로 태어난 입자는 색을 덮은 목록에 없어 원래 색(수증기 흰색·기포 주황)으로 찍혀
+       라벨을 오염시킨다(화재를 껐는데 smoke가 378px 잡히던 원인).
+
+   emitRate=0 이면 새로 안 태어나고, updateSpeed=0 이면 나이·위치가 멈춘다.
+   → 모든 패스가 **같은 순간**을 본다. 캡처가 끝나면 원복한다. */
+let GT_FROZEN = null;
+function gtFreezeParticles(on) {
   if (on) {
-    GT_PS_SAVED = GT_PS_LIST.map(({ ps, key }) => {
-      const P = ps(), col = colorAt(key);
+    if (GT_FROZEN) return;                       // 중복 진입 방지 — 원본 값을 덮으면 복원이 깨진다
+    GT_FROZEN = scene.particleSystems.map(P => {
+      const s = { P, rate: P.emitRate, speed: P.updateSpeed };
+      P.emitRate = 0; P.updateSpeed = 0;
+      return s;
+    });
+  } else if (GT_FROZEN) {
+    for (const s of GT_FROZEN) { s.P.emitRate = s.rate; s.P.updateSpeed = s.speed; }
+    GT_FROZEN = null;
+  }
+}
+
+function gtParticleMask(on, colorAt, opts) {
+  opts = opts || {};
+  if (on) {
+    /* 씬의 **모든** 파티클을 훑는다. GT_PS_LIST(불·연기) 밖의 것들 — 기름 기포(bubbles),
+       조리 수증기(steam) — 은 클래스가 없는데도 마스크 패스에서 원래 색·ADD 블렌딩으로
+       그려져 라벨을 오염시킨다. 연기 농도 패스에서 발각됐다: 연기 입자 0개인데
+       smoke가 243px 잡혔고, 범인이 솥 위 기포·수증기였다. 클래스가 없으면 숨긴다. */
+    const known = new Map(GT_PS_LIST.map(e => [e.ps(), e.key]));
+    GT_PS_SAVED = scene.particleSystems.map(P => {
+      const key = known.get(P) || null;
       const snap = { P, tex: P.particleTexture, blend: P.blendMode,
                      parts: P.particles.map(p => ({ p, c: p.color.clone(), s: p.colorStep.clone() })) };
+      /* 배출·시간 정지는 여기서 하지 않는다 — 패스 단위로 풀렸다 잠기면 패스와 패스
+         **사이**(await 경계에서 도는 rAF 렌더)에 입자가 또 움직인다.
+         캡처 한 번을 통째로 감싸는 gtFreezeParticles()가 담당한다. */
       P.particleTexture = GT_SOLID;
       P.blendMode = BABYLON.ParticleSystem.BLENDMODE_STANDARD;
-      if (col) for (const q of snap.parts) {
-        q.p.color.set(col[0]/255, col[1]/255, col[2]/255, 1);
-        q.p.colorStep.set(0, 0, 0, 0);          // 수명에 따른 페이드아웃 정지 — 알파가 빠지면 색이 흐려진다
+      const hidden = !key || (opts.only && opts.only !== key);
+      const col = hidden ? null : colorAt(key);
+      for (const q of snap.parts) {
+        if (hidden) { q.p.color.a = 0; q.p.colorStep.set(0, 0, 0, 0); continue; }
+        if (!col) continue;
+        // colorStep 0 = 수명에 따른 페이드아웃 정지. 알파가 빠지면 색이 흐려져 판정을 벗어난다
+        q.p.color.set(col[0]/255, col[1]/255, col[2]/255, opts.keepAlpha ? q.c.a : 1);
+        q.p.colorStep.set(0, 0, 0, 0);
       }
       return snap;
     });
@@ -2942,11 +3043,140 @@ function gtParticleMask(on, colorAt) {
   }
 }
 
+/* ══ 화재 연무 — 공간 전체가 자욱해지는 효과 ═════════════════════════════
+   연기 입자와 **역할이 다르다**. 입자는 솥에서 피어오르는 기둥이고, 이건 방 전체다.
+   입자로 11.5m 방을 채우려면 수만 개가 필요한데, 안개는 픽셀마다 걸리므로 한 번에 된다.
+
+   비용은 쟀다(2026-08-20, 워밍업 버리고 순서 바꿔 2회씩):
+     안개 on 24.0/23.6ms · off 23.7/23.9ms — **차이 없음**.
+   (첫 측정에서 19.5ms가 나왔는데 그건 셰이더 컴파일이 섞인 값이었다. 안개를 켜고 끄면
+    전 재질이 재컴파일되므로, 켠 직후 몇 프레임으로 재면 안 된다.)
+
+   ── EXP2가 아니라 **EXP**를 쓴다 (2026-08-20 수정) ─────────────────────────
+   처음에 EXP2로 뒀더니 "다른 CCTV는 너무 선명하다"는 지적이 나왔고, 재보니 맞았다.
+   EXP2는 거리의 **제곱**으로 걸려서 가까이 보는 카메라가 거의 맨눈이 된다:
+     EXP2 0.13 → cvPole(1.8m) **5%** · cvHatch(3.3m) 17% · 링(6.5m) 51% · 대각(8.4m) 70%
+   방이 자욱한데 특정 카메라만 선명하면 학습 데이터로 앞뒤가 안 맞는다.
+   EXP는 거리에 선형 지수라 훨씬 고르다:
+     EXP 0.20 → 1.8m **30%** · 3.3m 48% · 6.5m 73% · 8.4m 81%
+   (LINEAR는 시작/끝 거리로 잘라서 경계가 눈에 띄므로 쓰지 않는다.)
+
+   한계 — 안개는 **거리에만** 반응해서 방이 균일하게 뿌옇다. 실제 화재는 천장 쪽이
+   더 짙다. 높이별 농도가 필요해지면 그때는 후처리로 가야 한다(지금은 과하다). */
+const FIRE_FOG = {
+  on:false, t:0,
+  /* 180s·제곱 → 90s·1.5제곱 (2026-08-20). PIP로 점화부터 지켜봤더니 **1분이 지나도
+     화면이 거의 그대로**였다. 제곱 곡선이 초반을 너무 눌러서 앞구간이 통째로 死구간이었다:
+       링캠(6.5m) 가림 — 30초 4% · 60초 13% · 90초 28%
+     지수를 1.5로 낮추고 완료 시간을 절반으로 줄이면 지켜보는 내내 변화가 보인다:
+       링캠 가림 — 30초 **24%** · 60초 **54%** · 90초 **76%** */
+  full:90000,                        // 이 시간(ms)에 최대 농도
+  curve:1.5,                         // 시간 곡선 지수. 1=선형, 2=초반이 매우 맑음
+  max:0.22,                          // EXP 기준. 0.13이면 가까운 카메라가 선명하고, 0.3이면 먼 쪽이 백지가 된다
+  color:new C3(0.28,0.27,0.26),      // 연기 회색
+  speed:1,                           // 시연 가속. __sim.FIRE_FOG.speed=10 이면 18초에 최대
+  /* ── 연기도 같은 시계로 늘린다 — 실제 화재의 순서를 지키기 위해 ─────────────
+     불 → (시간) → 연기 확산 → (시간) → 카메라 가림. 이 순서가 물리적으로 맞고,
+     학습 데이터로서도 "옅은 연기"부터 "자욱함"까지 전 구간이 골고루 나온다.
+     종전에는 점화 즉시 700/초로 최대였다 — 초기 단계 표본이 아예 없었다.
+     안개(max·full)는 제곱 곡선이라 초반엔 0에 가깝게 머물러 자연히 뒤따라온다. */
+  smokeMin:120,                      // 점화 직후 배출량 — 솥 위 옅은 연기
+  smokeMax:700,                      // 최대. 수명 3~7s와 짝지어 정상상태 ≈3500개(cap 4000)
+  smokeFull:20000,                   // 이 시간(ms)에 최대 배출 — 20초면 데모 호흡에 맞는다
+  saved:null
+};
+function fireFogStart() {
+  if (FIRE_FOG.saved) return;        // 중복 진입 방지 — 원본 안개 설정을 덮어쓰면 복원이 깨진다
+  FIRE_FOG.saved = { mode:scene.fogMode, color:scene.fogColor.clone(),
+                     density:scene.fogDensity, enabled:scene.fogEnabled };
+  FIRE_FOG.t = 0; FIRE_FOG.on = true;
+  scene.fogEnabled = true;
+  scene.fogMode = BABYLON.Scene.FOGMODE_EXP;
+  scene.fogColor = FIRE_FOG.color.clone();
+  scene.fogDensity = 0;
+}
+function fireFogStop() {
+  FIRE_FOG.on = false; FIRE_FOG.t = 0;
+  if (!FIRE_FOG.saved) return;
+  const s = FIRE_FOG.saved;
+  scene.fogMode = s.mode; scene.fogColor = s.color;
+  scene.fogDensity = s.density; scene.fogEnabled = s.enabled;
+  FIRE_FOG.saved = null;
+}
+function fireFogTick(dt) {
+  if (!FIRE_FOG.on) return;
+  /* GT 캡처 중에는 절대 손대지 않는다. 깊이맵은 **검정 선형 안개(0~6m)로 거리를 만드는**
+     방식이라(이 파일 뒤쪽 깊이 패스), 매 프레임 EXP2로 덮으면 깊이 정답값이 통째로 깨진다.
+     그 패스는 fogMode/color/enabled를 저장·복원하지만 이쪽이 그 사이에 끼어들면 소용없다. */
+  if (GT_BUSY) return;
+  FIRE_FOG.t += dt * FIRE_FOG.speed;
+  const k = Math.min(1, FIRE_FOG.t / FIRE_FOG.full);
+  scene.fogDensity = FIRE_FOG.max * Math.pow(k, FIRE_FOG.curve);  // 발화 직후는 맑고 뒤로 갈수록 짙어진다
+  /* 연기 배출도 같이 올린다(선형). 안개보다 훨씬 빨리 차서 순서가 만들어진다:
+     불 → 연기 → 가림. GT_BUSY 중에는 위에서 이미 return 했으므로 캡처는 안전하다. */
+  const ks = Math.min(1, FIRE_FOG.t / FIRE_FOG.smokeFull);
+  fsmoke.emitRate = FIRE_FOG.smokeMin + (FIRE_FOG.smokeMax - FIRE_FOG.smokeMin) * ks;
+}
+
+/* ══ 연기 가두기 — 후드·천장을 뚫고 나가지 못하게 ═══════════════════════════
+   Babylon 파티클은 메시와 충돌하지 않는다. 그대로 두면 수명이 긴 연기가 후드(y 2.20)와
+   천장(3.90)을 **그냥 통과해** 건물 밖으로 올라간다. 2026-08-13에 이 문제를 수명을
+   0.8~1.8s로 줄여서 덮었는데, 그건 연기가 퍼지지 못하게 만드는 부작용이 있었다.
+   이제 수명을 3~7s로 되돌렸으므로 **막는 쪽을 제대로 만든다.**
+
+   막기만 하면 천장에 눌어붙어 이상하므로, 상승 성분을 **수평으로 돌린다**.
+   실제 화재의 천장 제트(ceiling jet)와 후드 밑에서 연기가 옆으로 밀려나오는 거동이다.
+
+   후드 밑 → 후드 하단에서 막히고 바깥으로 흐른다 → 후드를 벗어나면 다시 떠올라
+   천장 밑에 층을 이룬다. 순서가 실제와 같다. */
+/* 연기층 하강 — 실제 화재에서 연기는 천장부터 쌓여 **아래로 내려온다**.
+   이게 없으면 연기가 후드·천장 근처에만 떠 있어서, 그 아래에 달린 CCTV는
+   피사체와의 사이에 연기가 없어 **끝까지 선명하다**(실측: 연기 3538개 중 사람 키
+   1.6m 아래는 833개뿐). 자유시점(12.8m)만 자욱해 보이고 CCTV(1.8~8.4m)는 멀쩡했다.
+
+   FIRE_FOG와 같은 시계를 쓴다 — 안개가 짙어지는 것과 연기층이 내려오는 것이 같이 간다. */
+/* floorY — 연기층이 최종적으로 내려오는 바닥 높이. sink — 하강을 만드는 힘.
+   ⚠️ 천장을 끌어내리는 방식으로 만들었다가 실패했다: 전 입자가 그 높이 **한 장에 눌어붙어**
+   (실측 3525개 전부 1.15m) 얇은 판이 됐다. 실제 연기층은 아래로 내려오면서도
+   **그 위 부피를 채운 채로** 내려온다. 그래서 천장은 물리 그대로 두고,
+   진행에 따라 **아래로 미는 힘**만 준다 — 부력과 겨루면서 부피를 채운다. */
+const SMOKE_LAYER = { floorY:1.05, sink:0.0055 };
+function smokeConfineTick() {
+  const parts = fsmoke.particles;
+  if (!parts.length) return;
+  const H = HOOD_BOX, ceilY = LAYOUT.room.h - 0.12;
+  const prog = FIRE_FOG.on ? Math.min(1, FIRE_FOG.t / FIRE_FOG.full) : 0;
+  const sink = SMOKE_LAYER.sink * prog, fy = SMOKE_LAYER.floorY;
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i], pos = p.position;
+    // ① 화재가 진행될수록 연기가 아래로 내려온다 (연기층 하강)
+    if (sink > 0 && pos.y > fy) p.direction.y -= sink;
+    // ② 바닥층에 닿으면 더 안 내려가고 옆으로 깔린다
+    if (pos.y < fy) { pos.y = fy; if (p.direction.y < 0) p.direction.y = 0; }
+    // ③ 후드·천장은 뚫지 못한다. 막히면 상승분을 수평으로 돌린다(천장 제트)
+    let capY = ceilY, cx = 0, cz = 0, push = 0.030;
+    if (H && pos.x >= H.x0 && pos.x <= H.x1 && pos.z >= H.z0 && pos.z <= H.z1) {
+      capY = H.y; cx = H.cx; cz = H.cz; push = 0.055;   // 후드 밑은 더 세게 밀려나온다
+    }
+    if (pos.y <= capY) continue;
+    pos.y = capY;
+    if (p.direction.y > 0) p.direction.y = 0;
+    const dx = pos.x - cx, dz = pos.z - cz;
+    const len = Math.hypot(dx, dz) || 1;
+    p.direction.x += (dx / len) * push;
+    p.direction.z += (dz / len) * push;
+  }
+}
+
 function setFire(on) {
   state.fire = on;
   firePS.emitRate = on ? 420 : 0;
-  fsmoke.emitRate = on ? 130 : 0;
+  /* 점화 시점 배출량. 여기서 최대(700)를 주지 않는다 — fireFogTick이 smokeFull(20초)에
+     걸쳐 smokeMin→smokeMax로 끌어올린다. 불 → 연기 → 가림 순서를 만들기 위함이다. */
+  fsmoke.emitRate = on ? FIRE_FOG.smokeMin : 0;
+  if (on) fireFogStart(); else fireFogStop();
   $("fireBtn").textContent = on ? "🧯 화재 진압" : "🔥 화재 씬";
+  $("fireBtn").classList.toggle("fireon", on);   // 같은 버튼의 on/off를 색으로도 보인다
   setStatus(on ? "🔥 화재 발생 — 카메라 뷰로 화염·연기 확인" : "화재 진압 완료");
 }
 
@@ -6313,8 +6543,11 @@ let GT_BUSY = null;
 async function groundTruth(camId, opt) {
   while (GT_BUSY) await GT_BUSY;                  // 앞선 캡처가 끝날 때까지 대기
   let release; GT_BUSY = new Promise(r => (release = r));
+  /* 캡처 한 장을 통째로 감싼다 — 패스 사이(await 경계의 rAF 렌더)까지 포함해야
+     모든 패스가 같은 순간의 입자를 본다. gtParticleMask(패스 단위)로는 부족하다. */
+  gtFreezeParticles(true);
   try { return await groundTruthImpl(camId, opt); }
-  finally { GT_BUSY = null; release(); }
+  finally { gtFreezeParticles(false); GT_BUSY = null; release(); }
 }
 /* opt.noDepth — 깊이맵 두 장을 건너뛴다. YOLO 학습에는 RGB + 라벨(인스턴스 마스크)만
    필요한데 깊이 패스가 캡처 시간의 절반을 먹는다(실측 1.9s 중 ~0.8s). 대량 생성용 지름길. */
@@ -6342,11 +6575,25 @@ async function groundTruthImpl(camId, opt) {
   const savedTM = ipc.toneMappingEnabled, savedExp = ipc.exposure, savedCon = ipc.contrast,
         savedAPP = ipc.applyByPostProcess;   // 데이터셋 렌더 경로 고정 (SSR 도입 전과 동일하게)
   let savedMats = null;
+  let savedFogGT = null;                    // gtOff가 끈 안개 상태 — gtOn에서 되돌린다
   const savedSensor = SENSOR.on;
   const gtOff = () => {
     ipc.toneMappingEnabled = false; ipc.exposure = 1; ipc.contrast = 1; ipc.applyByPostProcess = false;
     ipc.vignetteEnabled = false;
     scene.clearColor = new C4(0,0,0,1);
+    /* ── 안개를 끈다. 안 끄면 **모든 클래스 라벨이 통째로 날아간다** ──────────────
+       마스크는 "픽셀 색 == 클래스 색(±8)"으로 읽는다. 그런데 안개는 메시 색을
+       배경색 쪽으로 섞어 버려서, 화재 연무(EXP2 0.13)를 켠 채 찍으면
+         kettle 255,128,0 → 183,105,26 · equipment 0,128,255 → 11,119,225
+         person 255,0,0 → 222,12,12
+       처럼 전부 어긋나 어느 클래스에도 안 잡힌다. 실측(2026-08-20):
+         안개 켬 → person 0 · robot 0 · kettle 0 · equipment 0  (smoke만 남음)
+         안개 끔 → person 1590 · robot 627 · kettle 3303 · equipment 7291
+       파티클은 안개를 안 받으므로 smoke만 멀쩡해서, 겉보기엔 "연기만 잡히네"로 보인다.
+       깊이 패스는 이 뒤에 자기 안개(검정 선형 0~6m)를 따로 세우므로 영향 없다. */
+    savedFogGT = { enabled: scene.fogEnabled, mode: scene.fogMode, density: scene.fogDensity,
+                   color: scene.fogColor.clone(), start: scene.fogStart, end: scene.fogEnd };
+    scene.fogEnabled = false;
     /* 파티클을 끄지 않는다 — 불·연기 라벨이 여기서 나온다. 대신 불투명 단색으로 찍는다.
        색은 패스마다 다르다: 클래스 마스크는 클래스 색, 인스턴스 마스크는 팔레트 색.
        gtOff 시점에는 어느 패스인지 모르므로, 각 패스가 gtParticleMask를 직접 부른다. */
@@ -6358,6 +6605,12 @@ async function groundTruthImpl(camId, opt) {
     ipc.applyByPostProcess = savedAPP;
     scene.clearColor = savedClear;
     scene.particlesEnabled = savedParticles;
+    if (savedFogGT) {                       // gtOff에서 끈 안개 원복
+      scene.fogMode = savedFogGT.mode; scene.fogDensity = savedFogGT.density;
+      scene.fogColor = savedFogGT.color; scene.fogStart = savedFogGT.start;
+      scene.fogEnd = savedFogGT.end; scene.fogEnabled = savedFogGT.enabled;
+      savedFogGT = null;
+    }
     glow.isEnabled = savedGlow;
     gtParticleMask(false);
     if (savedSensor && !SENSOR.on) { SENSOR.on = true; sensorApply(); }
@@ -6375,11 +6628,72 @@ async function groundTruthImpl(camId, opt) {
       const gc = GT_CLASSES.find(g => g.key === cls);
       m.material = gtMat(cls, gc ? gc.color : GT_ENV);
     }
-    gtParticleMask(true, k => (GT_CLASSES.find(g => g.key === k) || {}).color);
+    // 연기는 여기서 빼고(only:"fire") 아래 농도 패스로 따로 처리한다
+    gtParticleMask(true, k => (GT_CLASSES.find(g => g.key === k) || {}).color, { only:"fire" });
   }, () => {
     savedMats.forEach((mat, mesh) => { mesh.material = mat; });
     gtOn();
   });
+
+  /* 2.1) 연기 농도 패스 — 전 메시를 검정으로 깔고 **연기만 흰색·본래 알파**로 찍는다.
+     겹칠수록 밝아지므로 픽셀 밝기가 곧 그 시선의 연기 두께(광학 깊이)가 된다.
+     이 값으로 "여기는 정말 안 보이는가"를 판정해 아래에서 마스크에 덮는다. */
+  let savedMatsS = null;
+  const smokeDen = await renderWith(cam, () => {
+    gtOff();
+    savedMatsS = new Map();
+    /* 여기서는 `!m.material`도 건너뛰지 않는다 — 재질이 없는 메시는 Babylon 기본 재질로
+       **희게** 그려져 연기로 오인된다(연기 0개인데 smoke 113px이 남던 원인).
+       다른 패스는 클래스 색을 입히는 것이라 재질 없는 메시를 빼도 됐지만,
+       이 패스는 "검게 깔고 연기만 밝게"가 전제라 하나라도 밝으면 임계를 넘는다. */
+    for (const m of scene.meshes) {
+      if (!m.isEnabled() || !m.isVisible) continue;
+      savedMatsS.set(m, m.material);
+      m.material = gtMat("smokeblack", [0,0,0]);
+    }
+    gtParticleMask(true, () => [255,255,255], { only:"smoke", keepAlpha:true });
+  }, () => {
+    savedMatsS.forEach((mat, mesh) => { mesh.material = mat; });
+    gtOn();
+  });
+
+  /* 임계 — 연기가 이만큼 짙으면 뒤가 안 보인다고 본다.
+     0.5는 "시선의 절반이 연기에 막힘". 낮추면 smoke가 넓어지고 사람이 다시 지워지며,
+     높이면 자욱한데도 사람이 다 보이는 것으로 라벨된다. 조정은 __sim.GT_SMOKE_T. */
+  const smokeThresh = () => Math.round((window.GT_SMOKE_T !== undefined ? window.GT_SMOKE_T : 0.5) * 255);
+  /* protect = 이 색 픽셀은 연기로 덮지 않는다 — **불꽃**이다.
+     불꽃은 자체발광이라 연기 속에서도 화면에 보인다. 안 지키면 불이 가장 잘 보이는
+     화염 바로 위(연기가 제일 짙은 곳)에서 fire 라벨이 통째로 사라진다(실측: fire 0). */
+  /* 연기 입자가 하나도 없으면 아예 칠하지 않는다.
+     화재를 껐는데도 smoke가 170~478px 잡히던 문제 때문이다(솥 유면 위 0.4% 영역).
+     농도 패스에 미세하게 밝은 픽셀이 남아 임계를 넘기는 것으로, 원인을 끝까지
+     특정하지 못했다. 다만 **연기가 없으면 smoke 라벨도 없어야 한다**는 것은 확실하므로
+     그 불변식을 여기서 강제한다. 평상시 조리(화재 꺼짐) 프레임에 유령 라벨이 붙는 것을 막는다. */
+  const smokeAlive = fsmoke.particles.length;
+  /* 불꽃 보존은 **클래스 마스크의 불꽃 색**을 기준으로 판정한다.
+     처음에는 인스턴스 마스크에서 팔레트 색(fire_0)으로 대조했는데 실패했다 —
+     클래스 마스크에는 fire가 5409px 남는데 인스턴스 쪽 fire_0은 0이 됐다(팔레트 번호
+     대조가 어긋남). 클래스 마스크는 이 시점에 이미 칠해져 있고 그 불꽃 픽셀이
+     "살아남기로 결정된 불꽃"이므로, 인스턴스 마스크도 같은 좌표를 그대로 보존하면 된다. */
+  const FIRE_C = (GT_CLASSES.find(g => g.key === "fire") || {}).color;
+  const isFireAt = (arr, i) => FIRE_C && Math.abs(arr[i]-FIRE_C[0]) <= 8
+    && Math.abs(arr[i+1]-FIRE_C[1]) <= 8 && Math.abs(arr[i+2]-FIRE_C[2]) <= 8;
+  const paintSmoke = (target, color, protectFrom) => {
+    if (smokeAlive === 0) return 0;
+    const t = smokeThresh(), d = smokeDen.data, p = target.data;
+    if (!d || d.length !== p.length) return 0;     // 해상도가 어긋나면 건드리지 않는다
+    const pf = (protectFrom && protectFrom.length === p.length) ? protectFrom : null;
+    let n = 0;
+    for (let i = 0; i < p.length; i += 4) {
+      if (d[i] < t) continue;
+      if (pf && isFireAt(pf, i)) continue;
+      p[i] = color[0]; p[i+1] = color[1]; p[i+2] = color[2]; n++;
+    }
+    return n;
+  };
+  // 클래스 마스크: 자기 자신을 기준으로 본다(픽셀 i는 쓰기 전에 읽으므로 안전)
+  paintSmoke(mask, (GT_CLASSES.find(g => g.key === "smoke") || {}).color || [0,255,255],
+                   mask.data);
 
   // 2.5) P3: 인스턴스 마스크 — 개체마다 팔레트 고유색. 사람 여러 명을 개별 분리한다.
   const instIndex = new Map();                       // instKey → 팔레트 idx (등장 순)
@@ -6412,14 +6726,20 @@ async function groundTruthImpl(camId, opt) {
     }
     /* state.fire로 막지 않는다 — 불을 껐어도 남은 연기가 화면에 있으면 라벨돼야 맞다.
        입자가 없으면 픽셀이 80 미만이라 아래 디코더가 알아서 버린다. */
+    // 클래스 마스크와 같은 이유로 연기는 뺀다 — 아래에서 농도 기준으로 덮는다
     gtParticleMask(true, k => {
       instMat(k + "_0");                                   // 팔레트 슬롯 확보
       return INST_PALETTE[instIndex.get(k + "_0")];
-    });
+    }, { only:"fire" });
   }, () => {
     savedMatsI.forEach((mat, mesh) => { mesh.material = mat; });
     gtOn();
   });
+  /* YOLO 라벨은 **이 인스턴스 마스크**에서 나온다(클래스 마스크는 참고용).
+     그러므로 연기 덮기를 여기에도 반드시 적용해야 학습 라벨이 맞는다. */
+  instMat("smoke_0");                                      // 팔레트 슬롯 확보
+  // 보호 기준은 위에서 칠해 둔 **클래스 마스크**다 (팔레트 번호 대조는 어긋났다)
+  paintSmoke(inst, INST_PALETTE[instIndex.get("smoke_0")], mask.data);
   // 인스턴스별 bbox (가림 반영 — 마스크 픽셀 기준)
   const instBoxes = new Map();
   {
@@ -9865,6 +10185,8 @@ scene.registerBeforeRender(() => {
   ceilAutoTick();            // 자유 시점 천장 자동 숨김 — 카메라 포즈로 매 프레임 판정
   stepUpdate(dt);
   updateCooking(dt);
+  fireFogTick(dt);           // 화재 연무 — 발화 후 경과에 따라 방 전체 농도를 올린다
+  smokeConfineTick();        // 연기가 후드·천장을 뚫고 나가지 않게 가둔다
   personUpdate(dt);
   cookGearUpdate();
   extrasUpdate(dt);
@@ -10071,7 +10393,7 @@ window.__sim = {
   SURV, capture, captureBoth, applyCameras, camOf, pipRect, swapViews, cyclePip, pickView,
   setView: v => { mainView = v; viewSel.value = v; applyCameras(); },
   setPip:  v => { pipView = v; pipSel.value = v; applyCameras(); },
-  person, personGo, SCN, SAFE, setFire,
+  person, personGo, SCN, SAFE, setFire, FIRE_FOG,
   // Ground Truth · 데이터셋
   groundTruth, generateDataset, DATAGEN, randomizeScene, restoreAfterDataset,
   GT_CLASSES, classOfMesh, showInspector,
