@@ -36,10 +36,12 @@ uv run python backend/detect_server.py --port 8001
 
 → <http://127.0.0.1:8001/sim.html?person=1>
 
-가중치는 로컬 `training/`에 있으면 그걸, 없으면 허깅페이스
-[`chanubc/robot-kitchen-nadir-yolo11s`](https://huggingface.co/chanubc/robot-kitchen-nadir-yolo11s)(공개)에서
-자동으로 받는다 — 팀원은 파일 전달 없이 위 두 줄만 실행하면 된다. 저장소는 env
-`DETECT_MODEL_REPO`로 교체, 예측만 볼 땐 `DETECT_MODEL=none`(GT 좌표 사용).
+가중치는 로컬 `training/`에 있으면 그걸, 없으면 허깅페이스에서 자동으로 받는다 —
+팀원은 파일 전달 없이 위 두 줄만 실행하면 된다. 두 모델 모두 공개 저장소다:
+검출은 [`chanubc/robot-kitchen-nadir-yolo11s`](https://huggingface.co/chanubc/robot-kitchen-nadir-yolo11s),
+궤적 예측(LSTM)은 [`chanubc/human-move-lstm`](https://huggingface.co/chanubc/human-move-lstm).
+저장소는 env로 교체(`DETECT_MODEL_REPO` / `PREDICT_MODEL_REPO`), 예측만 볼 땐
+`DETECT_MODEL=none`(GT 좌표 사용).
 파이프라인·수집·학습·평가 상세는 아래 [검출·예측 파이프라인](#검출예측-파이프라인-백엔드) 참조.
 
 그냥 열면 **확정 배치(섬 배치)**가 뜬다 — 방 11.5×11.5 m · 천장 3.9 m ·
@@ -85,8 +87,15 @@ WebGPU가 없으면 wasm으로 자동 폴백된다. 브라우저 탭을 앞에 �
   uv run python train/train_traj_predictor.py    # 학습 + val ADE/FDE → docs/chanwoo/prediction-eval.md
   uv run --with pytest python -m pytest tests/   # 예측 코어 테스트
   ```
-- **브라우저에서 학습형 쓰기**: 예측 소스 드롭다운 → *학습형 — window.\_\_customPredictor*
-  (백엔드 `/predict` 사용). 밀도 구름에 멀티모달 봉우리가 뜨고 로봇이 선제 감속한다.
+- **학습형(LSTM) 모델 쓰는 법** — 재학습 불필요, 3단계:
+  1. 백엔드를 띄운다([방법 B](#방법-b--검출예측까지-백엔드-서버)). 예측기 가중치가 로컬에 없으면
+     허깅페이스 [`chanubc/human-move-lstm`](https://huggingface.co/chanubc/human-move-lstm)에서 자동으로 받는다.
+  2. 시뮬 상단 시각화 토글은 기본 꺼짐이다 — ⚙ 고급 탭 *시각화 표시*에서
+     **바닥 밀도 음영**(과 원하면 **사람 예측 화살표**)을 켠다.
+  3. **예측 모델** 드롭다운 → *학습형 — window.\_\_customPredictor* 선택. 이제 매 프레임
+     백엔드 `/predict`가 호출돼(왕복 ~5 ms, 10 Hz) 밀도 구름에 **멀티모달 봉우리**가
+     갈라져 뜨고 로봇이 선제 감속한다. 서버가 없거나 미로드면 조용히 칼만으로 폴백한다.
+  - 재학습본으로 교체: `PREDICT_MODEL=경로/model.pt` 또는 다른 허브 저장소 `PREDICT_MODEL_REPO=...`.
 
 설계·평가·sim2real 조사 문서 색인: **[docs/chanwoo/](docs/chanwoo/README.md)**.
 
