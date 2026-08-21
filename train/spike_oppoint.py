@@ -10,9 +10,20 @@ from __future__ import annotations
 import math, sys
 from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT)); sys.path.insert(0, str(ROOT / "train"))
-from spike_safety import windows_val, _mind      # 동일 윈도우 로더 재사용
+sys.path.insert(0, str(ROOT))
+from trajectory.sim_traj import load_windows      # 정식 val 윈도우 로더(과거 spike_safety 대체)
+from trajectory.evaluator import min_dist_to as _mind
 from trajectory.learned_predictor import LearnedPredictor, PRED
+
+
+def windows_val():
+    """정식 로더 → spike가 쓰던 (obs[(t,x,z)], gt[(x,z)], robot(x,z)) 튜플로 변환."""
+    out = []
+    for w in load_windows("val"):
+        obs = w.scene.agents[0].history
+        gt_xz = [(x, z) for (_, x, z) in w.gt]
+        out.append((obs, gt_xz, w.robot))
+    return out
 
 R = 3.1
 TAUS = [0.0, 0.05, 0.1, 0.2, 0.3, 0.5, 0.7]

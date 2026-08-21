@@ -56,7 +56,7 @@ legacy 포함 학습 → legacy: **0.630/1.126**. **격차 +31%.**
 - `train/spike_social.py` · `train/spike_crosslayout.py` · `train/spike_noise.py`
 - 실행: `uv run python train/spike_*.py`. 데이터는 `dataset/trajectories/`(gitignore).
 
-## 안전 결정 평가 + 운영점 (목표 직결 — `spike_safety.py`·`spike_oppoint.py`)
+## 안전 결정 평가 + 운영점 (목표 직결 — `eval_traj_safety.py`·`spike_oppoint.py`)
 
 ADE/FDE(위치오차) 대신 **"정지반경 진입을 미리 맞혔나"의 recall/precision**으로 목표(충돌
 방지·불필요 정지 방지)를 직접 측정. 대상 = 지금 정지반경(R=3.1m) **밖**에 있는 사람의 진입 예측

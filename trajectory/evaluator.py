@@ -29,3 +29,25 @@ def fde(pred_steps, gt_points) -> float:
     _, px, pz, _ = pred_steps[n - 1]
     _, gx, gz = gt_points[n - 1]
     return _dist(px, pz, gx, gz)
+
+
+# ── 안전 지표: 정지반경 진입 예측 recall/precision ─────────────────────────────
+# ADE/FDE(위치오차)와 별개로, "정지반경 밖의 사람이 지평선 안에 반경 안으로 들어올지"를
+# 미리 맞혔나를 잰다. 선제 안전층의 목표 직결 지표(놓치면 충돌 → recall 우선).
+
+def min_dist_to(points, ref) -> float:
+    """경로의 각 점과 기준점 ref=(x, z) 사이 최소 거리(미터). points=[(x, z), …]."""
+    rx, rz = ref
+    return min(math.hypot(x - rx, z - rz) for (x, z) in points)
+
+
+def enters_radius(points, ref, radius: float) -> bool:
+    """경로가 기준점 반경 안으로 한 번이라도 들어오면 True (최소거리 < radius)."""
+    return min_dist_to(points, ref) < radius
+
+
+def recall_precision(tp: int, fp: int, fn: int):
+    """(recall, precision). 분모 0이면 해당 값은 NaN."""
+    rec = tp / (tp + fn) if (tp + fn) else float("nan")
+    pre = tp / (tp + fp) if (tp + fp) else float("nan")
+    return rec, pre
