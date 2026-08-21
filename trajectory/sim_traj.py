@@ -23,6 +23,10 @@ MOVE_EPS = 1.0
 ROOT = Path(__file__).resolve().parent.parent
 TRAJ_DIR = ROOT / "dataset" / "trajectories"
 
+# 로봇 베이스 기본값 (x, z). 초기 궤적 캡처엔 scene에 robot 필드가 없다 —
+# 그 시절에도 로봇은 이 자리(LAYOUT.robot.base)에 있었으므로 없을 때 이 값을 쓴다.
+ROBOT_BASE = (-1.1, 0.815)
+
 
 @dataclass
 class Window:
@@ -34,6 +38,7 @@ class Window:
     gt: list                                # 12×(t, x, z)
     goal: Optional[tuple]                   # (gx, gz) at last obs step, 통과 구간이면 None
     moved: bool                             # 예측 구간 총 이동 > MOVE_EPS
+    robot: tuple = ROBOT_BASE               # scene 로봇 위치 (x, z) — 안전 진입 평가용
 
 
 def is_val(seed: int) -> bool:
@@ -54,6 +59,8 @@ def load_windows(split: str = "val", traj_dir=None) -> list:
             continue
         if split == "train" and val:
             continue
+        rb = sc.get("robot") or {}
+        robot = (float(rb.get("x", ROBOT_BASE[0])), float(rb.get("z", ROBOT_BASE[1])))
         for node in sc["nodes"]:
             if node.get("discarded"):
                 continue
@@ -74,5 +81,5 @@ def load_windows(split: str = "val", traj_dir=None) -> list:
                            for i in range(1, len(path)))
                 moved = dist > MOVE_EPS
                 scene = TrackScene(now=now, horizon=horizon, agents=[Track(0, hist)], map=None)
-                wins.append(Window(sc["scene_id"], seed, node["id"], scene, gt, goal, moved))
+                wins.append(Window(sc["scene_id"], seed, node["id"], scene, gt, goal, moved, robot))
     return wins

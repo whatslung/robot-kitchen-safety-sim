@@ -11,6 +11,8 @@
 
 ## 궤적 예측 (이슈 #2)
 - [prediction-eval.md](prediction-eval.md) — 베이스라인 vs 학습형 ADE/FDE 비교표(자동 생성)
+- [prediction-safety-eval.md](prediction-safety-eval.md) — 정지반경 진입 예측 recall/precision(안전 지표, 자동 생성)
+- [hf-model-card-human-move-lstm.md](hf-model-card-human-move-lstm.md) — HF 공개 모델 [`chanubc/human-move-lstm`](https://huggingface.co/chanubc/human-move-lstm) 카드 원본
 - [prediction-sim2real-notes.md](prediction-sim2real-notes.md) — Trajectron++ 조사·레이아웃 다양성·
   검출 노이즈 증강·안전 결정(recall/precision)·운영점 튜닝·**실사 zero-shot 전이** 결론
 
