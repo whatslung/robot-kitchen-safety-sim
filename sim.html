@@ -3116,6 +3116,20 @@ function fireFogTick(dt) {
      불 → 연기 → 가림. GT_BUSY 중에는 위에서 이미 return 했으므로 캡처는 안전하다. */
   const ks = Math.min(1, FIRE_FOG.t / FIRE_FOG.smokeFull);
   fsmoke.emitRate = FIRE_FOG.smokeMin + (FIRE_FOG.smokeMax - FIRE_FOG.smokeMin) * ks;
+  /* ── 연기가 **나오는 범위**를 진행에 따라 넓힌다 ─────────────────────────────
+     밀어내는 힘만으로는 방이 안 찬다. 입자 수명이 3~7초인데 수평 속도가 ~0.5m/s라
+     화원에서 2~3m밖에 못 간다. 실측(85초 시점, 방 11.5×11.5m을 3×3으로): 미는 힘을
+     넣기 전 중앙 칸 91% · 넣은 뒤 87%. 거의 그대로였다.
+     수명을 늘리면 상한(4000)이 오래된 입자로 차서 화원 근처가 오히려 옅어진다.
+
+     그래서 배출 상자를 넓힌다. 물리적으로도 이쪽이 맞다 — 배출 상자는 "지금 연기가
+     있는 영역"을 뜻하고, 화재가 진행되면 그 영역이 실제로 방 전체로 커진다.
+     화원의 기둥은 유지되므로(중심이 그대로) 불 위 기둥과 방 전체 연무가 같이 보인다. */
+  const kb = Math.min(1, FIRE_FOG.t / FIRE_FOG.full);
+  const halfW = F.w * 0.28 + kb * SMOKE_LAYER.emitGrow;
+  const halfD = F.d * 0.28 + kb * SMOKE_LAYER.emitGrow;
+  fsmoke.minEmitBox.set(-halfW, -0.02 - kb * 0.55, -halfD);
+  fsmoke.maxEmitBox.set( halfW,  0.02 + kb * 0.55,  halfD);
 }
 
 /* ══ 연기 가두기 — 후드·천장을 뚫고 나가지 못하게 ═══════════════════════════
@@ -3140,17 +3154,42 @@ function fireFogTick(dt) {
    (실측 3525개 전부 1.15m) 얇은 판이 됐다. 실제 연기층은 아래로 내려오면서도
    **그 위 부피를 채운 채로** 내려온다. 그래서 천장은 물리 그대로 두고,
    진행에 따라 **아래로 미는 힘**만 준다 — 부력과 겨루면서 부피를 채운다. */
-const SMOKE_LAYER = { floorY:1.05, sink:0.0055 };
+/* spread — 화원에서 바깥으로 밀어내는 힘. 진행에 비례한다.
+   이게 없으면 연기가 **솥 주변에만 뭉친다**: 실측(2026-08-21, 85초 시점, 방 11.5×11.5m을
+   3×3으로 나눔) 중앙 칸에 3,267개(91%)·나머지 8칸 합쳐 329개(9%).
+   그래서 자유시점에서 "방이 꽉 찬" 것은 **전부 안개**였고 연기가 아니었다.
+   안개는 거리에 비례하므로 가까이 보는 CCTV는 안개도 약하고 사이에 연기도 없어
+   **끝까지 선명**했다(cvPole 1.8m 30% vs 자유시점 12.8m 94%).
+   실제 화재는 연기가 천장을 타고 벽까지 퍼진 뒤 내려온다. 그 거동을 만든다. */
+/* emitGrow — 진행에 따라 **배출 상자**를 넓히는 값. 기본 0(끔).
+   ⚠️ 3.8로 켜 봤다가 껐다. 연기 분포는 의도대로 퍼졌지만(85초 중앙칸 91%→22%)
+   **라벨이 무너졌다**: cvN에서 45초에 person 0 · robot 0, 85초엔 두 카메라 모두 person 0.
+   원인은 배출 상자가 emitter의 높이(유면 위 ~1.05m)에 있다는 것이다. 상자를 넓히면
+   **사람 허리 높이에 방 전체로 연기가 생긴다.** 실제 연기는 천장부터 차 내려오므로 반대다.
+   제대로 하려면 천장층에 쌓인 연기가 **오래 살아남아** 옆으로 퍼져야 하고,
+   그건 수명 상향 + 상한 증설이 필요한 별도 작업이다. 지금은 끄고 남겨 둔다.
+   켜 보려면 __sim.SMOKE_LAYER.emitGrow = 1.5 정도부터. */
+const SMOKE_LAYER = { floorY:1.05, sink:0.0055, spread:0.007, spreadMax:5.5, emitGrow:0 };
 function smokeConfineTick() {
   const parts = fsmoke.particles;
   if (!parts.length) return;
   const H = HOOD_BOX, ceilY = LAYOUT.room.h - 0.12;
   const prog = FIRE_FOG.on ? Math.min(1, FIRE_FOG.t / FIRE_FOG.full) : 0;
   const sink = SMOKE_LAYER.sink * prog, fy = SMOKE_LAYER.floorY;
+  const spread = SMOKE_LAYER.spread * prog;
   for (let i = 0; i < parts.length; i++) {
     const p = parts[i], pos = p.position;
     // ① 화재가 진행될수록 연기가 아래로 내려온다 (연기층 하강)
     if (sink > 0 && pos.y > fy) p.direction.y -= sink;
+    /* ①-b 바깥으로 퍼진다 — 화원(원점)에서 멀어지는 방향. 진행에 비례.
+       spreadMax를 넘으면 그만 민다. 안 그러면 벽을 뚫고 계속 나가 방 밖에 연기가 생긴다. */
+    if (spread > 0 && pos.y > fy) {
+      const rx = pos.x, rz = pos.z, r = Math.hypot(rx, rz);
+      if (r > 0.25 && r < SMOKE_LAYER.spreadMax) {
+        p.direction.x += (rx / r) * spread;
+        p.direction.z += (rz / r) * spread;
+      }
+    }
     // ② 바닥층에 닿으면 더 안 내려가고 옆으로 깔린다
     if (pos.y < fy) { pos.y = fy; if (p.direction.y < 0) p.direction.y = 0; }
     // ③ 후드·천장은 뚫지 못한다. 막히면 상승분을 수평으로 돌린다(천장 제트)
