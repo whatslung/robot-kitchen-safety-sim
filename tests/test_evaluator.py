@@ -1,7 +1,8 @@
 """ADE/FDE·안전 recall 지표 테스트 (손계산과 일치해야 함)."""
 import math
 
-from trajectory.evaluator import ade, fde, min_dist_to, enters_radius, recall_precision
+from trajectory.evaluator import (ade, fde, min_dist_to, enters_radius,
+                                   recall_precision, entry_confusion)
 
 
 def test_ade_fde_match_hand_computation():
@@ -38,3 +39,16 @@ def test_recall_precision():
     # 분모 0 → NaN
     r2, p2 = recall_precision(0, 0, 0)
     assert math.isnan(r2) and math.isnan(p2)
+
+
+def test_entry_confusion():
+    R = 3.1
+    # 이미 반경 안(cur < R) → 대상 아님
+    assert entry_confusion(2.0, True, True, R) is None
+    # 반경 밖(cur >= R)에서 4가지 조합
+    assert entry_confusion(5.0, True, True, R) == "TP"     # 진입 예측·실제 진입
+    assert entry_confusion(5.0, False, True, R) == "FP"    # 진입 예측·실제 안 함(헛정지)
+    assert entry_confusion(5.0, True, False, R) == "FN"    # 예측 못 함·실제 진입(놓침=충돌)
+    assert entry_confusion(5.0, False, False, R) == "TN"   # 둘 다 아님
+    # 경계 cur == R 은 '밖'으로 취급(대상) — enters_radius와 같은 배타 규약
+    assert entry_confusion(R, False, False, R) == "TN"

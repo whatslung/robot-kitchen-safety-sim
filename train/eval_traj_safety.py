@@ -25,7 +25,7 @@ sys.path.insert(0, str(ROOT))                          # trajectory 패키지 im
 
 from trajectory.predictors import ConstantVelocityPredictor, KalmanPredictor
 from trajectory.learned_predictor import LearnedPredictor
-from trajectory.evaluator import enters_radius, recall_precision
+from trajectory.evaluator import enters_radius, recall_precision, entry_confusion
 from trajectory.sim_traj import load_windows, PRED
 
 # 정지반경 3.1m = SAFE.NOM_STOP(시뮬 안전링). 2.0m는 더 촘촘한 참고 반경.
@@ -62,29 +62,30 @@ def evaluate(R: float, split: str = "val", traj_dir=None):
     C = {k: [0, 0, 0] for k in PREDICTORS}             # [TP, FP, FN]
     n_anti = n_pos = 0
     for win, modes in zip(wins, modes_all):
-        if _cur_dist(win) < R:
+        cur = _cur_dist(win)
+        if cur < R:
             continue                                    # 이미 안쪽 → 반응형 몫, 대상 아님
         n_anti += 1
         gt_xz = [(x, z) for (_, x, z) in win.gt]
-        gt_pos = enters_radius(gt_xz, win.robot, R)
-        if gt_pos:
+        gt_entry = enters_radius(gt_xz, win.robot, R)
+        if gt_entry:
             n_pos += 1
         cv_xz = [(x, z) for (_, x, z, _) in cv.predict(win.scene).per_agent[0][0].steps]
         kf_xz = [(x, z) for (_, x, z, _) in kf.predict(win.scene).per_agent[0][0].steps]
-        preds = {
+        pred_entry = {
             "등속(const-vel)": enters_radius(cv_xz, win.robot, R),
             "칼만(Kalman)": enters_radius(kf_xz, win.robot, R),
             "학습형 LSTM(최빈)": enters_radius(modes[0]["path"], win.robot, R),
             "학습형 LSTM(전모드)": any(enters_radius(m["path"], win.robot, R) for m in modes),
         }
         for k in PREDICTORS:
-            p, g = preds[k], gt_pos
-            if p and g:
+            cell = entry_confusion(cur, gt_entry, pred_entry[k], R)
+            if cell == "TP":
                 C[k][0] += 1
-            elif p and not g:
+            elif cell == "FP":
                 C[k][1] += 1
-            elif (not p) and g:
-                C[k][2] += 1
+            elif cell == "FN":
+                C[k][2] += 1                            # TN 은 recall/precision에 불필요 → 미집계
     return {"R": R, "n_anti": n_anti, "n_pos": n_pos, "C": C}
 
 

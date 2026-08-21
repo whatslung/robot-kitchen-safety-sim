@@ -71,6 +71,9 @@ def load_windows(split: str = "val", traj_dir=None) -> list:
                 hist = [(o["t"], o["x"], o["z"]) for o in obs]
                 gt = [(o["t"], o["x"], o["z"]) for o in fut]
                 now = hist[-1][0]
+                # 예측 지평선 = 마지막 GT 시각 - now. 캡처가 0.4s 균일 간격이면 ≈ PRED*0.4=4.8s.
+                # 등속·칼만은 이 horizon으로 위치를 스케일하므로(predictors.py), 캡처 주기가
+                # 달라지면 베이스라인 예측이 달라진다 — 안전 eval 재현성은 균일 0.4s 가정에 의존.
                 horizon = gt[-1][0] - now
                 last = obs[-1]
                 goal = (last["gx"], last["gz"]) if last.get("gx") is not None else None
