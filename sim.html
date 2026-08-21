@@ -2925,9 +2925,13 @@ const fsmoke = makeParticles("fsmoke", new V3(F.pos.x, F.oilY + 0.28, F.pos.z), 
      당시 문제는 연기가 후드·천장을 관통하는 것이었고, 해법으로 **빨리 죽였다**.
      그건 증상만 가린 것이다. 화재 연기는 공간에 퍼져야 맞고, 짧은 수명으로는
      퍼질 시간 자체가 없다. 수명을 되돌리고 관통 문제는 따로 잡는다. */
+  /* life는 **진행에 따라 fireFogTick이 늘린다**(여기 값은 초기 단계 기준).
+     수명이 짧으면 연기가 화원에서 2~3m밖에 못 가 방이 안 찬다 — 실측 중앙칸 91%.
+     cap도 같이 올려야 한다. 수명만 늘리면 정상 상태 개수(rate×life)가 상한을 넘어
+     오래된 입자가 자리를 다 먹고 화원 근처가 오히려 옅어진다. */
   size:[0.45,1.30], life:[3.0,7.0], gravity:new V3(0,0.2,0),
   dir:[new V3(-1.1,0.5,-1.1), new V3(1.1,1.3,1.1)], power:[0.2,0.7],
-  cap: 4000
+  cap: 12000
 });
 fsmoke.blendMode = BABYLON.ParticleSystem.BLENDMODE_STANDARD;
 /* ══ 불꽃을 연기보다 **나중에** 그린다 — fire 라벨이 통째로 사라지던 원인 ═══════
@@ -3116,6 +3120,28 @@ function fireFogTick(dt) {
      불 → 연기 → 가림. GT_BUSY 중에는 위에서 이미 return 했으므로 캡처는 안전하다. */
   const ks = Math.min(1, FIRE_FOG.t / FIRE_FOG.smokeFull);
   fsmoke.emitRate = FIRE_FOG.smokeMin + (FIRE_FOG.smokeMax - FIRE_FOG.smokeMin) * ks;
+  /* ── 연기가 **나오는 범위**를 진행에 따라 넓힌다 ─────────────────────────────
+     밀어내는 힘만으로는 방이 안 찬다. 입자 수명이 3~7초인데 수평 속도가 ~0.5m/s라
+     화원에서 2~3m밖에 못 간다. 실측(85초 시점, 방 11.5×11.5m을 3×3으로): 미는 힘을
+     넣기 전 중앙 칸 91% · 넣은 뒤 87%. 거의 그대로였다.
+     수명을 늘리면 상한(4000)이 오래된 입자로 차서 화원 근처가 오히려 옅어진다.
+
+     그래서 배출 상자를 넓힌다. 물리적으로도 이쪽이 맞다 — 배출 상자는 "지금 연기가
+     있는 영역"을 뜻하고, 화재가 진행되면 그 영역이 실제로 방 전체로 커진다.
+     화원의 기둥은 유지되므로(중심이 그대로) 불 위 기둥과 방 전체 연무가 같이 보인다. */
+  const kb = Math.min(1, FIRE_FOG.t / FIRE_FOG.full);
+  const halfW = F.w * 0.28 + kb * SMOKE_LAYER.emitGrow;
+  const halfD = F.d * 0.28 + kb * SMOKE_LAYER.emitGrow;
+  fsmoke.minEmitBox.set(-halfW, -0.02 - kb * 0.55, -halfD);
+  fsmoke.maxEmitBox.set( halfW,  0.02 + kb * 0.55,  halfD);
+  /* ── 수명을 진행에 따라 늘린다 — 연기가 방을 채우게 하는 진짜 손잡이 ──────────
+     배출 상자를 넓히는 방식은 실패했다(사람 허리 높이에 연기가 생겨 person 라벨이 무너짐).
+     맞는 방식은 **천장층에 쌓인 연기를 오래 살려 두는 것**이다. 오래 살면 그만큼 멀리
+     흘러가고(위의 spread), 층이 두꺼워지며, 실제 화재에서 연기가 사라지지 않는 것과도 맞다.
+     수명만 늘리면 상한이 오래된 입자로 차서 화원 근처가 옅어지므로 cap을 12000으로 같이 올렸다. */
+  const L0 = SMOKE_LAYER.life0, L1 = SMOKE_LAYER.life1;
+  fsmoke.minLifeTime = L0[0] + (L1[0] - L0[0]) * kb;
+  fsmoke.maxLifeTime = L0[1] + (L1[1] - L0[1]) * kb;
 }
 
 /* ══ 연기 가두기 — 후드·천장을 뚫고 나가지 못하게 ═══════════════════════════
@@ -3140,17 +3166,51 @@ function fireFogTick(dt) {
    (실측 3525개 전부 1.15m) 얇은 판이 됐다. 실제 연기층은 아래로 내려오면서도
    **그 위 부피를 채운 채로** 내려온다. 그래서 천장은 물리 그대로 두고,
    진행에 따라 **아래로 미는 힘**만 준다 — 부력과 겨루면서 부피를 채운다. */
-const SMOKE_LAYER = { floorY:1.05, sink:0.0055 };
+/* spread — 화원에서 바깥으로 밀어내는 힘. 진행에 비례한다.
+   이게 없으면 연기가 **솥 주변에만 뭉친다**: 실측(2026-08-21, 85초 시점, 방 11.5×11.5m을
+   3×3으로 나눔) 중앙 칸에 3,267개(91%)·나머지 8칸 합쳐 329개(9%).
+   그래서 자유시점에서 "방이 꽉 찬" 것은 **전부 안개**였고 연기가 아니었다.
+   안개는 거리에 비례하므로 가까이 보는 CCTV는 안개도 약하고 사이에 연기도 없어
+   **끝까지 선명**했다(cvPole 1.8m 30% vs 자유시점 12.8m 94%).
+   실제 화재는 연기가 천장을 타고 벽까지 퍼진 뒤 내려온다. 그 거동을 만든다. */
+/* emitGrow — 진행에 따라 **배출 상자**를 넓히는 값. 기본 0(끔).
+   ⚠️ 3.8로 켜 봤다가 껐다. 연기 분포는 의도대로 퍼졌지만(85초 중앙칸 91%→22%)
+   **라벨이 무너졌다**: cvN에서 45초에 person 0 · robot 0, 85초엔 두 카메라 모두 person 0.
+   원인은 배출 상자가 emitter의 높이(유면 위 ~1.05m)에 있다는 것이다. 상자를 넓히면
+   **사람 허리 높이에 방 전체로 연기가 생긴다.** 실제 연기는 천장부터 차 내려오므로 반대다.
+   제대로 하려면 천장층에 쌓인 연기가 **오래 살아남아** 옆으로 퍼져야 하고,
+   그건 수명 상향 + 상한 증설이 필요한 별도 작업이다. 지금은 끄고 남겨 둔다.
+   켜 보려면 __sim.SMOKE_LAYER.emitGrow = 1.5 정도부터. */
+const SMOKE_LAYER = {
+  floorY:1.05, sink:0.0055,
+  spread:0.012, spreadMax:5.5,   // 수명이 길어졌으니 미는 힘도 의미가 생긴다(0.007→0.012)
+  emitGrow:0,
+  life0:[3.0, 7.0],              // 초기 단계 수명 — 화원 위 기둥
+  /* 최대 진행 수명. [14,26]도 해 봤는데 85초에서 **완전 백아웃**이 됐다
+     (person 0 · robot 0). 물리적으로는 맞지만 그 구간 표본이 학습에 쓸모가 없다.
+     [10,18]이면 사람이 기준선의 23%로 **가려지되 남는다** — 연기 낀 검출 표본이 된다. */
+  life1:[10.0, 18.0]
+};
 function smokeConfineTick() {
   const parts = fsmoke.particles;
   if (!parts.length) return;
   const H = HOOD_BOX, ceilY = LAYOUT.room.h - 0.12;
   const prog = FIRE_FOG.on ? Math.min(1, FIRE_FOG.t / FIRE_FOG.full) : 0;
   const sink = SMOKE_LAYER.sink * prog, fy = SMOKE_LAYER.floorY;
+  const spread = SMOKE_LAYER.spread * prog;
   for (let i = 0; i < parts.length; i++) {
     const p = parts[i], pos = p.position;
     // ① 화재가 진행될수록 연기가 아래로 내려온다 (연기층 하강)
     if (sink > 0 && pos.y > fy) p.direction.y -= sink;
+    /* ①-b 바깥으로 퍼진다 — 화원(원점)에서 멀어지는 방향. 진행에 비례.
+       spreadMax를 넘으면 그만 민다. 안 그러면 벽을 뚫고 계속 나가 방 밖에 연기가 생긴다. */
+    if (spread > 0 && pos.y > fy) {
+      const rx = pos.x, rz = pos.z, r = Math.hypot(rx, rz);
+      if (r > 0.25 && r < SMOKE_LAYER.spreadMax) {
+        p.direction.x += (rx / r) * spread;
+        p.direction.z += (rz / r) * spread;
+      }
+    }
     // ② 바닥층에 닿으면 더 안 내려가고 옆으로 깔린다
     if (pos.y < fy) { pos.y = fy; if (p.direction.y < 0) p.direction.y = 0; }
     // ③ 후드·천장은 뚫지 못한다. 막히면 상승분을 수평으로 돌린다(천장 제트)
@@ -3166,6 +3226,55 @@ function smokeConfineTick() {
     p.direction.x += (dx / len) * push;
     p.direction.z += (dz / len) * push;
   }
+}
+
+/* ══ 화재를 특정 진행 시점으로 즉시 맞춘다 (데이터셋 생성용) ═══════════════
+   왜 필요한가 — generateDataset은 `randomizeScene(); 4프레임 렌더; 촬영`이다.
+   연기는 정상 상태까지 수 초가 걸리므로 4프레임으로는 자라지 못한다. 게다가
+   setFire(true)는 이미 화재 중이면 fireFogStart()에서 조기 return 하여 진행 시계가
+   리셋되지 않는다 → **화재 표본의 모습이 "직전 샘플이 무엇이었냐"에 끌려다닌다.**
+
+   실측(2026-08-21, 같은 '화재 샘플'인데):
+     직전에 화재 없었음 → 경과 4.9s · 연기 25개 · 연무 0.003 · 방이 말끔
+     직전에도 화재였음  → 경과 603s · 연기 3548개 · 연무 0.22 · 자욱
+   그리고 화재 아닌 샘플이 하나만 끼면 시계가 0으로 돌아가, **연기가 옅게 낀 중간 구간**이
+   거의 안 나온다. 이 프로젝트가 증명하려는 게 정확히 그 구간인데도.
+
+   그래서 진행 시점을 **샘플마다 명시적으로 뽑아** 여기서 그 상태를 만들어 준다.
+   상세: analysis/fire_dataset_capture_gap.md */
+function fireSeekTo(sec) {
+  if (!state.fire) return;
+  const t = Math.max(0, sec) * 1000;
+  /* 입자를 먼저 비운다. 직전 샘플이 최성기였다면 3500개가 남아 있어, 초기 발화를
+     만들려 해도 그 덩어리가 그대로 찍힌다. reset()은 내부 재고 풀을 지키는 정식 API다
+     (particles.length=0 으로 비우면 풀이 깨져 배출이 멈춘다 — 실측). */
+  fsmoke.reset(); firePS.reset();
+  FIRE_FOG.t = t;
+  /* 입자를 목표 개수까지 채운다 — updateSpeed를 올려 시간을 빨리 감는다.
+     고정 프레임 수로 돌렸더니 초기 단계(10초)에서도 상한 4000까지 차 버려서,
+     단계가 달라도 연기 양이 똑같아졌다. 목표치를 정하고 **닿으면 멈춘다.**
+     목표 = emitRate × 5 — 최대 배출 700에서 정상 상태가 3500이었던 실측 비례. */
+  fireFogTick(0);                                    // 이 시점의 배출량·수명부터 확정
+  /* 정상 상태 개수 ≈ 배출량 × 평균수명. (실측 근거: 배출 700·평균수명 5s에서 3500개였다.)
+     수명이 진행에 따라 바뀌므로 상수 5를 쓰면 안 된다 — 후반부를 한참 덜 채우게 된다. */
+  const avgLife = (fsmoke.minLifeTime + fsmoke.maxLifeTime) / 2;
+  const target = Math.min(fsmoke.getCapacity() * 0.9, fsmoke.emitRate * avgLife);
+  const sv = [firePS, fsmoke, steam, bubbles].map(P => ({ P, s: P.updateSpeed }));
+  sv.forEach(x => { x.P.updateSpeed = x.s * 10; });
+  let guard = 0;
+  while (fsmoke.particles.length < target && guard++ < 90) scene.render();
+  sv.forEach(x => { x.P.updateSpeed = x.s; });
+  FIRE_FOG.t = t;                 // 빨리감기 동안 틱이 밀어 놓은 값을 목표로 되돌린다
+  fireFogTick(0);                 // 연무 농도·배출량을 그 시점 값으로 확정
+}
+/* 데이터셋 표본용 무작위 진행 시점(초). 0 = 막 붙은 불, full = 완전히 자욱.
+   **앞구간을 촘촘히** 본다 — 지수 1.5로 0쪽에 몰리게 한다.
+   (처음에 Math.sqrt를 썼는데 그건 반대로 뒤쪽에 몰린다: √0.5=0.71. 실측에서 6표본 중
+    화재 3개가 전부 55~79초로 나와 초기 구간이 비었다.)
+   왜 앞을 촘촘히 — 연기가 옅게 낀 구간이 **검출이 가능하면서도 어려운** 지점이라 표본이
+   더 필요하다. 완전히 자욱한 프레임은 사실 사람도 못 보고, 배우기도 쉽다. */
+function fireRandomStage() {
+  return Math.pow(Math.random(), 1.5) * (FIRE_FOG.full / 1000);
 }
 
 function setFire(on) {
@@ -3455,12 +3564,44 @@ function jobRole(jobKey) {
      가는데도 route 기준으로는 1.49m라 danger가 붙었다. 라벨은 동선을 따라가야 한다. */
   const plan = WF.on && wfPlan(jobKey);
   const keys = plan ? plan.set : J.route;
-  let min = Infinity;
+  /* ── **평균** 거리로 판정한다. 종전에는 min(가장 가까운 한 지점)이었는데 축퇴했다 ──
+     min은 극단값이라 동선에 가까운 지점이 **하나만 있어도** 그 직무 전체가 danger가 된다.
+     실측(2026-08-21): 5개 직무가 **전부 danger**였다.
+       cook 0.73 · wash 1.49 · lead 1.69 · prep 2.42 · carry 2.65   (정지 반경 3.10)
+     특히 세정(wash)은 sink 6.61 · store 5.78 · isle2 6.16 · nrack 6.59로 **대부분 6m 밖**인데
+     선반(wrack 1.49)에 한 번 들르는 것 때문에 위험으로 분류됐다.
+     라벨이 전부 같으면 구별할 게 없어 학습에서 아무것도 못 배운다 —
+     팀원2가 "danger 라벨 축퇴, 실제 학습에 쓸 때 정리"로 남겨 둔 항목이 이것이다.
+
+     평균은 "그 직무가 **평소** 로봇에서 얼마나 떨어져 일하는가"를 나타낸다.
+     가끔 가까이 가는 것은 동선 자체(사람 위치 시계열)에 이미 들어 있으므로,
+     직무 라벨까지 그걸 볼 필요는 없다. */
+  let sum = 0, n = 0;
   for (const k of keys) {
     const st = STATION[k];
-    if (st) min = Math.min(min, Math.hypot(st.pos.x - B.x, st.pos.z - B.z));
+    if (st) { sum += Math.hypot(st.pos.x - B.x, st.pos.z - B.z); n++; }
   }
-  return min < SAFE.NOM_STOP ? "danger" : min < SAFE.NOM_SLOW ? "caution" : "far";
+  const avg = n ? sum / n : Infinity;
+  return avg < SAFE.NOM_STOP ? "danger" : avg < SAFE.NOM_SLOW ? "caution" : "far";
+}
+/* 버킷(far/caution/danger)만 주면 배치가 바뀔 때마다 경계가 흔들린다.
+   지금 배치에서도 carry 3.91 · prep 3.98이 감속 반경 3.90을 간발로 넘어 caution이 비어 있다.
+   **원시 거리를 같이 내보내** 쓰는 쪽에서 다시 나눌 수 있게 한다.
+   { avg: 동선 평균, min: 최근접, n: 스테이션 수 } — 라벨은 avg 기준이다. */
+function jobDistance(jobKey) {
+  const J = JOB[jobKey];
+  if (!J) return null;
+  const B = LAYOUT.robot.base;
+  const plan = WF.on && wfPlan(jobKey);
+  const keys = plan ? plan.set : J.route;
+  let sum = 0, n = 0, min = Infinity;
+  for (const k of keys) {
+    const st = STATION[k];
+    if (!st) continue;
+    const d = Math.hypot(st.pos.x - B.x, st.pos.z - B.z);
+    sum += d; n++; if (d < min) min = d;
+  }
+  return n ? { avg:+(sum/n).toFixed(3), min:+min.toFixed(3), n } : null;
 }
 /* 근무 시나리오 — 몇 명이 어떤 직무를 맡는가. 이게 '통제 가능한 한 회차'의 단위다.
 
@@ -6503,7 +6644,12 @@ function camIntrinsics(cam, w, h) {
     world_matrix_row_major: Array.from(wm.m).map(v => +v.toFixed(6)),
   };
 }
-async function renderWith(cam, setup, teardown) {
+/* opts.warm — 셰이더 대기(whenReadyAsync)를 건너뛴다.
+   그 대기는 상한 1.5s인데 빈 LinesMesh(predLine 등)가 영원히 !isReady라 **매번 만료된다**.
+   즉 패스 하나당 1.5s가 붙는다. 앞 패스에서 같은 머티리얼로 이미 렌더한 뒤라면
+   컴파일이 끝나 있으므로 기다릴 이유가 없다. 연기 농도 패스가 그 경우다.
+   (이걸 안 하면 캡처가 1.1s → 6.3s로 늘어난다 — 실측) */
+async function renderWith(cam, setup, teardown, opts) {
   const savedCams = scene.activeCameras ? scene.activeCameras.slice() : null;
   const savedCam = scene.activeCamera;
   const savedVp = cam.viewport;   // PiP 인셋 뷰포트가 물려오면 GT가 구석에 렌더됨 — 전체 프레임 강제
@@ -6513,7 +6659,8 @@ async function renderWith(cam, setup, teardown) {
   if (setup) setup();
   // 갓 생성된 마스크 머티리얼의 병렬 셰이더 컴파일 대기 — 첫 캡처 검은 프레임 방지.
   // 단 상한 1.5s: 빈 LinesMesh(predLine 등)는 영원히 !isReady라 무한 대기로 캡처가 멈춘다(실측).
-  await Promise.race([scene.whenReadyAsync(), new Promise(r => setTimeout(r, 1500))]);
+  if (!(opts && opts.warm))
+    await Promise.race([scene.whenReadyAsync(), new Promise(r => setTimeout(r, 1500))]);
   scene.render(); scene.render(); scene.render();   // 카메라·뷰포트 전환 후 첫 프레임은 포스트체인 재바인딩으로 검게 나옴 — 예열 렌더
   const w = engine.getRenderWidth(), h = engine.getRenderHeight();
   const data = await engine.readPixels(0, 0, w, h);
@@ -6536,6 +6683,10 @@ function pixelsToDataURL(px, w, h) {
   return cv.toDataURL("image/png");
 }
 const GT_W = 960, GT_H = 720;   // 데이터셋 해상도 — 창 크기와 무관하게 고정
+/* 한때 연기 농도 패스를 반해상도로 찍어 캡처를 줄이려 했는데 **효과가 없어서 뺐다.**
+   픽셀 수가 병목이 아니었다 — 실측: 불투명 파티클 렌더 48ms(평소 54ms와 동일) ·
+   파티클 스냅샷 3패스 8ms · readPixels 2ms. 전부 무시할 수준이다.
+   진짜 원인은 패스마다 붙는 1.5초 셰이더 대기였다(renderWith의 opts.warm 참고). */
 /* 동시 실행 방지 — 캡처 중에는 씬 전체의 머티리얼을 마스크용으로 바꿨다가 되돌린다.
    두 호출이 겹치면 서로의 저장/복원 맵을 덮어써 **라벨이 0개로 나온다**(실측 확인).
    generateDataset은 await로 순차 호출하지만, GT 버튼 연타 등으로 겹칠 수 있다. */
@@ -6633,21 +6784,32 @@ async function groundTruthImpl(camId, opt) {
   }, () => {
     savedMats.forEach((mat, mesh) => { mesh.material = mat; });
     gtOn();
-  });
+  }, { warm:true });
+  /* ↑ 대기 생략 — 바로 앞 RGB 패스가 이미 기다렸다.
+     그 대기(whenReadyAsync, 상한 1.5s)는 **항상 만료된다.** 씬에 영원히 !isReady인
+     빈 LinesMesh가 있어서다(파일 앞쪽 renderWith 주석). 실측으로 확인했다:
+     평소 1594ms · 파티클을 마스크 상태로 바꾼 뒤 1580ms — 조건과 무관하게 상한을 다 쓴다.
+     즉 패스마다 1.5s가 순수 낭비다. 검은 첫 프레임은 예열 렌더 3회가 막아 준다.
+     한 캡처에서 **첫 패스(RGB)만** 기다리고 나머지는 건너뛴다.
+     실측: 화재 표본 캡처 6.5s → 4.1s → (이 수정으로 추가 단축) */
 
   /* 2.1) 연기 농도 패스 — 전 메시를 검정으로 깔고 **연기만 흰색·본래 알파**로 찍는다.
      겹칠수록 밝아지므로 픽셀 밝기가 곧 그 시선의 연기 두께(광학 깊이)가 된다.
      이 값으로 "여기는 정말 안 보이는가"를 판정해 아래에서 마스크에 덮는다. */
+  /* 연기가 없으면 이 패스를 통째로 건너뛴다. 표본의 절반가량이 화재 아님이고,
+     그 경우 결과는 전부 검정이라 아래 덮어쓰기가 아무 일도 하지 않는다. */
   let savedMatsS = null;
-  const smokeDen = await renderWith(cam, () => {
+  const smokeDen = fsmoke.particles.length === 0 ? null : await renderWith(cam, () => {
     gtOff();
     savedMatsS = new Map();
-    /* 여기서는 `!m.material`도 건너뛰지 않는다 — 재질이 없는 메시는 Babylon 기본 재질로
-       **희게** 그려져 연기로 오인된다(연기 0개인데 smoke 113px이 남던 원인).
-       다른 패스는 클래스 색을 입히는 것이라 재질 없는 메시를 빼도 됐지만,
-       이 패스는 "검게 깔고 연기만 밝게"가 전제라 하나라도 밝으면 임계를 넘는다. */
+    /* 다른 패스와 같은 조건으로 훑는다(`!m.material`은 건너뜀).
+       한때 재질 없는 메시까지 칠했는데 — "재질이 없으면 기본 재질로 희게 그려져 연기로
+       오인된다"고 봤기 때문 — **그게 캡처를 1.3s → 6.5s로 만들었다.** 없던 메시에 재질을
+       붙이면 셰이더를 새로 컴파일하고, 그 비용이 렌더를 막는다.
+       실제로 확인해 보니 재질 없는 보이는 메시 46개는 **전부 `__root__`(정점 0개)**라
+       그려지지도 않는다. 만질 이유가 없었다. */
     for (const m of scene.meshes) {
-      if (!m.isEnabled() || !m.isVisible) continue;
+      if (!m.isEnabled() || !m.isVisible || !m.material) continue;
       savedMatsS.set(m, m.material);
       m.material = gtMat("smokeblack", [0,0,0]);
     }
@@ -6655,7 +6817,7 @@ async function groundTruthImpl(camId, opt) {
   }, () => {
     savedMatsS.forEach((mat, mesh) => { mesh.material = mat; });
     gtOn();
-  });
+  }, { warm:true });   // 대기 불필요 — 앞 패스들에서 이미 컴파일됐다
 
   /* 임계 — 연기가 이만큼 짙으면 뒤가 안 보인다고 본다.
      0.5는 "시선의 절반이 연기에 막힘". 낮추면 smoke가 넓어지고 사람이 다시 지워지며,
@@ -6679,7 +6841,7 @@ async function groundTruthImpl(camId, opt) {
   const isFireAt = (arr, i) => FIRE_C && Math.abs(arr[i]-FIRE_C[0]) <= 8
     && Math.abs(arr[i+1]-FIRE_C[1]) <= 8 && Math.abs(arr[i+2]-FIRE_C[2]) <= 8;
   const paintSmoke = (target, color, protectFrom) => {
-    if (smokeAlive === 0) return 0;
+    if (smokeAlive === 0 || !smokeDen) return 0;   // 연기 없으면 농도 패스 자체를 건너뛴다
     const t = smokeThresh(), d = smokeDen.data, p = target.data;
     if (!d || d.length !== p.length) return 0;     // 해상도가 어긋나면 건드리지 않는다
     const pf = (protectFrom && protectFrom.length === p.length) ? protectFrom : null;
@@ -6734,7 +6896,13 @@ async function groundTruthImpl(camId, opt) {
   }, () => {
     savedMatsI.forEach((mat, mesh) => { mesh.material = mat; });
     gtOn();
-  });
+  }, { warm:true });
+  /* ↑ 대기 생략. 앞의 클래스 마스크 패스에서 같은 gtMat·같은 파티클 설정(GT_SOLID·STANDARD)으로
+     이미 컴파일했다. 이 대기가 화재 표본 캡처를 통째로 잡아먹고 있었다 —
+     whenReadyAsync는 파티클 이펙트를 다시 컴파일하는 동안 not-ready라 상한 1.5s를 다 쓴다.
+     패스마다 gtParticleMask on/off로 텍스처·블렌딩을 왕복시키니 매번 재컴파일이 걸렸다.
+     실측: 화재 표본 캡처 4.4s → (이 수정 후 아래에서 재측정) */
+
   /* YOLO 라벨은 **이 인스턴스 마스크**에서 나온다(클래스 마스크는 참고용).
      그러므로 연기 덮기를 여기에도 반드시 적용해야 학습 라벨이 맞는다. */
   instMat("smoke_0");                                      // 팔레트 슬롯 확보
@@ -7084,7 +7252,13 @@ function randomizeScene() {
      1/3도 안 돼 클래스 불균형이 커진다(실측: 2샘플에서 fire 3박스 vs equipment 296박스).
      화재 감지가 이 프로젝트 목적의 절반이므로 절반은 화재 장면이어야 한다.
      sim.html?fire=0.7 처럼 회차별로 조절할 수 있게 열어 둔다. */
-  setFire(Math.random() < FIRE_P);
+  const wantFire = Math.random() < FIRE_P;
+  setFire(wantFire);
+  /* 화재 표본은 **진행 단계를 여기서 뽑는다.** 안 하면 직전 샘플 상태가 그대로 이어져
+     초기 발화(연기 25개)와 최성기(연기 3548개) 두 극단만 나오고, 정작 필요한
+     "연기가 옅게 낀" 중간 구간이 비어 버린다. fireSeekTo가 그 상태를 즉시 만든다. */
+  if (wantFire) fireSeekTo(fireRandomStage());
+  else { fsmoke.reset(); firePS.reset(); }   // 꺼진 표본에 직전 연기가 남지 않게
   // 센서 특성 랜덤화 — 카메라 개체차·설치환경 차이를 데이터에 반영
   SENSOR.grain = 2 + Math.random() * 22;
   SENSOR.distortion = Math.random() * 0.30;
@@ -10371,7 +10545,7 @@ window.__sim = {
   /* EXTRAS는 이 export 블록보다 **뒤에** 선언되므로 여기 직접 넣으면 const TDZ에 걸려
      스크립트가 통째로 죽는다. getter로 감싸 접근 시점에 읽는다. */
   ROLE, roleStations, spawnRole, buildPersonColliders, transitPath,
-  JOB, SCENARIO, spawnJob, runScenario, jobRole, jobNextTarget,
+  JOB, SCENARIO, spawnJob, runScenario, jobRole, jobDistance, jobNextTarget,
   WF, WORKFLOW, wfPlan, workflowTarget, personWorkflow,
   get TRAJ() { return TRAJ; },   // 선언이 이 블록보다 뒤 — TDZ 회피(EXTRAS·OVERLAP과 같은 규약)
   trajRun, trajRunScene,         // 궤적 데이터 수집(이슈 #2 2단계) — 함수 선언이라 hoisted
@@ -10393,7 +10567,7 @@ window.__sim = {
   SURV, capture, captureBoth, applyCameras, camOf, pipRect, swapViews, cyclePip, pickView,
   setView: v => { mainView = v; viewSel.value = v; applyCameras(); },
   setPip:  v => { pipView = v; pipSel.value = v; applyCameras(); },
-  person, personGo, SCN, SAFE, setFire, FIRE_FOG,
+  person, personGo, SCN, SAFE, setFire, FIRE_FOG, SMOKE_LAYER, fireSeekTo, fireRandomStage,
   // Ground Truth · 데이터셋
   groundTruth, generateDataset, DATAGEN, randomizeScene, restoreAfterDataset,
   GT_CLASSES, classOfMesh, showInspector,
