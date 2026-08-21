@@ -2925,9 +2925,13 @@ const fsmoke = makeParticles("fsmoke", new V3(F.pos.x, F.oilY + 0.28, F.pos.z), 
      당시 문제는 연기가 후드·천장을 관통하는 것이었고, 해법으로 **빨리 죽였다**.
      그건 증상만 가린 것이다. 화재 연기는 공간에 퍼져야 맞고, 짧은 수명으로는
      퍼질 시간 자체가 없다. 수명을 되돌리고 관통 문제는 따로 잡는다. */
+  /* life는 **진행에 따라 fireFogTick이 늘린다**(여기 값은 초기 단계 기준).
+     수명이 짧으면 연기가 화원에서 2~3m밖에 못 가 방이 안 찬다 — 실측 중앙칸 91%.
+     cap도 같이 올려야 한다. 수명만 늘리면 정상 상태 개수(rate×life)가 상한을 넘어
+     오래된 입자가 자리를 다 먹고 화원 근처가 오히려 옅어진다. */
   size:[0.45,1.30], life:[3.0,7.0], gravity:new V3(0,0.2,0),
   dir:[new V3(-1.1,0.5,-1.1), new V3(1.1,1.3,1.1)], power:[0.2,0.7],
-  cap: 4000
+  cap: 12000
 });
 fsmoke.blendMode = BABYLON.ParticleSystem.BLENDMODE_STANDARD;
 /* ══ 불꽃을 연기보다 **나중에** 그린다 — fire 라벨이 통째로 사라지던 원인 ═══════
@@ -3130,6 +3134,14 @@ function fireFogTick(dt) {
   const halfD = F.d * 0.28 + kb * SMOKE_LAYER.emitGrow;
   fsmoke.minEmitBox.set(-halfW, -0.02 - kb * 0.55, -halfD);
   fsmoke.maxEmitBox.set( halfW,  0.02 + kb * 0.55,  halfD);
+  /* ── 수명을 진행에 따라 늘린다 — 연기가 방을 채우게 하는 진짜 손잡이 ──────────
+     배출 상자를 넓히는 방식은 실패했다(사람 허리 높이에 연기가 생겨 person 라벨이 무너짐).
+     맞는 방식은 **천장층에 쌓인 연기를 오래 살려 두는 것**이다. 오래 살면 그만큼 멀리
+     흘러가고(위의 spread), 층이 두꺼워지며, 실제 화재에서 연기가 사라지지 않는 것과도 맞다.
+     수명만 늘리면 상한이 오래된 입자로 차서 화원 근처가 옅어지므로 cap을 12000으로 같이 올렸다. */
+  const L0 = SMOKE_LAYER.life0, L1 = SMOKE_LAYER.life1;
+  fsmoke.minLifeTime = L0[0] + (L1[0] - L0[0]) * kb;
+  fsmoke.maxLifeTime = L0[1] + (L1[1] - L0[1]) * kb;
 }
 
 /* ══ 연기 가두기 — 후드·천장을 뚫고 나가지 못하게 ═══════════════════════════
@@ -3169,7 +3181,16 @@ function fireFogTick(dt) {
    제대로 하려면 천장층에 쌓인 연기가 **오래 살아남아** 옆으로 퍼져야 하고,
    그건 수명 상향 + 상한 증설이 필요한 별도 작업이다. 지금은 끄고 남겨 둔다.
    켜 보려면 __sim.SMOKE_LAYER.emitGrow = 1.5 정도부터. */
-const SMOKE_LAYER = { floorY:1.05, sink:0.0055, spread:0.007, spreadMax:5.5, emitGrow:0 };
+const SMOKE_LAYER = {
+  floorY:1.05, sink:0.0055,
+  spread:0.012, spreadMax:5.5,   // 수명이 길어졌으니 미는 힘도 의미가 생긴다(0.007→0.012)
+  emitGrow:0,
+  life0:[3.0, 7.0],              // 초기 단계 수명 — 화원 위 기둥
+  /* 최대 진행 수명. [14,26]도 해 봤는데 85초에서 **완전 백아웃**이 됐다
+     (person 0 · robot 0). 물리적으로는 맞지만 그 구간 표본이 학습에 쓸모가 없다.
+     [10,18]이면 사람이 기준선의 23%로 **가려지되 남는다** — 연기 낀 검출 표본이 된다. */
+  life1:[10.0, 18.0]
+};
 function smokeConfineTick() {
   const parts = fsmoke.particles;
   if (!parts.length) return;
@@ -3233,8 +3254,11 @@ function fireSeekTo(sec) {
      고정 프레임 수로 돌렸더니 초기 단계(10초)에서도 상한 4000까지 차 버려서,
      단계가 달라도 연기 양이 똑같아졌다. 목표치를 정하고 **닿으면 멈춘다.**
      목표 = emitRate × 5 — 최대 배출 700에서 정상 상태가 3500이었던 실측 비례. */
-  fireFogTick(0);                                    // 이 시점의 배출량부터 확정
-  const target = Math.min(fsmoke.getCapacity() * 0.9, fsmoke.emitRate * 5);
+  fireFogTick(0);                                    // 이 시점의 배출량·수명부터 확정
+  /* 정상 상태 개수 ≈ 배출량 × 평균수명. (실측 근거: 배출 700·평균수명 5s에서 3500개였다.)
+     수명이 진행에 따라 바뀌므로 상수 5를 쓰면 안 된다 — 후반부를 한참 덜 채우게 된다. */
+  const avgLife = (fsmoke.minLifeTime + fsmoke.maxLifeTime) / 2;
+  const target = Math.min(fsmoke.getCapacity() * 0.9, fsmoke.emitRate * avgLife);
   const sv = [firePS, fsmoke, steam, bubbles].map(P => ({ P, s: P.updateSpeed }));
   sv.forEach(x => { x.P.updateSpeed = x.s * 10; });
   let guard = 0;
