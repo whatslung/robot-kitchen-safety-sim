@@ -5,6 +5,12 @@
 
 ## 시작점
 - **[HANDOFF.md](HANDOFF.md)** — 롤링 핸드오프(현재 상태·다음 단계). **여기부터 읽는다.**
+- **[model-scorecard.md](model-scorecard.md)** — 검출·예측 모델 **before/after 성적표**(발표·공유용 요약 한 장)
+
+## Week 6 미팅 자료 (week6/)
+- **[week6/meeting-summary.md](week6/meeting-summary.md)** — 미팅 발표·피드백용 요약(스토리·결과·열린 질문·이미지)
+- [week6/yolo-training.md](week6/yolo-training.md) — 검출 학습 설정(데이터 수량·epoch·loss·이미지)
+- [week6/lstm-training.md](week6/lstm-training.md) — 예측 학습 설정(데이터 수량·epoch·loss·이미지)
 
 ## 검출 (YOLO, 나디르 top-down)
 - [detection-eval.md](detection-eval.md) — 검출 학습·평가(sim in-domain / 실사 / 3-way)
