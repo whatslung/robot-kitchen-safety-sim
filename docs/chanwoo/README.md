@@ -6,6 +6,7 @@
 ## 시작점
 - **[HANDOFF.md](HANDOFF.md)** — 롤링 핸드오프(현재 상태·다음 단계). **여기부터 읽는다.**
 - **[model-scorecard.md](model-scorecard.md)** — 검출·예측 모델 **before/after 성적표**(발표·공유용 요약 한 장)
+- **[움직임 예측 품질 감사](handoff/2026-08-22-motion-quality-audit.md)** — 주장 경계·P0/P1 개선 백로그·완료 조건
 
 ## Week 6 미팅 자료 (week6/)
 - **[week6/meeting-summary.md](week6/meeting-summary.md)** — 미팅 발표·피드백용 요약(스토리·결과·열린 질문·이미지)
