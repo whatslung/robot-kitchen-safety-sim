@@ -24,7 +24,15 @@ assets/sketchfab_*.glb
 assets/cook_cc_*.glb
 
 # 시뮬레이터가 생성한 데이터셋 / 실행 기록
-dataset/
+dataset/*
+!dataset/trajectories/
+dataset/trajectories/*
+# LSTM 학습 궤적 데이터 — 전체(120개·4.3MB)는 무시하되,
+# 형태를 볼 수 있게 대표 예시 3개만 추적한다(크기가 다른 = 활동량이 다른 장면).
+!dataset/trajectories/README.md
+!dataset/trajectories/island_h58_seed10_0009.json
+!dataset/trajectories/island_h58_seed11_0010.json
+!dataset/trajectories/real_test_sample.json
 sim-person/
 runs/
 captures/
