@@ -1,0 +1,3094 @@
+{
+  "schema": 2,
+  "meta": {
+    "dataset": "traj-v2",
+    "code_commit": "4ebb67ba782bb1c485fee68011e07c5f33e4bce2",
+    "generated_at": "2026-08-24T14:51:21.509853+00:00",
+    "layouts": [
+      "island_h58",
+      "corridor",
+      "legacy"
+    ],
+    "generation": {
+      "urls": {
+        "island_h58": "sim.html?layout=island",
+        "corridor": "sim.html?layout=corridor",
+        "legacy": "sim.html?layout=legacy"
+      },
+      "command": "__sim.trajRun({scenes:50,seed:1,seconds:60,dataset:'trajectories_v2'})"
+    },
+    "seeds": {
+      "train": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30
+      ],
+      "val": [
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40
+      ],
+      "test": [
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50
+      ]
+    },
+    "counts": {
+      "train": 90,
+      "val": 30,
+      "test": 30
+    }
+  },
+  "train": [
+    "corridor_seed10_0009.json",
+    "corridor_seed11_0010.json",
+    "corridor_seed12_0011.json",
+    "corridor_seed13_0012.json",
+    "corridor_seed14_0013.json",
+    "corridor_seed15_0014.json",
+    "corridor_seed16_0015.json",
+    "corridor_seed17_0016.json",
+    "corridor_seed18_0017.json",
+    "corridor_seed19_0018.json",
+    "corridor_seed1_0000.json",
+    "corridor_seed20_0019.json",
+    "corridor_seed21_0020.json",
+    "corridor_seed22_0021.json",
+    "corridor_seed23_0022.json",
+    "corridor_seed24_0023.json",
+    "corridor_seed25_0024.json",
+    "corridor_seed26_0025.json",
+    "corridor_seed27_0026.json",
+    "corridor_seed28_0027.json",
+    "corridor_seed29_0028.json",
+    "corridor_seed2_0001.json",
+    "corridor_seed30_0029.json",
+    "corridor_seed3_0002.json",
+    "corridor_seed4_0003.json",
+    "corridor_seed5_0004.json",
+    "corridor_seed6_0005.json",
+    "corridor_seed7_0006.json",
+    "corridor_seed8_0007.json",
+    "corridor_seed9_0008.json",
+    "island_h58_seed10_0009.json",
+    "island_h58_seed11_0010.json",
+    "island_h58_seed12_0011.json",
+    "island_h58_seed13_0012.json",
+    "island_h58_seed14_0013.json",
+    "island_h58_seed15_0014.json",
+    "island_h58_seed16_0015.json",
+    "island_h58_seed17_0016.json",
+    "island_h58_seed18_0017.json",
+    "island_h58_seed19_0018.json",
+    "island_h58_seed1_0000.json",
+    "island_h58_seed20_0019.json",
+    "island_h58_seed21_0020.json",
+    "island_h58_seed22_0021.json",
+    "island_h58_seed23_0022.json",
+    "island_h58_seed24_0023.json",
+    "island_h58_seed25_0024.json",
+    "island_h58_seed26_0025.json",
+    "island_h58_seed27_0026.json",
+    "island_h58_seed28_0027.json",
+    "island_h58_seed29_0028.json",
+    "island_h58_seed2_0001.json",
+    "island_h58_seed30_0029.json",
+    "island_h58_seed3_0002.json",
+    "island_h58_seed4_0003.json",
+    "island_h58_seed5_0004.json",
+    "island_h58_seed6_0005.json",
+    "island_h58_seed7_0006.json",
+    "island_h58_seed8_0007.json",
+    "island_h58_seed9_0008.json",
+    "legacy_seed10_0009.json",
+    "legacy_seed11_0010.json",
+    "legacy_seed12_0011.json",
+    "legacy_seed13_0012.json",
+    "legacy_seed14_0013.json",
+    "legacy_seed15_0014.json",
+    "legacy_seed16_0015.json",
+    "legacy_seed17_0016.json",
+    "legacy_seed18_0017.json",
+    "legacy_seed19_0018.json",
+    "legacy_seed1_0000.json",
+    "legacy_seed20_0019.json",
+    "legacy_seed21_0020.json",
+    "legacy_seed22_0021.json",
+    "legacy_seed23_0022.json",
+    "legacy_seed24_0023.json",
+    "legacy_seed25_0024.json",
+    "legacy_seed26_0025.json",
+    "legacy_seed27_0026.json",
+    "legacy_seed28_0027.json",
+    "legacy_seed29_0028.json",
+    "legacy_seed2_0001.json",
+    "legacy_seed30_0029.json",
+    "legacy_seed3_0002.json",
+    "legacy_seed4_0003.json",
+    "legacy_seed5_0004.json",
+    "legacy_seed6_0005.json",
+    "legacy_seed7_0006.json",
+    "legacy_seed8_0007.json",
+    "legacy_seed9_0008.json"
+  ],
+  "val": [
+    "corridor_seed31_0030.json",
+    "corridor_seed32_0031.json",
+    "corridor_seed33_0032.json",
+    "corridor_seed34_0033.json",
+    "corridor_seed35_0034.json",
+    "corridor_seed36_0035.json",
+    "corridor_seed37_0036.json",
+    "corridor_seed38_0037.json",
+    "corridor_seed39_0038.json",
+    "corridor_seed40_0039.json",
+    "island_h58_seed31_0030.json",
+    "island_h58_seed32_0031.json",
+    "island_h58_seed33_0032.json",
+    "island_h58_seed34_0033.json",
+    "island_h58_seed35_0034.json",
+    "island_h58_seed36_0035.json",
+    "island_h58_seed37_0036.json",
+    "island_h58_seed38_0037.json",
+    "island_h58_seed39_0038.json",
+    "island_h58_seed40_0039.json",
+    "legacy_seed31_0030.json",
+    "legacy_seed32_0031.json",
+    "legacy_seed33_0032.json",
+    "legacy_seed34_0033.json",
+    "legacy_seed35_0034.json",
+    "legacy_seed36_0035.json",
+    "legacy_seed37_0036.json",
+    "legacy_seed38_0037.json",
+    "legacy_seed39_0038.json",
+    "legacy_seed40_0039.json"
+  ],
+  "test": [
+    "corridor_seed41_0040.json",
+    "corridor_seed42_0041.json",
+    "corridor_seed43_0042.json",
+    "corridor_seed44_0043.json",
+    "corridor_seed45_0044.json",
+    "corridor_seed46_0045.json",
+    "corridor_seed47_0046.json",
+    "corridor_seed48_0047.json",
+    "corridor_seed49_0048.json",
+    "corridor_seed50_0049.json",
+    "island_h58_seed41_0040.json",
+    "island_h58_seed42_0041.json",
+    "island_h58_seed43_0042.json",
+    "island_h58_seed44_0043.json",
+    "island_h58_seed45_0044.json",
+    "island_h58_seed46_0045.json",
+    "island_h58_seed47_0046.json",
+    "island_h58_seed48_0047.json",
+    "island_h58_seed49_0048.json",
+    "island_h58_seed50_0049.json",
+    "legacy_seed41_0040.json",
+    "legacy_seed42_0041.json",
+    "legacy_seed43_0042.json",
+    "legacy_seed44_0043.json",
+    "legacy_seed45_0044.json",
+    "legacy_seed46_0045.json",
+    "legacy_seed47_0046.json",
+    "legacy_seed48_0047.json",
+    "legacy_seed49_0048.json",
+    "legacy_seed50_0049.json"
+  ],
+  "files": {
+    "corridor_seed10_0009.json": {
+      "name": "corridor_seed10_0009.json",
+      "seed": 10,
+      "layout": "corridor",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "cook",
+        "carry"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3671,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "69990d906fb805556159f82640493cc88a351db7812abec5dc0962cfa50e2066"
+    },
+    "corridor_seed11_0010.json": {
+      "name": "corridor_seed11_0010.json",
+      "seed": 11,
+      "layout": "corridor",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3766,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "01f7fd3023ee55c906c13bafeb9b22f08d83d9c568ed5a0e8684cdbe6903acb2"
+    },
+    "corridor_seed12_0011.json": {
+      "name": "corridor_seed12_0011.json",
+      "seed": 12,
+      "layout": "corridor",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "lead",
+        "wash"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3337,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "8a6cd8d2ea4c80f0d04a6a91cacb39769a766251db9ddac0710203805bf0217e"
+    },
+    "corridor_seed13_0012.json": {
+      "name": "corridor_seed13_0012.json",
+      "seed": 13,
+      "layout": "corridor",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "wash"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.2581,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "8485fb42e089b4b63dd854b9440679871e2d911eac28d28b673e8e2c0c86ece6"
+    },
+    "corridor_seed14_0013.json": {
+      "name": "corridor_seed14_0013.json",
+      "seed": 14,
+      "layout": "corridor",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry",
+        "wash",
+        "lead"
+      ],
+      "people": 4,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3699,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "e2dec4d8b4e1a20df3ce75ceafb6ad2e00fc2a24cbd3f2fdaaeabcd7d1770235"
+    },
+    "corridor_seed15_0014.json": {
+      "name": "corridor_seed15_0014.json",
+      "seed": 15,
+      "layout": "corridor",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "cook",
+        "carry"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3732,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "663635be2475c7285ee7d979ef86696051d4a67454e4ac1d9cab7bdd2c29b2c6"
+    },
+    "corridor_seed16_0015.json": {
+      "name": "corridor_seed16_0015.json",
+      "seed": 16,
+      "layout": "corridor",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3795,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "f6abb243aa64d9ff6857b92a8704f8a946aef3033dddb8ebe08ea3f4b5e4f951"
+    },
+    "corridor_seed17_0016.json": {
+      "name": "corridor_seed17_0016.json",
+      "seed": 17,
+      "layout": "corridor",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "lead",
+        "wash"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.375,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "63fa4d5b0d49de29d74b1f31b397dc4339d7bbb83bf1804eb78d1500c34e453b"
+    },
+    "corridor_seed18_0017.json": {
+      "name": "corridor_seed18_0017.json",
+      "seed": 18,
+      "layout": "corridor",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "wash"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.2395,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "10c9ac4419f3e560ae430f3676ffae764d2098c3b130bea8f000ac4cea54a444"
+    },
+    "corridor_seed19_0018.json": {
+      "name": "corridor_seed19_0018.json",
+      "seed": 19,
+      "layout": "corridor",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry",
+        "wash",
+        "lead"
+      ],
+      "people": 4,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3654,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "a38a03961cdf37734a833537b60fb51b8d0a1607b58bb3f3c19c2a41d7309f4a"
+    },
+    "corridor_seed1_0000.json": {
+      "name": "corridor_seed1_0000.json",
+      "seed": 1,
+      "layout": "corridor",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3795,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "9603b20b6d8ded18e487cc8752100edb5467ec7da14b9c5599a0bf628f371774"
+    },
+    "corridor_seed20_0019.json": {
+      "name": "corridor_seed20_0019.json",
+      "seed": 20,
+      "layout": "corridor",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "cook",
+        "carry"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3791,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "49e3c66f5f556cbffd605876a145d69f4081931be1f7eed87b209be0b8240282"
+    },
+    "corridor_seed21_0020.json": {
+      "name": "corridor_seed21_0020.json",
+      "seed": 21,
+      "layout": "corridor",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3669,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "4a5f2d5b682b7a1bec3be495a1bb852239bb3e1a641d6c4af89bd4bff4544ee0"
+    },
+    "corridor_seed22_0021.json": {
+      "name": "corridor_seed22_0021.json",
+      "seed": 22,
+      "layout": "corridor",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "lead",
+        "wash"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3692,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "e372fa8d47edb85a79b3e7f33e5446b76bf6fdb543a19b7710ac3f46d6ad1f93"
+    },
+    "corridor_seed23_0022.json": {
+      "name": "corridor_seed23_0022.json",
+      "seed": 23,
+      "layout": "corridor",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "wash"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.2175,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "371ff6b99678af27edca5c0f39d47f8eaafbfbb49045f48316d392efa8f44cc4"
+    },
+    "corridor_seed24_0023.json": {
+      "name": "corridor_seed24_0023.json",
+      "seed": 24,
+      "layout": "corridor",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry",
+        "wash",
+        "lead"
+      ],
+      "people": 4,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3753,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "06e8b000ff3c1d12a01d8a24b95f5e9b257c89445c79fd86b680bc4091ecb330"
+    },
+    "corridor_seed25_0024.json": {
+      "name": "corridor_seed25_0024.json",
+      "seed": 25,
+      "layout": "corridor",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "cook",
+        "carry"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3596,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "3a95b70a928afa343e421cafd7086dba356a07c7708565dc5f76da811e3e72fc"
+    },
+    "corridor_seed26_0025.json": {
+      "name": "corridor_seed26_0025.json",
+      "seed": 26,
+      "layout": "corridor",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3817,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "9aa377d233e637c73a8713123e20745b5fbe7234a6c1925c7bb8ac7ad8105673"
+    },
+    "corridor_seed27_0026.json": {
+      "name": "corridor_seed27_0026.json",
+      "seed": 27,
+      "layout": "corridor",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "lead",
+        "wash"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3672,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "4524bba7a3f5a916fda0f04eb25b49ee94c09840bed9e770951af4bb08bda5f5"
+    },
+    "corridor_seed28_0027.json": {
+      "name": "corridor_seed28_0027.json",
+      "seed": 28,
+      "layout": "corridor",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "wash"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.1756,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "91a6878787b20993f614f40ae85fe73f041177594c1dea59f94eddbbe157891f"
+    },
+    "corridor_seed29_0028.json": {
+      "name": "corridor_seed29_0028.json",
+      "seed": 29,
+      "layout": "corridor",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry",
+        "wash",
+        "lead"
+      ],
+      "people": 4,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3622,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "97785a13ecd23c6df8a26b5b611ab3a536b9c6c31fc8de3063fe9d50b9b6e440"
+    },
+    "corridor_seed2_0001.json": {
+      "name": "corridor_seed2_0001.json",
+      "seed": 2,
+      "layout": "corridor",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "lead",
+        "wash"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.342,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "59e681c965ade251a244b3dfe30d438517ab674436fa96ac55d0bb67cb4a0fae"
+    },
+    "corridor_seed30_0029.json": {
+      "name": "corridor_seed30_0029.json",
+      "seed": 30,
+      "layout": "corridor",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "cook",
+        "carry"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3741,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "4d0a287b47cfc9524e23cec14278c0c4c4aad52752d7bc80521951560e9869a0"
+    },
+    "corridor_seed31_0030.json": {
+      "name": "corridor_seed31_0030.json",
+      "seed": 31,
+      "layout": "corridor",
+      "split": "val",
+      "jobs": [
+        "cook",
+        "carry"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3683,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "a5fed3d28703d6d7eb696e39991a565b11956d749d8a4f2c024f63486c2e8071"
+    },
+    "corridor_seed32_0031.json": {
+      "name": "corridor_seed32_0031.json",
+      "seed": 32,
+      "layout": "corridor",
+      "split": "val",
+      "jobs": [
+        "cook",
+        "lead",
+        "wash"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3255,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "5ac262d8b128ac82d891520067cdc671b304c9a3bee96d3bee40b98ff4480064"
+    },
+    "corridor_seed33_0032.json": {
+      "name": "corridor_seed33_0032.json",
+      "seed": 33,
+      "layout": "corridor",
+      "split": "val",
+      "jobs": [
+        "prep",
+        "wash"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.2484,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "abf79c22e1313df9612ec05260c0bca065e78c3fb4d2dadd95bb2395ca85c62c"
+    },
+    "corridor_seed34_0033.json": {
+      "name": "corridor_seed34_0033.json",
+      "seed": 34,
+      "layout": "corridor",
+      "split": "val",
+      "jobs": [
+        "cook",
+        "carry",
+        "wash",
+        "lead"
+      ],
+      "people": 4,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3704,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "839253931d8241e953ba3fbf9761053b295db51eddc583072a96444fdbdcb2f6"
+    },
+    "corridor_seed35_0034.json": {
+      "name": "corridor_seed35_0034.json",
+      "seed": 35,
+      "layout": "corridor",
+      "split": "val",
+      "jobs": [
+        "prep",
+        "cook",
+        "carry"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3794,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "073304f6d7b79dfb1625096eb6c54b6740007a5f771dd9b2f75fae13718ea820"
+    },
+    "corridor_seed36_0035.json": {
+      "name": "corridor_seed36_0035.json",
+      "seed": 36,
+      "layout": "corridor",
+      "split": "val",
+      "jobs": [
+        "cook",
+        "carry"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3694,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "1527e27ae1b0599d75861a3333ceae51feb91a24373d06ea524e8dff703fd876"
+    },
+    "corridor_seed37_0036.json": {
+      "name": "corridor_seed37_0036.json",
+      "seed": 37,
+      "layout": "corridor",
+      "split": "val",
+      "jobs": [
+        "cook",
+        "lead",
+        "wash"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3723,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "2ba36661ded84fdca49f625b06dc005b5e8b325f82c8c9f92c1915190585f99e"
+    },
+    "corridor_seed38_0037.json": {
+      "name": "corridor_seed38_0037.json",
+      "seed": 38,
+      "layout": "corridor",
+      "split": "val",
+      "jobs": [
+        "prep",
+        "wash"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.2077,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "b650d44edbda0e2b9e828571b4c6827bf50dbf187e0af6f2f5a7e9aaa85414e8"
+    },
+    "corridor_seed39_0038.json": {
+      "name": "corridor_seed39_0038.json",
+      "seed": 39,
+      "layout": "corridor",
+      "split": "val",
+      "jobs": [
+        "cook",
+        "carry",
+        "wash",
+        "lead"
+      ],
+      "people": 4,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3753,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "9032dc3246828a30f8a1f79014ca11f92b2e71861f8e6000c4041bccdd396ba8"
+    },
+    "corridor_seed3_0002.json": {
+      "name": "corridor_seed3_0002.json",
+      "seed": 3,
+      "layout": "corridor",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "wash"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.1904,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "9b285832c9bc0bd23e40cf711791e829905c461ad7cae5af6acd2136d584afa2"
+    },
+    "corridor_seed40_0039.json": {
+      "name": "corridor_seed40_0039.json",
+      "seed": 40,
+      "layout": "corridor",
+      "split": "val",
+      "jobs": [
+        "prep",
+        "cook",
+        "carry"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3636,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "3d127b3f97a4420c9da54c53eed21f50f817ddb0b360928622f05b6e5fcf2684"
+    },
+    "corridor_seed41_0040.json": {
+      "name": "corridor_seed41_0040.json",
+      "seed": 41,
+      "layout": "corridor",
+      "split": "test",
+      "jobs": [
+        "cook",
+        "carry"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3599,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "139786cd25d7047c249c62f5a953acdf8ef6af670aff4b1d52938f339b08e040"
+    },
+    "corridor_seed42_0041.json": {
+      "name": "corridor_seed42_0041.json",
+      "seed": 42,
+      "layout": "corridor",
+      "split": "test",
+      "jobs": [
+        "cook",
+        "lead",
+        "wash"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3414,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "94e45cbbb81375482d30fad97aede5f996fd5171293cf54fb4c8dacabca556e6"
+    },
+    "corridor_seed43_0042.json": {
+      "name": "corridor_seed43_0042.json",
+      "seed": 43,
+      "layout": "corridor",
+      "split": "test",
+      "jobs": [
+        "prep",
+        "wash"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.2507,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "4ee5cd0c2bb7c1bd66669d4d9fd357688a97aa7fa6aea97a59c20405a1f4824a"
+    },
+    "corridor_seed44_0043.json": {
+      "name": "corridor_seed44_0043.json",
+      "seed": 44,
+      "layout": "corridor",
+      "split": "test",
+      "jobs": [
+        "cook",
+        "carry",
+        "wash",
+        "lead"
+      ],
+      "people": 4,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3842,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "e103d7f98533cb4de4c3cda98325fb6f1cdd20226dc33c6054c176752d14e1c3"
+    },
+    "corridor_seed45_0044.json": {
+      "name": "corridor_seed45_0044.json",
+      "seed": 45,
+      "layout": "corridor",
+      "split": "test",
+      "jobs": [
+        "prep",
+        "cook",
+        "carry"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3755,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "87dbdf17d24cb36db99a96dc139e949f19da79d94add8aa16adbc030ad533100"
+    },
+    "corridor_seed46_0045.json": {
+      "name": "corridor_seed46_0045.json",
+      "seed": 46,
+      "layout": "corridor",
+      "split": "test",
+      "jobs": [
+        "cook",
+        "carry"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3635,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "22cbe93261799619f8594ee573cb53143f66bf5cee12bf431a80f1606fd4f549"
+    },
+    "corridor_seed47_0046.json": {
+      "name": "corridor_seed47_0046.json",
+      "seed": 47,
+      "layout": "corridor",
+      "split": "test",
+      "jobs": [
+        "cook",
+        "lead",
+        "wash"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3696,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "a4f372d9a0b8f41f0a7cc77b28a1aed898525c2bc6a0b4b79078be99e2ec58a9"
+    },
+    "corridor_seed48_0047.json": {
+      "name": "corridor_seed48_0047.json",
+      "seed": 48,
+      "layout": "corridor",
+      "split": "test",
+      "jobs": [
+        "prep",
+        "wash"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.2398,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "709260b41f6cdd4f93cd26727b9d0f9d483659b9f8725c53d76314920a5cc2a5"
+    },
+    "corridor_seed49_0048.json": {
+      "name": "corridor_seed49_0048.json",
+      "seed": 49,
+      "layout": "corridor",
+      "split": "test",
+      "jobs": [
+        "cook",
+        "carry",
+        "wash",
+        "lead"
+      ],
+      "people": 4,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3716,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "291fcdf3fb225f56affdf150183d51cfd63692a8c5d5c22b0294cf8f1f75feb3"
+    },
+    "corridor_seed4_0003.json": {
+      "name": "corridor_seed4_0003.json",
+      "seed": 4,
+      "layout": "corridor",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry",
+        "wash",
+        "lead"
+      ],
+      "people": 4,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3547,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "5d85b0ea1a505dd655021aaf23073490233ef0ee6d904977b3c3a76ad92fbf51"
+    },
+    "corridor_seed50_0049.json": {
+      "name": "corridor_seed50_0049.json",
+      "seed": 50,
+      "layout": "corridor",
+      "split": "test",
+      "jobs": [
+        "prep",
+        "cook",
+        "carry"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3682,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "24a1371136f6b75873cf342aebba99ccd4d7d7f6ed6fe4377c01204d97343dc5"
+    },
+    "corridor_seed5_0004.json": {
+      "name": "corridor_seed5_0004.json",
+      "seed": 5,
+      "layout": "corridor",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "cook",
+        "carry"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3706,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "89827bac0986040043ea432f88c94e1b7d45a912f7007bf8c2b4d675ab911353"
+    },
+    "corridor_seed6_0005.json": {
+      "name": "corridor_seed6_0005.json",
+      "seed": 6,
+      "layout": "corridor",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3774,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "dd220b2beae021034ef1a77bd1e204d4ceccec3c982652e5a3d9176d54f62ba8"
+    },
+    "corridor_seed7_0006.json": {
+      "name": "corridor_seed7_0006.json",
+      "seed": 7,
+      "layout": "corridor",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "lead",
+        "wash"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3784,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "b21d38a4ff525a3fd78ed443440fea566239026d978b813742414aafa5c9b168"
+    },
+    "corridor_seed8_0007.json": {
+      "name": "corridor_seed8_0007.json",
+      "seed": 8,
+      "layout": "corridor",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "wash"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.2078,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "09e397b331fcc9b4bc65d1d0d05c4fa9b1ca1ecb0f22e894f2fb42ea6103d3ca"
+    },
+    "corridor_seed9_0008.json": {
+      "name": "corridor_seed9_0008.json",
+      "seed": 9,
+      "layout": "corridor",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry",
+        "wash",
+        "lead"
+      ],
+      "people": 4,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.376,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "293203fb36633060bfedd82c41430ba8e1a3883765865de46f7d77091cb85765"
+    },
+    "island_h58_seed10_0009.json": {
+      "name": "island_h58_seed10_0009.json",
+      "seed": 10,
+      "layout": "island_h58",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "cook",
+        "carry"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3333,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "f98d697711d93fb4ce7836a4692968100a87528e60989cf069635823a312b4c0"
+    },
+    "island_h58_seed11_0010.json": {
+      "name": "island_h58_seed11_0010.json",
+      "seed": 11,
+      "layout": "island_h58",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3387,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "ca24fe71706b765b46e13fd14ea2a0c2c1c1dafeb28daaf1226c10363429a8ba"
+    },
+    "island_h58_seed12_0011.json": {
+      "name": "island_h58_seed12_0011.json",
+      "seed": 12,
+      "layout": "island_h58",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "lead",
+        "wash"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3341,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "d2e94d1041aeb9a98d41d0201642123029e30223ee1b4740d8e566295bdd52a0"
+    },
+    "island_h58_seed13_0012.json": {
+      "name": "island_h58_seed13_0012.json",
+      "seed": 13,
+      "layout": "island_h58",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "wash"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.2715,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "786393857a61aa95d65bdf50ea72bbe3618d02fe9099e4ef16cf59ff3381fa14"
+    },
+    "island_h58_seed14_0013.json": {
+      "name": "island_h58_seed14_0013.json",
+      "seed": 14,
+      "layout": "island_h58",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry",
+        "wash",
+        "lead"
+      ],
+      "people": 4,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.333,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "b80c8319ec8184e098c389593fdc1a87f705d87c9183bfe9cec8248d10261e9c"
+    },
+    "island_h58_seed15_0014.json": {
+      "name": "island_h58_seed15_0014.json",
+      "seed": 15,
+      "layout": "island_h58",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "cook",
+        "carry"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3396,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "c6a29fabf552670c3b2f30d01771d9c3d324b61e5a52a10ef7722e87101211ce"
+    },
+    "island_h58_seed16_0015.json": {
+      "name": "island_h58_seed16_0015.json",
+      "seed": 16,
+      "layout": "island_h58",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.34,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "9693a75716e8ef20ebc0c09d052bbdb30ad64e39534884676db14881ccc100df"
+    },
+    "island_h58_seed17_0016.json": {
+      "name": "island_h58_seed17_0016.json",
+      "seed": 17,
+      "layout": "island_h58",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "lead",
+        "wash"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3393,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "35092f348fb946bb01c046d48cde1935184a45ba91c6a2556e5ae25c373c2625"
+    },
+    "island_h58_seed18_0017.json": {
+      "name": "island_h58_seed18_0017.json",
+      "seed": 18,
+      "layout": "island_h58",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "wash"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3061,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "f06f98d53c0f35bf6328caa5677c39a97d0b94201d395f2b04795eb53a223aed"
+    },
+    "island_h58_seed19_0018.json": {
+      "name": "island_h58_seed19_0018.json",
+      "seed": 19,
+      "layout": "island_h58",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry",
+        "wash",
+        "lead"
+      ],
+      "people": 4,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3338,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "adcd8e260ec20715ceb95b3de7a47d6ed73d1f0f39cd34e54f79ea1d975db0ed"
+    },
+    "island_h58_seed1_0000.json": {
+      "name": "island_h58_seed1_0000.json",
+      "seed": 1,
+      "layout": "island_h58",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.317,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "65bf8d65ad907c0610971d724b741d09f1a91866b853719a65a7b88f7f63071b"
+    },
+    "island_h58_seed20_0019.json": {
+      "name": "island_h58_seed20_0019.json",
+      "seed": 20,
+      "layout": "island_h58",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "cook",
+        "carry"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.338,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "ea11daad1099b86c3f4ffb46ecdc3a888e6ab3564909ee98a954ec0760a659be"
+    },
+    "island_h58_seed21_0020.json": {
+      "name": "island_h58_seed21_0020.json",
+      "seed": 21,
+      "layout": "island_h58",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3287,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "2c15b406b522e2ec5f35b60a7bcf6ee5d770f794779930a7e0269f6838b0e049"
+    },
+    "island_h58_seed22_0021.json": {
+      "name": "island_h58_seed22_0021.json",
+      "seed": 22,
+      "layout": "island_h58",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "lead",
+        "wash"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3319,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "f201724765d36d265b5e40a725de2ee0d9ed6fc2a57565cf09997f259cb61e9e"
+    },
+    "island_h58_seed23_0022.json": {
+      "name": "island_h58_seed23_0022.json",
+      "seed": 23,
+      "layout": "island_h58",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "wash"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3084,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "04610c48a151a6b83f66e1325f5ba71b7f4d325be31b9702043e6e0341d0eabf"
+    },
+    "island_h58_seed24_0023.json": {
+      "name": "island_h58_seed24_0023.json",
+      "seed": 24,
+      "layout": "island_h58",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry",
+        "wash",
+        "lead"
+      ],
+      "people": 4,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3365,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "2131f76824c796006cf3978ce36f674472ddfef50c8d486e4cf6bc5df48f15f9"
+    },
+    "island_h58_seed25_0024.json": {
+      "name": "island_h58_seed25_0024.json",
+      "seed": 25,
+      "layout": "island_h58",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "cook",
+        "carry"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3132,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "c70a3c098a0ea3ae37c61183fd997674eda032b8ba68a5961d4ab164352ff039"
+    },
+    "island_h58_seed26_0025.json": {
+      "name": "island_h58_seed26_0025.json",
+      "seed": 26,
+      "layout": "island_h58",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3298,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "082493e0d2653aca5d86488a77a4801a11f56142089682fa00c2da08f188f653"
+    },
+    "island_h58_seed27_0026.json": {
+      "name": "island_h58_seed27_0026.json",
+      "seed": 27,
+      "layout": "island_h58",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "lead",
+        "wash"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3392,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "cc77240a6b1ac5cf3e6957204671c1fbe8abb31a49219d38c6ab58164ac5f01d"
+    },
+    "island_h58_seed28_0027.json": {
+      "name": "island_h58_seed28_0027.json",
+      "seed": 28,
+      "layout": "island_h58",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "wash"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3233,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "cb5a62ccaa078716e17e5a5e40219aee0e78f922668a467af35ea4ba8e1fbd71"
+    },
+    "island_h58_seed29_0028.json": {
+      "name": "island_h58_seed29_0028.json",
+      "seed": 29,
+      "layout": "island_h58",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry",
+        "wash",
+        "lead"
+      ],
+      "people": 4,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3462,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "37144036731f1b03e3f5d9a4c20de720beac9a2764ce43dae4a28c8003440571"
+    },
+    "island_h58_seed2_0001.json": {
+      "name": "island_h58_seed2_0001.json",
+      "seed": 2,
+      "layout": "island_h58",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "lead",
+        "wash"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3278,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "705283e73a958f18642b4c330bab1e31f31bab813c450164c87dc345bd543200"
+    },
+    "island_h58_seed30_0029.json": {
+      "name": "island_h58_seed30_0029.json",
+      "seed": 30,
+      "layout": "island_h58",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "cook",
+        "carry"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3362,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "a22a0e0e61df021adde860dc3fd37a644b9180d2fd05b9ff85bcf5a96363bc5e"
+    },
+    "island_h58_seed31_0030.json": {
+      "name": "island_h58_seed31_0030.json",
+      "seed": 31,
+      "layout": "island_h58",
+      "split": "val",
+      "jobs": [
+        "cook",
+        "carry"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3343,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "02decd254cc58410d4a06f84e149d09db9e856a20b6d41c0cb19d5665ef17e22"
+    },
+    "island_h58_seed32_0031.json": {
+      "name": "island_h58_seed32_0031.json",
+      "seed": 32,
+      "layout": "island_h58",
+      "split": "val",
+      "jobs": [
+        "cook",
+        "lead",
+        "wash"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3302,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "03a338a85b5d301baed1e4b83f6205a93ef9ba15784845473994bd4782830b43"
+    },
+    "island_h58_seed33_0032.json": {
+      "name": "island_h58_seed33_0032.json",
+      "seed": 33,
+      "layout": "island_h58",
+      "split": "val",
+      "jobs": [
+        "prep",
+        "wash"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3296,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "fdaf1e38e700427d9af3aba13e270e376d76aaf1fe94d7f8668770307a8374a8"
+    },
+    "island_h58_seed34_0033.json": {
+      "name": "island_h58_seed34_0033.json",
+      "seed": 34,
+      "layout": "island_h58",
+      "split": "val",
+      "jobs": [
+        "cook",
+        "carry",
+        "wash",
+        "lead"
+      ],
+      "people": 4,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3362,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "76ad4e683ec314618afa7675041f5e0633e9e0912c4c2333b7241461ca3964f2"
+    },
+    "island_h58_seed35_0034.json": {
+      "name": "island_h58_seed35_0034.json",
+      "seed": 35,
+      "layout": "island_h58",
+      "split": "val",
+      "jobs": [
+        "prep",
+        "cook",
+        "carry"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3178,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "7d3af9f71dd65b614c1c89617c49e86f98a7316947b9adb25d7d07f7ff517a90"
+    },
+    "island_h58_seed36_0035.json": {
+      "name": "island_h58_seed36_0035.json",
+      "seed": 36,
+      "layout": "island_h58",
+      "split": "val",
+      "jobs": [
+        "cook",
+        "carry"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3368,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "aee51a037dc87496ac51dc23ff430611f57aac77a65848ba5ffd25c70f377d38"
+    },
+    "island_h58_seed37_0036.json": {
+      "name": "island_h58_seed37_0036.json",
+      "seed": 37,
+      "layout": "island_h58",
+      "split": "val",
+      "jobs": [
+        "cook",
+        "lead",
+        "wash"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3523,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "8f1bc5585584755847a4ff1c89ff24a3b91de680e0bacc691f13fd65fd55c9d9"
+    },
+    "island_h58_seed38_0037.json": {
+      "name": "island_h58_seed38_0037.json",
+      "seed": 38,
+      "layout": "island_h58",
+      "split": "val",
+      "jobs": [
+        "prep",
+        "wash"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.331,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "b1006faf17353f508bef6e8862d591c6977b4d7e2b57d8e6a3782c8d28e527c7"
+    },
+    "island_h58_seed39_0038.json": {
+      "name": "island_h58_seed39_0038.json",
+      "seed": 39,
+      "layout": "island_h58",
+      "split": "val",
+      "jobs": [
+        "cook",
+        "carry",
+        "wash",
+        "lead"
+      ],
+      "people": 4,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3295,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "a8152072850ca811ff55fe72d20906eeb96c222dbec7af361c3cdf4d7e382f12"
+    },
+    "island_h58_seed3_0002.json": {
+      "name": "island_h58_seed3_0002.json",
+      "seed": 3,
+      "layout": "island_h58",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "wash"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.336,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "d2f7c7ca972dda6692b661bebf2f55a925c6b1e695bd3cb23c3dba01fe359c20"
+    },
+    "island_h58_seed40_0039.json": {
+      "name": "island_h58_seed40_0039.json",
+      "seed": 40,
+      "layout": "island_h58",
+      "split": "val",
+      "jobs": [
+        "prep",
+        "cook",
+        "carry"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.338,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "cc7403a135f5c9e7679b280dee72489f4c5c8ed3a93b690df263f8e8b2fbcd41"
+    },
+    "island_h58_seed41_0040.json": {
+      "name": "island_h58_seed41_0040.json",
+      "seed": 41,
+      "layout": "island_h58",
+      "split": "test",
+      "jobs": [
+        "cook",
+        "carry"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.326,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "baaa46370cec506e646dd2f21775e6d8184f579549f8ad29a7fc0989eb1f83bd"
+    },
+    "island_h58_seed42_0041.json": {
+      "name": "island_h58_seed42_0041.json",
+      "seed": 42,
+      "layout": "island_h58",
+      "split": "test",
+      "jobs": [
+        "cook",
+        "lead",
+        "wash"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3396,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "63f64881b153fa51c0b5495338d0d52acf658f9f331ea8b776625c859e5c2d65"
+    },
+    "island_h58_seed43_0042.json": {
+      "name": "island_h58_seed43_0042.json",
+      "seed": 43,
+      "layout": "island_h58",
+      "split": "test",
+      "jobs": [
+        "prep",
+        "wash"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3256,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "1c61bfdaf48373f3844528d084649fc84f532895abbff4c07ba600979b2f0669"
+    },
+    "island_h58_seed44_0043.json": {
+      "name": "island_h58_seed44_0043.json",
+      "seed": 44,
+      "layout": "island_h58",
+      "split": "test",
+      "jobs": [
+        "cook",
+        "carry",
+        "wash",
+        "lead"
+      ],
+      "people": 4,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3367,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "47aa9a0437a41142357346bbc8537fbcca10c4b231f4cf6b48e8327d3b6a0dff"
+    },
+    "island_h58_seed45_0044.json": {
+      "name": "island_h58_seed45_0044.json",
+      "seed": 45,
+      "layout": "island_h58",
+      "split": "test",
+      "jobs": [
+        "prep",
+        "cook",
+        "carry"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3268,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "3c5a55f2e91f730321775a4a0fe20480d9c1fda8b2e64127b4edc245420a576a"
+    },
+    "island_h58_seed46_0045.json": {
+      "name": "island_h58_seed46_0045.json",
+      "seed": 46,
+      "layout": "island_h58",
+      "split": "test",
+      "jobs": [
+        "cook",
+        "carry"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3289,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "9a3b2d28520625939bb5f85b552ff7db50e1f4d689559ca9e28b121842642883"
+    },
+    "island_h58_seed47_0046.json": {
+      "name": "island_h58_seed47_0046.json",
+      "seed": 47,
+      "layout": "island_h58",
+      "split": "test",
+      "jobs": [
+        "cook",
+        "lead",
+        "wash"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3358,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "c0e12af3df89b569e4bac41833fc543581d3c35a5755d2850f726f1bcb6e4b93"
+    },
+    "island_h58_seed48_0047.json": {
+      "name": "island_h58_seed48_0047.json",
+      "seed": 48,
+      "layout": "island_h58",
+      "split": "test",
+      "jobs": [
+        "prep",
+        "wash"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3359,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "a0d4f311312b6ab4e2428736b2a20fb5365a116510d8d850d4971843e6458be7"
+    },
+    "island_h58_seed49_0048.json": {
+      "name": "island_h58_seed49_0048.json",
+      "seed": 49,
+      "layout": "island_h58",
+      "split": "test",
+      "jobs": [
+        "cook",
+        "carry",
+        "wash",
+        "lead"
+      ],
+      "people": 4,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.327,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "a13f3aa9d0e1ff6c12c0f5e37f1459663d364be8efc9ae1f873809c97835ceb6"
+    },
+    "island_h58_seed4_0003.json": {
+      "name": "island_h58_seed4_0003.json",
+      "seed": 4,
+      "layout": "island_h58",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry",
+        "wash",
+        "lead"
+      ],
+      "people": 4,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3344,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "54a6c97eeffa5143649d26577917913be6728b3b1323d2ac33c1f659579392a9"
+    },
+    "island_h58_seed50_0049.json": {
+      "name": "island_h58_seed50_0049.json",
+      "seed": 50,
+      "layout": "island_h58",
+      "split": "test",
+      "jobs": [
+        "prep",
+        "cook",
+        "carry"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3312,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "3ebffe3b4da22e477fb88eb46a26ca6b97b96801993e1203839d4827741c6736"
+    },
+    "island_h58_seed5_0004.json": {
+      "name": "island_h58_seed5_0004.json",
+      "seed": 5,
+      "layout": "island_h58",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "cook",
+        "carry"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3266,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "fa3ecfa72388fc20e062dc7fb22ea5f9081bd9429ec8530cad17e779e0e6da01"
+    },
+    "island_h58_seed6_0005.json": {
+      "name": "island_h58_seed6_0005.json",
+      "seed": 6,
+      "layout": "island_h58",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.338,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "7cefde7e8567725b58b51ad379126919949b5275f42eb052b0e15f1f03ef41e4"
+    },
+    "island_h58_seed7_0006.json": {
+      "name": "island_h58_seed7_0006.json",
+      "seed": 7,
+      "layout": "island_h58",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "lead",
+        "wash"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3244,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "3885e67fe45da5f3164763b83216c3a060447df005ba85ef7d426b8be8cd2d95"
+    },
+    "island_h58_seed8_0007.json": {
+      "name": "island_h58_seed8_0007.json",
+      "seed": 8,
+      "layout": "island_h58",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "wash"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3357,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "7cffc530827e52f08e78932e20efedbebcceceb8dcf898d61680b6ec02b11190"
+    },
+    "island_h58_seed9_0008.json": {
+      "name": "island_h58_seed9_0008.json",
+      "seed": 9,
+      "layout": "island_h58",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry",
+        "wash",
+        "lead"
+      ],
+      "people": 4,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3348,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "b042f8f07db6ed6dc61a0eff98a2bb732876b8bd2fbfe099ef446e7b8db45501"
+    },
+    "legacy_seed10_0009.json": {
+      "name": "legacy_seed10_0009.json",
+      "seed": 10,
+      "layout": "legacy",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "cook",
+        "carry"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3773,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "fef6aa348de14d3dcde36ca4463de94cff817495a2ab829aeafcf09b137d5472"
+    },
+    "legacy_seed11_0010.json": {
+      "name": "legacy_seed11_0010.json",
+      "seed": 11,
+      "layout": "legacy",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3765,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "467aed0e7a3698685c6e5a81f7e70cc7213f8e9bd033628e6721a61eeeac8191"
+    },
+    "legacy_seed12_0011.json": {
+      "name": "legacy_seed12_0011.json",
+      "seed": 12,
+      "layout": "legacy",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "lead",
+        "wash"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3577,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "f9d2ac271bf3b6288c19739ceaeadfd7505a73caba5154e42a7eb162b400bed1"
+    },
+    "legacy_seed13_0012.json": {
+      "name": "legacy_seed13_0012.json",
+      "seed": 13,
+      "layout": "legacy",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "wash"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3768,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "7bb4bc6dea17bac43a375706ff6fb491ce432bea2d64c0f47a03b74c741e6081"
+    },
+    "legacy_seed14_0013.json": {
+      "name": "legacy_seed14_0013.json",
+      "seed": 14,
+      "layout": "legacy",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry",
+        "wash",
+        "lead"
+      ],
+      "people": 4,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3699,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "5ba0a4ea441d1ed406c8f88dac5c0aa98dff293af89fa3fce1b93b48a946572a"
+    },
+    "legacy_seed15_0014.json": {
+      "name": "legacy_seed15_0014.json",
+      "seed": 15,
+      "layout": "legacy",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "cook",
+        "carry"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3775,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "6e0864de5dd14af329f54bf0993eebc71be2575155fc9d184ba4acb8537968de"
+    },
+    "legacy_seed16_0015.json": {
+      "name": "legacy_seed16_0015.json",
+      "seed": 16,
+      "layout": "legacy",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3676,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "b71488919ff415ee757d9d1cb27bdd9f2cdb1ca20bfef047d4270c5e05c170e6"
+    },
+    "legacy_seed17_0016.json": {
+      "name": "legacy_seed17_0016.json",
+      "seed": 17,
+      "layout": "legacy",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "lead",
+        "wash"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3644,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "bf8f7f31c27d9acf6094c65e3d6b428ea88ead5d905bd8c727afe0b6218df7ad"
+    },
+    "legacy_seed18_0017.json": {
+      "name": "legacy_seed18_0017.json",
+      "seed": 18,
+      "layout": "legacy",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "wash"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3506,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "01705fc1d5b40d7b90ccd5bf660e74e16524aa4cfd522327d19da951daedb936"
+    },
+    "legacy_seed19_0018.json": {
+      "name": "legacy_seed19_0018.json",
+      "seed": 19,
+      "layout": "legacy",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry",
+        "wash",
+        "lead"
+      ],
+      "people": 4,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3558,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "83663b1222f57631757a14020877a0d5cca17512417b4ad4c4150f413c61ee69"
+    },
+    "legacy_seed1_0000.json": {
+      "name": "legacy_seed1_0000.json",
+      "seed": 1,
+      "layout": "legacy",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3675,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "d4226435c00bd6b1882be8eece362f412ae6027a645b01256f1032e2b1e56765"
+    },
+    "legacy_seed20_0019.json": {
+      "name": "legacy_seed20_0019.json",
+      "seed": 20,
+      "layout": "legacy",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "cook",
+        "carry"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3753,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "627814a4d0381348b539288d059fe2c8f639038f5fd3ebfbec592b1283e46e7f"
+    },
+    "legacy_seed21_0020.json": {
+      "name": "legacy_seed21_0020.json",
+      "seed": 21,
+      "layout": "legacy",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3668,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "7606d4f60ad3aa10279d3ddb3c371c13c8615ff5d8057b7fc3ba2eb33d2030f1"
+    },
+    "legacy_seed22_0021.json": {
+      "name": "legacy_seed22_0021.json",
+      "seed": 22,
+      "layout": "legacy",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "lead",
+        "wash"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3744,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "d5a46bf952cedf02c81349dd4fb40c37618eed6732ddc9aa85253f8e57a4e8ea"
+    },
+    "legacy_seed23_0022.json": {
+      "name": "legacy_seed23_0022.json",
+      "seed": 23,
+      "layout": "legacy",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "wash"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3685,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "6898a0f5bb8782683a0e2441cabbfa8605fafd20f9391d2ba3d7c72556ab0461"
+    },
+    "legacy_seed24_0023.json": {
+      "name": "legacy_seed24_0023.json",
+      "seed": 24,
+      "layout": "legacy",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry",
+        "wash",
+        "lead"
+      ],
+      "people": 4,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3547,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "3860f320b051758941e08119b419580525bf224adea3bcf781edca1ec1cfd728"
+    },
+    "legacy_seed25_0024.json": {
+      "name": "legacy_seed25_0024.json",
+      "seed": 25,
+      "layout": "legacy",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "cook",
+        "carry"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.378,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "b03d6401bbab5ab09f7a6ece9ee636c391bcbb1d334ab1c21d77d5bf7eab829e"
+    },
+    "legacy_seed26_0025.json": {
+      "name": "legacy_seed26_0025.json",
+      "seed": 26,
+      "layout": "legacy",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3497,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "b7c1f5a1007c805f3397770f3be445a61b499472cd83c5ec336471c822726303"
+    },
+    "legacy_seed27_0026.json": {
+      "name": "legacy_seed27_0026.json",
+      "seed": 27,
+      "layout": "legacy",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "lead",
+        "wash"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3703,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "ecf8fa539327ee9296f197a50b4bc2c85106e9c16efa1a4a7934dd29ca5e2df7"
+    },
+    "legacy_seed28_0027.json": {
+      "name": "legacy_seed28_0027.json",
+      "seed": 28,
+      "layout": "legacy",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "wash"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3734,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "bf2868ab14d1d70d9ed162f3ed779f2b04bfd223155f74b49ba592d5227e227a"
+    },
+    "legacy_seed29_0028.json": {
+      "name": "legacy_seed29_0028.json",
+      "seed": 29,
+      "layout": "legacy",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry",
+        "wash",
+        "lead"
+      ],
+      "people": 4,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3672,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "3203522ceb4e998f8a9f0fac6cda37c2a12200dceb692a4dee5862dd5eae2d19"
+    },
+    "legacy_seed2_0001.json": {
+      "name": "legacy_seed2_0001.json",
+      "seed": 2,
+      "layout": "legacy",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "lead",
+        "wash"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3759,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "c196e39b5746eb94708e812eddba75c525414d734293a8dea95fbbf5f34d9954"
+    },
+    "legacy_seed30_0029.json": {
+      "name": "legacy_seed30_0029.json",
+      "seed": 30,
+      "layout": "legacy",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "cook",
+        "carry"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3741,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "7d61cd0372a88b1e2bb25c965a0ce5fc2f89faa16c32423cbff93cc80fb99e4a"
+    },
+    "legacy_seed31_0030.json": {
+      "name": "legacy_seed31_0030.json",
+      "seed": 31,
+      "layout": "legacy",
+      "split": "val",
+      "jobs": [
+        "cook",
+        "carry"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3676,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "435c55224446a8336c3dbb4db6dfd2b2c17e9e29892ae1135ba71bb5229642d5"
+    },
+    "legacy_seed32_0031.json": {
+      "name": "legacy_seed32_0031.json",
+      "seed": 32,
+      "layout": "legacy",
+      "split": "val",
+      "jobs": [
+        "cook",
+        "lead",
+        "wash"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.379,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "45e92fc465ef210660ee5830046dec60a443ff0b4570d15198ee63a111b9b0bb"
+    },
+    "legacy_seed33_0032.json": {
+      "name": "legacy_seed33_0032.json",
+      "seed": 33,
+      "layout": "legacy",
+      "split": "val",
+      "jobs": [
+        "prep",
+        "wash"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3455,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "e36df2432f70d7eb03f5922dc42e0b63046e8b17b33c59ac1d311db43e2792f3"
+    },
+    "legacy_seed34_0033.json": {
+      "name": "legacy_seed34_0033.json",
+      "seed": 34,
+      "layout": "legacy",
+      "split": "val",
+      "jobs": [
+        "cook",
+        "carry",
+        "wash",
+        "lead"
+      ],
+      "people": 4,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3559,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "846c6401070a49612e13e090ac656f7953733ec1758baac7181b53e5c66a26a1"
+    },
+    "legacy_seed35_0034.json": {
+      "name": "legacy_seed35_0034.json",
+      "seed": 35,
+      "layout": "legacy",
+      "split": "val",
+      "jobs": [
+        "prep",
+        "cook",
+        "carry"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3717,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "9db96112ddabb9335dcee5065bd277479e27adb62042561f48dbdeddf8aad8be"
+    },
+    "legacy_seed36_0035.json": {
+      "name": "legacy_seed36_0035.json",
+      "seed": 36,
+      "layout": "legacy",
+      "split": "val",
+      "jobs": [
+        "cook",
+        "carry"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3776,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "3cc45e7379d3d7cf276c6218e2c34bcd2a429eaa6ea4b5014bff5b74d354c6a2"
+    },
+    "legacy_seed37_0036.json": {
+      "name": "legacy_seed37_0036.json",
+      "seed": 37,
+      "layout": "legacy",
+      "split": "val",
+      "jobs": [
+        "cook",
+        "lead",
+        "wash"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3616,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "643cc7cb064012628f958f377d055d116db26e25cba8c3378280a5c0a6236f75"
+    },
+    "legacy_seed38_0037.json": {
+      "name": "legacy_seed38_0037.json",
+      "seed": 38,
+      "layout": "legacy",
+      "split": "val",
+      "jobs": [
+        "prep",
+        "wash"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.368,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "6b3b69eee93d29afc587eed98c833e0b93dba777caf35f61d2462b4de11b75f6"
+    },
+    "legacy_seed39_0038.json": {
+      "name": "legacy_seed39_0038.json",
+      "seed": 39,
+      "layout": "legacy",
+      "split": "val",
+      "jobs": [
+        "cook",
+        "carry",
+        "wash",
+        "lead"
+      ],
+      "people": 4,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3628,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "67373c78cb1602780e98874cc917a5f170b35131e921de3b800839b76f98cd67"
+    },
+    "legacy_seed3_0002.json": {
+      "name": "legacy_seed3_0002.json",
+      "seed": 3,
+      "layout": "legacy",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "wash"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.367,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "3ed5ec179d96bfbc0dd36893cbe372961204b91e8d4ef0d7fbbddbb5a11fb77c"
+    },
+    "legacy_seed40_0039.json": {
+      "name": "legacy_seed40_0039.json",
+      "seed": 40,
+      "layout": "legacy",
+      "split": "val",
+      "jobs": [
+        "prep",
+        "cook",
+        "carry"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3752,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "b8b84393f2b8ab1e26a2ec1dc7bed84a2579575ffb19cd5d8b842b80119c0541"
+    },
+    "legacy_seed41_0040.json": {
+      "name": "legacy_seed41_0040.json",
+      "seed": 41,
+      "layout": "legacy",
+      "split": "test",
+      "jobs": [
+        "cook",
+        "carry"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3359,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "eb942d188746f90711ef74031042f453047c0b7381315098ef6e501e202153d8"
+    },
+    "legacy_seed42_0041.json": {
+      "name": "legacy_seed42_0041.json",
+      "seed": 42,
+      "layout": "legacy",
+      "split": "test",
+      "jobs": [
+        "cook",
+        "lead",
+        "wash"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3719,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "3b2778e60f8add263027855e5698629184b08c9cabd7804b24b2a742059c0eef"
+    },
+    "legacy_seed43_0042.json": {
+      "name": "legacy_seed43_0042.json",
+      "seed": 43,
+      "layout": "legacy",
+      "split": "test",
+      "jobs": [
+        "prep",
+        "wash"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.378,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "699523fd0e7bd921f0d45671bd5f90e0758e8576f5bff5084eb94e2ccd7c2ffb"
+    },
+    "legacy_seed44_0043.json": {
+      "name": "legacy_seed44_0043.json",
+      "seed": 44,
+      "layout": "legacy",
+      "split": "test",
+      "jobs": [
+        "cook",
+        "carry",
+        "wash",
+        "lead"
+      ],
+      "people": 4,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3793,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "7ae2b3cb5d4e29d0e60911b8fa633c46b09d05766d982068cc8eb5d1142b005f"
+    },
+    "legacy_seed45_0044.json": {
+      "name": "legacy_seed45_0044.json",
+      "seed": 45,
+      "layout": "legacy",
+      "split": "test",
+      "jobs": [
+        "prep",
+        "cook",
+        "carry"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3782,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "83708a7d7ee0c8f1911d5a6251b3e8bbfdd54a3012467d2e97cc41cca74c89c9"
+    },
+    "legacy_seed46_0045.json": {
+      "name": "legacy_seed46_0045.json",
+      "seed": 46,
+      "layout": "legacy",
+      "split": "test",
+      "jobs": [
+        "cook",
+        "carry"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.356,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "c0c0f466b5e6b06a1c1c9f4f004f8198474a2f42fc5d136d07c52bbfb266c122"
+    },
+    "legacy_seed47_0046.json": {
+      "name": "legacy_seed47_0046.json",
+      "seed": 47,
+      "layout": "legacy",
+      "split": "test",
+      "jobs": [
+        "cook",
+        "lead",
+        "wash"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3556,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "18577e9ac53ccb7bcaaffec762c01e385f1203b49bd09581d31aca022ddbd2f1"
+    },
+    "legacy_seed48_0047.json": {
+      "name": "legacy_seed48_0047.json",
+      "seed": 48,
+      "layout": "legacy",
+      "split": "test",
+      "jobs": [
+        "prep",
+        "wash"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3745,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "9abb649da13cdcf1e2dc5dfcd1c3bb6dffe2e0209678aacdaa80699b4671a498"
+    },
+    "legacy_seed49_0048.json": {
+      "name": "legacy_seed49_0048.json",
+      "seed": 49,
+      "layout": "legacy",
+      "split": "test",
+      "jobs": [
+        "cook",
+        "carry",
+        "wash",
+        "lead"
+      ],
+      "people": 4,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3745,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "4d0f349f0a1fac25e01b3d8cff73b0522b63850b6e50b61a48ea4dbe46bde63b"
+    },
+    "legacy_seed4_0003.json": {
+      "name": "legacy_seed4_0003.json",
+      "seed": 4,
+      "layout": "legacy",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry",
+        "wash",
+        "lead"
+      ],
+      "people": 4,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3666,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "2899044df4e3d14e02ec2b5159be77b3d0bde827b83a73fbc8b54527d949c95b"
+    },
+    "legacy_seed50_0049.json": {
+      "name": "legacy_seed50_0049.json",
+      "seed": 50,
+      "layout": "legacy",
+      "split": "test",
+      "jobs": [
+        "prep",
+        "cook",
+        "carry"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3681,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "66acff0f364bb02ad98eb73d46c126b95083afeba0925d70b264a18f7c179238"
+    },
+    "legacy_seed5_0004.json": {
+      "name": "legacy_seed5_0004.json",
+      "seed": 5,
+      "layout": "legacy",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "cook",
+        "carry"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3774,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "16713063e305075befb7be4aa2915c43165d730386164368ae039c3bb813a50d"
+    },
+    "legacy_seed6_0005.json": {
+      "name": "legacy_seed6_0005.json",
+      "seed": 6,
+      "layout": "legacy",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3773,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "37bd2583ae22935fc4753538fddff626fea145880204f6613724fdac0943bf70"
+    },
+    "legacy_seed7_0006.json": {
+      "name": "legacy_seed7_0006.json",
+      "seed": 7,
+      "layout": "legacy",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "lead",
+        "wash"
+      ],
+      "people": 3,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3587,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "9b6ed53cb1e0f0cbb890741d5b97b534e5ceeb1ede7ea7e169accec0b48f7f03"
+    },
+    "legacy_seed8_0007.json": {
+      "name": "legacy_seed8_0007.json",
+      "seed": 8,
+      "layout": "legacy",
+      "split": "train",
+      "jobs": [
+        "prep",
+        "wash"
+      ],
+      "people": 2,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3505,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "e970d369893cfb0a0935547b10913732e3c6d1711ece0352e1f0f748d8107e3d"
+    },
+    "legacy_seed9_0008.json": {
+      "name": "legacy_seed9_0008.json",
+      "seed": 9,
+      "layout": "legacy",
+      "split": "train",
+      "jobs": [
+        "cook",
+        "carry",
+        "wash",
+        "lead"
+      ],
+      "people": 4,
+      "frames": 150,
+      "dt": 0.4,
+      "max_step": 0.3794,
+      "has_room": true,
+      "has_robot": true,
+      "mPerAU": 1,
+      "sha256": "abba56681c6c5f84fa97d3ddbd1794cd4efaad56b32e34ce65ca06ee66b0c869"
+    }
+  },
+  "summary": {
+    "train": {
+      "scenes": 90,
+      "people": 252,
+      "job_sets": {
+        "cook|carry": 18,
+        "cook|carry|wash|lead": 18,
+        "cook|lead|wash": 18,
+        "prep|cook|carry": 18,
+        "prep|wash": 18
+      },
+      "safety_eligible": 23733,
+      "safety_positive": 2946
+    },
+    "val": {
+      "scenes": 30,
+      "people": 84,
+      "job_sets": {
+        "cook|carry": 6,
+        "cook|carry|wash|lead": 6,
+        "cook|lead|wash": 6,
+        "prep|cook|carry": 6,
+        "prep|wash": 6
+      },
+      "safety_eligible": 7789,
+      "safety_positive": 968
+    },
+    "test": {
+      "scenes": 30,
+      "labels_locked": true
+    }
+  }
+}
