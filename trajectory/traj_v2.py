@@ -70,6 +70,7 @@ def inspect_scene(path: Path) -> dict:
     if jobs != JOB_SETS[(seed - 1) % len(JOB_SETS)]:
         raise DatasetAuditError(f"job 조합 불일치: {path.name}")
     max_step = 0.0
+    room = scene["room"]
     for node in nodes:
         frames = node.get("frames", [])
         if len(frames) != 150 or any(
@@ -78,6 +79,16 @@ def inspect_scene(path: Path) -> dict:
         ):
             raise DatasetAuditError(
                 f"frame 계약 불일치: {path.name}/{node.get('id')}"
+            )
+        if any(
+            frame["x"] < room["x0"]
+            or frame["x"] > room["x1"]
+            or frame["z"] < room["z0"]
+            or frame["z"] > room["z1"]
+            for frame in frames
+        ):
+            raise DatasetAuditError(
+                f"room 경계 밖 프레임: {path.name}/{node.get('id')}"
             )
         for previous, current in zip(frames, frames[1:]):
             step = math.hypot(

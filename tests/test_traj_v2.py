@@ -132,6 +132,19 @@ def test_manifest_rejects_unflagged_teleport(tmp_path):
         build_manifest(data, code_commit="abc123")
 
 
+def test_manifest_rejects_frame_outside_room(tmp_path):
+    data = tmp_path / "v2"
+    _full_dataset(data)
+    path = next(data.glob("corridor_seed1_*.json"))
+    scene = json.loads(path.read_text(encoding="utf-8"))
+    for frame in scene["nodes"][0]["frames"]:
+        frame["z"] = scene["room"]["z1"] + 0.01
+    path.write_text(json.dumps(scene), encoding="utf-8")
+
+    with pytest.raises(DatasetAuditError, match="room 경계"):
+        build_manifest(data, code_commit="abc123")
+
+
 def test_audit_cli_resolves_project_packages():
     root = Path(__file__).parents[1]
 
