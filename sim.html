@@ -12300,6 +12300,17 @@ function extraNextTarget(P) {
   }
   return null;
 }
+function enforceExtraRoleRadius(P) {
+  const R = ROLE[P.role] || ROLE.far;
+  const minR = R.zone === "out" ? SAFE.NOM_SLOW : R.zone === "slow" ? SAFE.NOM_STOP : 0;
+  if (minR <= 0) return false;
+  const B = LAYOUT.robot.base, n = P.root.position;
+  const ox = n.x - B.x, oz = n.z - B.z, od = Math.hypot(ox, oz);
+  if (od >= minR || od <= 1e-4) return false;
+  n.x = B.x + ox / od * minR;
+  n.z = B.z + oz / od * minR;
+  return true;
+}
 function extrasUpdate(dt) {
   for (const P of EXTRAS) {
     const n = P.root.position;
@@ -12355,13 +12366,7 @@ function extrasUpdate(dt) {
        far가 조리대(2.8m)→제어반(3.3m)으로 갈 때 직선이 로봇 옆을 스칠 수 있다.
        역할별 최소 거리보다 안쪽으로 들어오면 로봇 반대 방향으로 밀어낸다.
  */
-    const RR = ROLE[P.role] || ROLE.far;
-    const minR = RR.zone === "out" ? SAFE.NOM_SLOW : RR.zone === "slow" ? SAFE.NOM_STOP : 0;
-    if (minR > 0) {
-      const B = LAYOUT.robot.base;
-      const ox = n.x - B.x, oz = n.z - B.z, od = Math.hypot(ox, oz);
-      if (od < minR && od > 1e-4) { n.x = B.x + ox / od * minR; n.z = B.z + oz / od * minR; }
-    }
+    enforceExtraRoleRadius(P);
     // 정체 감지 — 설비에 막히면 다른 목적지로 (본체와 같은 규칙)
     if (P.lastD !== undefined && d > P.lastD - 0.004) P.stallT = (P.stallT || 0) + dt;
     else P.stallT = 0;
@@ -12412,10 +12417,8 @@ async function spawnJob(jobKey) {
   const taken = EXTRAS.filter(o => o !== P).map(o => o.root.position);
   const spot = J.route.map(k => STATION[k]).filter(Boolean)
     .find(st => taken.every(t => Math.hypot(t.x - st.pos.x, t.z - st.pos.z) > PERSON_SEP * 2));
-  if (spot) {
-    P.root.position.copyFrom(spot.pos);
-    resolvePersonCollision(P.root.position);
-  }
+  if (spot) P.root.position.copyFrom(spot.pos);
+  enforceExtraRoleRadius(P);
   extraNextTarget(P);
   const B = LAYOUT.robot.base;
   const minD = Math.min(...J.route.map(k => STATION[k])
