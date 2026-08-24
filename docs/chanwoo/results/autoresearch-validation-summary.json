@@ -1,0 +1,1586 @@
+{
+  "baselines": {
+    "guard_reference": "transformer",
+    "models": {
+      "cvae": {
+        "candidate_sha256": "1a395f82dde333e1e100b630998d179d12260b54bc754703e5d03ede5483e5cb",
+        "ci": {
+          "ade16": [
+            0.15687665596521236,
+            0.13929530766354772,
+            0.17220390307292663
+          ],
+          "f2": [
+            0.8656832298136646,
+            0.8338046121667612,
+            0.8920328522533454
+          ],
+          "fde16": [
+            0.2783778604950397,
+            0.2466091718981149,
+            0.3065146911242701
+          ],
+          "precision": [
+            0.696875,
+            0.6473065347057408,
+            0.7355521232755777
+          ],
+          "recall": [
+            0.9214876033057852,
+            0.890862985430438,
+            0.949655584047225
+          ]
+        },
+        "environment": {
+          "cpu_threads": 8,
+          "cuda": "12.8",
+          "device": "NVIDIA GeForce RTX 5070",
+          "python": "3.12.13",
+          "torch": "2.11.0+cu128"
+        },
+        "metrics": {
+          "ade16": 0.15687665596521236,
+          "cpu_p95_ms": 0.297105,
+          "f2": 0.8656832298136646,
+          "fde16": 0.2783778604950397,
+          "fn": 76,
+          "fp": 388,
+          "parameters": 117226,
+          "precision": 0.696875,
+          "recall": 0.9214876033057852,
+          "tp": 892
+        },
+        "model": "cvae",
+        "seed": 0,
+        "status": "ok",
+        "training": {
+          "final_loss": -1.4346814155578613,
+          "steps": 61734,
+          "train_seconds": 300.000279400032,
+          "warmup_steps": 10
+        },
+        "trial_id": "baseline-cvae-seed0",
+        "weights": "training/autoresearch/baseline-cvae-seed0.pt",
+        "weights_sha256": "9943d90fd277e18f6e430c7ab8b5ba488dd5e509294e981babbe7598d4a61365"
+      },
+      "lstm": {
+        "candidate_sha256": "1a395f82dde333e1e100b630998d179d12260b54bc754703e5d03ede5483e5cb",
+        "ci": {
+          "ade16": [
+            0.17326894520250638,
+            0.15278301817232706,
+            0.19030628456516685
+          ],
+          "f2": [
+            0.8485590506686757,
+            0.8209547855084791,
+            0.8708042008935087
+          ],
+          "fde16": [
+            0.3016647034040241,
+            0.2645291383428242,
+            0.33324123365548053
+          ],
+          "precision": [
+            0.627000695894224,
+            0.5812935381170168,
+            0.6669155165274998
+          ],
+          "recall": [
+            0.9307851239669421,
+            0.9065014136687141,
+            0.9511998426435877
+          ]
+        },
+        "environment": {
+          "cpu_threads": 8,
+          "cuda": "12.8",
+          "device": "NVIDIA GeForce RTX 5070",
+          "python": "3.12.13",
+          "torch": "2.11.0+cu128"
+        },
+        "metrics": {
+          "ade16": 0.17326894520250638,
+          "cpu_p95_ms": 0.21241999999999997,
+          "f2": 0.8485590506686757,
+          "fde16": 0.3016647034040241,
+          "fn": 67,
+          "fp": 536,
+          "parameters": 28783,
+          "precision": 0.627000695894224,
+          "recall": 0.9307851239669421,
+          "tp": 901
+        },
+        "model": "lstm",
+        "seed": 0,
+        "status": "ok",
+        "training": {
+          "final_loss": -1.0566234588623047,
+          "steps": 124006,
+          "train_seconds": 300.0005500999978,
+          "warmup_steps": 10
+        },
+        "trial_id": "baseline-lstm-seed0",
+        "weights": "training/autoresearch/baseline-lstm-seed0.pt",
+        "weights_sha256": "7b11ca513db6d683ba0a881b8844e82d8799a4ef22d5d71c6b17637b02c23f27"
+      },
+      "transformer": {
+        "candidate_sha256": "1a395f82dde333e1e100b630998d179d12260b54bc754703e5d03ede5483e5cb",
+        "ci": {
+          "ade16": [
+            0.1582601400832872,
+            0.14071861210161152,
+            0.17316309201832142
+          ],
+          "f2": [
+            0.7976482976482977,
+            0.7142729682879575,
+            0.8586733192029645
+          ],
+          "fde16": [
+            0.27912642985281283,
+            0.2468290144027348,
+            0.3067002117332102
+          ],
+          "precision": [
+            0.49780941949616647,
+            0.374317353651034,
+            0.6247702763676137
+          ],
+          "recall": [
+            0.9390495867768595,
+            0.9109566660376275,
+            0.9632327604828188
+          ]
+        },
+        "environment": {
+          "cpu_threads": 8,
+          "cuda": "12.8",
+          "device": "NVIDIA GeForce RTX 5070",
+          "python": "3.12.13",
+          "torch": "2.11.0+cu128"
+        },
+        "metrics": {
+          "ade16": 0.1582601400832872,
+          "cpu_p95_ms": 0.26473499999999994,
+          "f2": 0.7976482976482977,
+          "fde16": 0.27912642985281283,
+          "fn": 59,
+          "fp": 917,
+          "parameters": 115631,
+          "precision": 0.49780941949616647,
+          "recall": 0.9390495867768595,
+          "tp": 909
+        },
+        "model": "transformer",
+        "seed": 0,
+        "status": "ok",
+        "training": {
+          "final_loss": -1.353957176208496,
+          "steps": 69717,
+          "train_seconds": 300.00324739998905,
+          "warmup_steps": 10
+        },
+        "trial_id": "baseline-transformer-seed0",
+        "weights": "training/autoresearch/baseline-transformer-seed0.pt",
+        "weights_sha256": "25f7a35b60857dc9d97005c9104382b7cb1a7cac270d7a73e0f8e37e48316b70"
+      }
+    }
+  },
+  "boundary": "validation-only simulator trajectory result; locked test not run",
+  "counts": {
+    "failed": 1,
+    "keep": 1,
+    "ok": 22,
+    "total": 23
+  },
+  "failure_counts": {
+    "timeout": 1
+  },
+  "fast_trials": [
+    {
+      "candidate_sha256": "e13156e944bb352d6e9d571ff4b9ea69fdb5b4023af8e330c7d9e6addf43a6c0",
+      "ci": {
+        "ade16": [
+          0.16673579554009735,
+          0.14699390866768594,
+          0.18343280247484947
+        ],
+        "f2": [
+          0.859035004730369,
+          0.8305130199446521,
+          0.8818140174072377
+        ],
+        "fde16": [
+          0.2937920813594324,
+          0.2579230396795624,
+          0.3240392003279148
+        ],
+        "precision": [
+          0.6426043878273178,
+          0.5958262733550119,
+          0.6835771427791775
+        ],
+        "recall": [
+          0.9380165289256198,
+          0.9128864145784316,
+          0.9601381425972019
+        ]
+      },
+      "environment": {
+        "cpu_threads": 8,
+        "cuda": "12.8",
+        "device": "NVIDIA GeForce RTX 5070",
+        "python": "3.12.13",
+        "torch": "2.11.0+cu128"
+      },
+      "f2_gain": 0.06138670708207128,
+      "guards": {
+        "failures": [
+          "fde16"
+        ],
+        "passed": false
+      },
+      "metrics": {
+        "ade16": 0.16673579554009735,
+        "cpu_p95_ms": 0.2675,
+        "f2": 0.859035004730369,
+        "fde16": 0.2937920813594324,
+        "fn": 60,
+        "fp": 505,
+        "parameters": 112047,
+        "precision": 0.6426043878273178,
+        "recall": 0.9380165289256198,
+        "tp": 908
+      },
+      "model": "candidate",
+      "seed": 0,
+      "status": "ok",
+      "training": {
+        "final_loss": -1.142401933670044,
+        "steps": 69279,
+        "train_seconds": 300.0038403000217,
+        "warmup_steps": 10
+      },
+      "trial_id": "trial-001-pre-norm",
+      "verdict": "revert",
+      "weights": "training/autoresearch/trial-001-pre-norm.pt",
+      "weights_sha256": "d63eaaaa11bc0e384d956fe3afa824e64f13e5721312cc22d5a5024774299f6e"
+    },
+    {
+      "candidate_sha256": "77561050c1dece5b82f26dc6a0252323ba526e22d760d5ac65b8e5d48875f418",
+      "ci": {
+        "ade16": [
+          0.16599086407626396,
+          0.14762165986415754,
+          0.1815914858887667
+        ],
+        "f2": [
+          0.862233231707317,
+          0.8341963249895499,
+          0.8855764764514404
+        ],
+        "fde16": [
+          0.29413019602224455,
+          0.2603742001220147,
+          0.3224843115033017
+        ],
+        "precision": [
+          0.657703488372093,
+          0.6113979946524064,
+          0.6972158987751911
+        ],
+        "recall": [
+          0.9349173553719008,
+          0.9089883408595453,
+          0.9576423745752891
+        ]
+      },
+      "environment": {
+        "cpu_threads": 8,
+        "cuda": "12.8",
+        "device": "NVIDIA GeForce RTX 5070",
+        "python": "3.12.13",
+        "torch": "2.11.0+cu128"
+      },
+      "f2_gain": 0.06458493405901933,
+      "guards": {
+        "failures": [
+          "fde16"
+        ],
+        "passed": false
+      },
+      "metrics": {
+        "ade16": 0.16599086407626396,
+        "cpu_p95_ms": 0.275505,
+        "f2": 0.862233231707317,
+        "fde16": 0.29413019602224455,
+        "fn": 63,
+        "fp": 471,
+        "parameters": 112047,
+        "precision": 0.657703488372093,
+        "recall": 0.9349173553719008,
+        "tp": 905
+      },
+      "model": "candidate",
+      "seed": 0,
+      "status": "ok",
+      "training": {
+        "final_loss": -1.3224141597747803,
+        "steps": 69863,
+        "train_seconds": 300.0031813000096,
+        "warmup_steps": 10
+      },
+      "trial_id": "trial-002-mean-pool",
+      "verdict": "revert",
+      "weights": "training/autoresearch/trial-002-mean-pool.pt",
+      "weights_sha256": "164d4bce2786841fce6e747b1e4553e795c211b6bac5533725912b28113676c1"
+    },
+    {
+      "candidate_sha256": "e58cc7a16c981d4e61627ed93c8b88b60b804e624086050c13fc11be9f62a0a7",
+      "ci": {
+        "ade16": [
+          0.16519565255044538,
+          0.14707768449769235,
+          0.18094771536168308
+        ],
+        "f2": [
+          0.793223284100782,
+          0.7172810969696314,
+          0.8495349940271238
+        ],
+        "fde16": [
+          0.29203704044398354,
+          0.2583399029126664,
+          0.3208844498555125
+        ],
+        "precision": [
+          0.48486457780138076,
+          0.3688716074543933,
+          0.6026934719248691
+        ],
+        "recall": [
+          0.9431818181818182,
+          0.923450080515298,
+          0.9615768646389135
+        ]
+      },
+      "environment": {
+        "cpu_threads": 8,
+        "cuda": "12.8",
+        "device": "NVIDIA GeForce RTX 5070",
+        "python": "3.12.13",
+        "torch": "2.11.0+cu128"
+      },
+      "f2_gain": -0.004425013547515677,
+      "guards": {
+        "failures": [
+          "fde16"
+        ],
+        "passed": false
+      },
+      "metrics": {
+        "ade16": 0.16519565255044538,
+        "cpu_p95_ms": 0.258705,
+        "f2": 0.793223284100782,
+        "fde16": 0.29203704044398354,
+        "fn": 55,
+        "fp": 970,
+        "parameters": 64863,
+        "precision": 0.48486457780138076,
+        "recall": 0.9431818181818182,
+        "tp": 913
+      },
+      "model": "candidate",
+      "seed": 0,
+      "status": "ok",
+      "training": {
+        "final_loss": -1.161997675895691,
+        "steps": 69633,
+        "train_seconds": 300.0024663999793,
+        "warmup_steps": 10
+      },
+      "trial_id": "trial-003-hidden-48",
+      "verdict": "revert",
+      "weights": "training/autoresearch/trial-003-hidden-48.pt",
+      "weights_sha256": "9e78c065d6638668616833a10499227f847d9226a1535bdc16307350be2f0df7"
+    },
+    {
+      "candidate_sha256": "fb21a0e7b72a1f4e4d283c5fe2fa893dfad075c1fc928f605e444137e1bf4a37",
+      "ci": {
+        "ade16": [
+          0.17166546705887065,
+          0.1516882509860954,
+          0.1882925956795371
+        ],
+        "f2": [
+          0.8670302802332142,
+          0.8396563465604165,
+          0.8901699032087849
+        ],
+        "fde16": [
+          0.3007208420591587,
+          0.26386693751598184,
+          0.331613402603494
+        ],
+        "precision": [
+          0.6380622837370242,
+          0.5882616471904045,
+          0.682193774180614
+        ],
+        "recall": [
+          0.9524793388429752,
+          0.9302080415090817,
+          0.9716818333611621
+        ]
+      },
+      "environment": {
+        "cpu_threads": 8,
+        "cuda": "12.8",
+        "device": "NVIDIA GeForce RTX 5070",
+        "python": "3.12.13",
+        "torch": "2.11.0+cu128"
+      },
+      "f2_gain": 0.06938198258491646,
+      "guards": {
+        "failures": [
+          "fde16"
+        ],
+        "passed": false
+      },
+      "metrics": {
+        "ade16": 0.17166546705887065,
+        "cpu_p95_ms": 0.22302999999999998,
+        "f2": 0.8670302802332142,
+        "fde16": 0.3007208420591587,
+        "fn": 46,
+        "fp": 523,
+        "parameters": 62063,
+        "precision": 0.6380622837370242,
+        "recall": 0.9524793388429752,
+        "tp": 922
+      },
+      "model": "candidate",
+      "seed": 0,
+      "status": "ok",
+      "training": {
+        "final_loss": -0.9833692312240601,
+        "steps": 95044,
+        "train_seconds": 300.00142210000195,
+        "warmup_steps": 10
+      },
+      "trial_id": "trial-004-one-layer",
+      "verdict": "revert",
+      "weights": "training/autoresearch/trial-004-one-layer.pt",
+      "weights_sha256": "0e5c9a6780c9aa46c3694d74db16efb6a2ba23efb886b2f8378f3218a664093c"
+    },
+    {
+      "candidate_sha256": "361c2640205e1d622ccaaf69bd754c11b53a420b11a28401b721ff45b9bc762c",
+      "ci": {
+        "ade16": [
+          0.1581107399660814,
+          0.14015483359159114,
+          0.17362998542447028
+        ],
+        "f2": [
+          0.8619381756116063,
+          0.8286849196712569,
+          0.8871922992517247
+        ],
+        "fde16": [
+          0.28172083548289706,
+          0.24852738618759018,
+          0.3103049458459783
+        ],
+        "precision": [
+          0.6488222698072805,
+          0.5973845294641951,
+          0.6925985317246391
+        ],
+        "recall": [
+          0.9390495867768595,
+          0.9117898156911339,
+          0.9620500973101199
+        ]
+      },
+      "environment": {
+        "cpu_threads": 8,
+        "cuda": "12.8",
+        "device": "NVIDIA GeForce RTX 5070",
+        "python": "3.12.13",
+        "torch": "2.11.0+cu128"
+      },
+      "f2_gain": 0.06428987796330865,
+      "guards": {
+        "failures": [],
+        "passed": true
+      },
+      "metrics": {
+        "ade16": 0.1581107399660814,
+        "cpu_p95_ms": 0.26391,
+        "f2": 0.8619381756116063,
+        "fde16": 0.28172083548289706,
+        "fn": 59,
+        "fp": 492,
+        "parameters": 112047,
+        "precision": 0.6488222698072805,
+        "recall": 0.9390495867768595,
+        "tp": 909
+      },
+      "model": "candidate",
+      "seed": 0,
+      "status": "ok",
+      "training": {
+        "final_loss": -1.4050731658935547,
+        "steps": 70086,
+        "train_seconds": 300.00039800000377,
+        "warmup_steps": 10
+      },
+      "trial_id": "trial-005-lr-0006",
+      "verdict": "keep",
+      "weights": "training/autoresearch/trial-005-lr-0006.pt",
+      "weights_sha256": "fa101f631756a167f7bb0946b999c5e19ea98de49dc4f481a4d09dddfcc052dc"
+    },
+    {
+      "candidate_sha256": "6fc87a8319f2e5277e9a0022c894e59ace962155573589ccec0175dbb7db9e7c",
+      "ci": {
+        "ade16": [
+          0.167623176897787,
+          0.14866678447796078,
+          0.18385761082071456
+        ],
+        "f2": [
+          0.8568186116890486,
+          0.8266046590433564,
+          0.8805297251901937
+        ],
+        "fde16": [
+          0.29437898088308206,
+          0.2597132753466493,
+          0.3244087615204286
+        ],
+        "precision": [
+          0.6402826855123674,
+          0.5903213440918315,
+          0.6837525646263114
+        ],
+        "recall": [
+          0.9359504132231405,
+          0.9117625044029588,
+          0.9569116459376514
+        ]
+      },
+      "environment": {
+        "cpu_threads": 8,
+        "cuda": "12.8",
+        "device": "NVIDIA GeForce RTX 5070",
+        "python": "3.12.13",
+        "torch": "2.11.0+cu128"
+      },
+      "f2_gain": 0.059170314040750904,
+      "guards": {
+        "failures": [
+          "fde16"
+        ],
+        "passed": false
+      },
+      "metrics": {
+        "ade16": 0.167623176897787,
+        "cpu_p95_ms": 0.26471,
+        "f2": 0.8568186116890486,
+        "fde16": 0.29437898088308206,
+        "fn": 62,
+        "fp": 509,
+        "parameters": 112047,
+        "precision": 0.6402826855123674,
+        "recall": 0.9359504132231405,
+        "tp": 906
+      },
+      "model": "candidate",
+      "seed": 0,
+      "status": "ok",
+      "training": {
+        "final_loss": -0.9444541931152344,
+        "steps": 69860,
+        "train_seconds": 300.0025530999992,
+        "warmup_steps": 10
+      },
+      "trial_id": "trial-006-lr-0003",
+      "verdict": "revert",
+      "weights": "training/autoresearch/trial-006-lr-0003.pt",
+      "weights_sha256": "d73ebb5387ead207998b77762999a85c043c3c2bf845c8cb97b764b329e12220"
+    },
+    {
+      "candidate_sha256": "2074e9ad0f89a148c07fd30d311182f570d0b2036b5fa6794daffc4ec0007ff2",
+      "ci": {
+        "ade16": [
+          0.16248412262673684,
+          0.14480096486234748,
+          0.17810858487127848
+        ],
+        "f2": [
+          0.8501908396946564,
+          0.8223777521777474,
+          0.8714601744453649
+        ],
+        "fde16": [
+          0.2867884682707922,
+          0.2539658790206507,
+          0.31555353532474584
+        ],
+        "precision": [
+          0.6513157894736842,
+          0.6001305023138139,
+          0.6934866488745799
+        ],
+        "recall": [
+          0.9204545454545454,
+          0.8987638287638288,
+          0.938907032990466
+        ]
+      },
+      "environment": {
+        "cpu_threads": 8,
+        "cuda": "12.8",
+        "device": "NVIDIA GeForce RTX 5070",
+        "python": "3.12.13",
+        "torch": "2.11.0+cu128"
+      },
+      "f2_gain": 0.052542542046358665,
+      "guards": {
+        "failures": [
+          "recall",
+          "fde16"
+        ],
+        "passed": false
+      },
+      "metrics": {
+        "ade16": 0.16248412262673684,
+        "cpu_p95_ms": 0.28538499999999994,
+        "f2": 0.8501908396946564,
+        "fde16": 0.2867884682707922,
+        "fn": 77,
+        "fp": 477,
+        "parameters": 112047,
+        "precision": 0.6513157894736842,
+        "recall": 0.9204545454545454,
+        "tp": 891
+      },
+      "model": "candidate",
+      "seed": 0,
+      "status": "ok",
+      "training": {
+        "final_loss": -1.391432762145996,
+        "steps": 69583,
+        "train_seconds": 300.0008996000397,
+        "warmup_steps": 10
+      },
+      "trial_id": "trial-007-pre-norm-lr-0006",
+      "verdict": "revert",
+      "weights": "training/autoresearch/trial-007-pre-norm-lr-0006.pt",
+      "weights_sha256": "2c4c0eff0e8165f7fc1563c2f98695bd8362d23a04559dd4a01fe552f0abf361"
+    },
+    {
+      "candidate_sha256": "25e5e0d7f1dacbafe2606b46077a9fdefe1db1dc7065142f7be34ffb489ab46f",
+      "ci": {
+        "ade16": [
+          0.16717264066241627,
+          0.14785737533286605,
+          0.183338703585666
+        ],
+        "f2": [
+          0.8602760446209113,
+          0.8323039089447645,
+          0.8820587425970875
+        ],
+        "fde16": [
+          0.29493957293165,
+          0.2599093344683789,
+          0.3248274862735864
+        ],
+        "precision": [
+          0.6422018348623854,
+          0.591783661314854,
+          0.6843583511365496
+        ],
+        "recall": [
+          0.9400826446280992,
+          0.9176082146179076,
+          0.9602231873640865
+        ]
+      },
+      "environment": {
+        "cpu_threads": 8,
+        "cuda": "12.8",
+        "device": "NVIDIA GeForce RTX 5070",
+        "python": "3.12.13",
+        "torch": "2.11.0+cu128"
+      },
+      "f2_gain": 0.06262774697261364,
+      "guards": {
+        "failures": [
+          "fde16"
+        ],
+        "passed": false
+      },
+      "metrics": {
+        "ade16": 0.16717264066241627,
+        "cpu_p95_ms": 0.286315,
+        "f2": 0.8602760446209113,
+        "fde16": 0.29493957293165,
+        "fn": 58,
+        "fp": 507,
+        "parameters": 112047,
+        "precision": 0.6422018348623854,
+        "recall": 0.9400826446280992,
+        "tp": 910
+      },
+      "model": "candidate",
+      "seed": 0,
+      "status": "ok",
+      "training": {
+        "final_loss": -1.0594587326049805,
+        "steps": 70206,
+        "train_seconds": 300.0030255000456,
+        "warmup_steps": 10
+      },
+      "trial_id": "trial-008-mean-pool-lr-0006",
+      "verdict": "revert",
+      "weights": "training/autoresearch/trial-008-mean-pool-lr-0006.pt",
+      "weights_sha256": "204363e1c5e0b7419faf3a6473f977decb238650fb7de3714700bbde365194df"
+    },
+    {
+      "candidate_sha256": "3c3862ce89e457963bf822a3c3804391e20e44d332e64279f0675591c286cf24",
+      "ci": {
+        "ade16": [
+          0.17554883629696366,
+          0.1544512123638035,
+          0.19342490283031807
+        ],
+        "f2": [
+          0.8541627513625257,
+          0.8276789190979975,
+          0.8751697113214876
+        ],
+        "fde16": [
+          0.30785380046327976,
+          0.2695037020161438,
+          0.3403532024509143
+        ],
+        "precision": [
+          0.6273291925465838,
+          0.5786966530981457,
+          0.6692956510400995
+        ],
+        "recall": [
+          0.9390495867768595,
+          0.9176289369500029,
+          0.9569577642158287
+        ]
+      },
+      "environment": {
+        "cpu_threads": 8,
+        "cuda": "12.8",
+        "device": "NVIDIA GeForce RTX 5070",
+        "python": "3.12.13",
+        "torch": "2.11.0+cu128"
+      },
+      "f2_gain": 0.05651445371422803,
+      "guards": {
+        "failures": [
+          "fde16"
+        ],
+        "passed": false
+      },
+      "metrics": {
+        "ade16": 0.17554883629696366,
+        "cpu_p95_ms": 0.2156199999999999,
+        "f2": 0.8541627513625257,
+        "fde16": 0.30785380046327976,
+        "fn": 59,
+        "fp": 540,
+        "parameters": 62063,
+        "precision": 0.6273291925465838,
+        "recall": 0.9390495867768595,
+        "tp": 909
+      },
+      "model": "candidate",
+      "seed": 0,
+      "status": "ok",
+      "training": {
+        "final_loss": -0.7856578230857849,
+        "steps": 93609,
+        "train_seconds": 300.00105830002576,
+        "warmup_steps": 10
+      },
+      "trial_id": "trial-009-one-layer-lr-0006",
+      "verdict": "revert",
+      "weights": "training/autoresearch/trial-009-one-layer-lr-0006.pt",
+      "weights_sha256": "539a2f60ee977ef10c0a825b2ec535c73b09f88701c8524e3ca30df2d69414d9"
+    },
+    {
+      "candidate_sha256": "3a1b45eaa68ea9c9f6a6b301d05597ac6c9881fab9aa261505516085c5e2d894",
+      "ci": {
+        "ade16": [
+          0.16624037178924905,
+          0.14667821077230098,
+          0.1830588680661032
+        ],
+        "f2": [
+          0.7884648893535459,
+          0.7125883670193235,
+          0.8447424521755384
+        ],
+        "fde16": [
+          0.29365802875181696,
+          0.25757495806483016,
+          0.3249198382550762
+        ],
+        "precision": [
+          0.4847348687734333,
+          0.36721759409211635,
+          0.6026478838468521
+        ],
+        "recall": [
+          0.9349173553719008,
+          0.9124388534898125,
+          0.9556985343104597
+        ]
+      },
+      "environment": {
+        "cpu_threads": 8,
+        "cuda": "12.8",
+        "device": "NVIDIA GeForce RTX 5070",
+        "python": "3.12.13",
+        "torch": "2.11.0+cu128"
+      },
+      "f2_gain": -0.009183408294751838,
+      "guards": {
+        "failures": [
+          "fde16"
+        ],
+        "passed": false
+      },
+      "metrics": {
+        "ade16": 0.16624037178924905,
+        "cpu_p95_ms": 0.255905,
+        "f2": 0.7884648893535459,
+        "fde16": 0.29365802875181696,
+        "fn": 63,
+        "fp": 962,
+        "parameters": 79023,
+        "precision": 0.4847348687734333,
+        "recall": 0.9349173553719008,
+        "tp": 905
+      },
+      "model": "candidate",
+      "seed": 0,
+      "status": "ok",
+      "training": {
+        "final_loss": -0.9494591951370239,
+        "steps": 69597,
+        "train_seconds": 300.0006447999622,
+        "warmup_steps": 10
+      },
+      "trial_id": "trial-010-ff-ratio-2",
+      "verdict": "revert",
+      "weights": "training/autoresearch/trial-010-ff-ratio-2.pt",
+      "weights_sha256": "e510db699ae6bd73e10a27a1d597a0e5d2365f9556e1b766dc45ef9811cc5fc3"
+    },
+    {
+      "candidate_sha256": "9f6b9b4f5eacbb748fe55b01b91bce7497c80167321270d82e225a1208041f31",
+      "ci": {
+        "ade16": [
+          0.166055277531481,
+          0.14702973808733905,
+          0.18248949341000173
+        ],
+        "f2": [
+          0.8592718355027354,
+          0.8290536953301555,
+          0.8816499430197164
+        ],
+        "fde16": [
+          0.2946721587752019,
+          0.25905554150822485,
+          0.32487174017926074
+        ],
+        "precision": [
+          0.6375087473757872,
+          0.5879436375843917,
+          0.6809453887516882
+        ],
+        "recall": [
+          0.9411157024793388,
+          0.9189544221179231,
+          0.9600046838407493
+        ]
+      },
+      "environment": {
+        "cpu_threads": 8,
+        "cuda": "12.8",
+        "device": "NVIDIA GeForce RTX 5070",
+        "python": "3.12.13",
+        "torch": "2.11.0+cu128"
+      },
+      "f2_gain": 0.06162353785443775,
+      "guards": {
+        "failures": [
+          "fde16"
+        ],
+        "passed": false
+      },
+      "metrics": {
+        "ade16": 0.166055277531481,
+        "cpu_p95_ms": 0.2656,
+        "f2": 0.8592718355027354,
+        "fde16": 0.2946721587752019,
+        "fn": 57,
+        "fp": 518,
+        "parameters": 112047,
+        "precision": 0.6375087473757872,
+        "recall": 0.9411157024793388,
+        "tp": 911
+      },
+      "model": "candidate",
+      "seed": 0,
+      "status": "ok",
+      "training": {
+        "final_loss": -1.0038588047027588,
+        "steps": 66248,
+        "train_seconds": 300.00072869996075,
+        "warmup_steps": 10
+      },
+      "trial_id": "trial-011-dropout-005",
+      "verdict": "revert",
+      "weights": "training/autoresearch/trial-011-dropout-005.pt",
+      "weights_sha256": "c71eb277757daedc7bd008a8f5c88ad895ab6eb5ab1cd518d7cd262647bb066c"
+    },
+    {
+      "candidate_sha256": "7637b23c51aef8d2f16d6e52a24b2481c5b532073e763664fcbfca6d1125b083",
+      "ci": {
+        "ade16": [
+          0.1643834659317301,
+          0.1472497398996251,
+          0.17928930484034636
+        ],
+        "f2": [
+          0.7963286713286712,
+          0.7157747345601949,
+          0.8546314886071642
+        ],
+        "fde16": [
+          0.2908021851733411,
+          0.25918150872065077,
+          0.3186698092679133
+        ],
+        "precision": [
+          0.49296536796536794,
+          0.3725428243967413,
+          0.6162864211105002
+        ],
+        "recall": [
+          0.9411157024793388,
+          0.9154216996068526,
+          0.9620385892452219
+        ]
+      },
+      "environment": {
+        "cpu_threads": 8,
+        "cuda": "12.8",
+        "device": "NVIDIA GeForce RTX 5070",
+        "python": "3.12.13",
+        "torch": "2.11.0+cu128"
+      },
+      "f2_gain": -0.0013196263196264546,
+      "guards": {
+        "failures": [
+          "fde16",
+          "cpu_p95_ms"
+        ],
+        "passed": false
+      },
+      "metrics": {
+        "ade16": 0.1643834659317301,
+        "cpu_p95_ms": 0.33035499999999995,
+        "f2": 0.7963286713286712,
+        "fde16": 0.2908021851733411,
+        "fn": 57,
+        "fp": 937,
+        "parameters": 120303,
+        "precision": 0.49296536796536794,
+        "recall": 0.9411157024793388,
+        "tp": 911
+      },
+      "model": "candidate",
+      "seed": 0,
+      "status": "ok",
+      "training": {
+        "final_loss": -1.3354909420013428,
+        "steps": 64263,
+        "train_seconds": 300.0006570999976,
+        "warmup_steps": 10
+      },
+      "trial_id": "trial-012-gated-residual",
+      "verdict": "revert",
+      "weights": "training/autoresearch/trial-012-gated-residual.pt",
+      "weights_sha256": "4edac8e0e780dd5b1b3a136daf3d1596300639df624042aeebc1d266d1c41cc1"
+    }
+  ],
+  "guard_failure_counts": {
+    "cpu_p95_ms": 1,
+    "fde16": 11,
+    "recall": 1
+  },
+  "keep_trials": [
+    {
+      "candidate_sha256": "361c2640205e1d622ccaaf69bd754c11b53a420b11a28401b721ff45b9bc762c",
+      "ci": {
+        "ade16": [
+          0.1581107399660814,
+          0.14015483359159114,
+          0.17362998542447028
+        ],
+        "f2": [
+          0.8619381756116063,
+          0.8286849196712569,
+          0.8871922992517247
+        ],
+        "fde16": [
+          0.28172083548289706,
+          0.24852738618759018,
+          0.3103049458459783
+        ],
+        "precision": [
+          0.6488222698072805,
+          0.5973845294641951,
+          0.6925985317246391
+        ],
+        "recall": [
+          0.9390495867768595,
+          0.9117898156911339,
+          0.9620500973101199
+        ]
+      },
+      "environment": {
+        "cpu_threads": 8,
+        "cuda": "12.8",
+        "device": "NVIDIA GeForce RTX 5070",
+        "python": "3.12.13",
+        "torch": "2.11.0+cu128"
+      },
+      "f2_gain": 0.06428987796330865,
+      "guards": {
+        "failures": [],
+        "passed": true
+      },
+      "metrics": {
+        "ade16": 0.1581107399660814,
+        "cpu_p95_ms": 0.26391,
+        "f2": 0.8619381756116063,
+        "fde16": 0.28172083548289706,
+        "fn": 59,
+        "fp": 492,
+        "parameters": 112047,
+        "precision": 0.6488222698072805,
+        "recall": 0.9390495867768595,
+        "tp": 909
+      },
+      "model": "candidate",
+      "seed": 0,
+      "status": "ok",
+      "training": {
+        "final_loss": -1.4050731658935547,
+        "steps": 70086,
+        "train_seconds": 300.00039800000377,
+        "warmup_steps": 10
+      },
+      "trial_id": "trial-005-lr-0006",
+      "verdict": "keep",
+      "weights": "training/autoresearch/trial-005-lr-0006.pt",
+      "weights_sha256": "fa101f631756a167f7bb0946b999c5e19ea98de49dc4f481a4d09dddfcc052dc"
+    }
+  ],
+  "rerun_groups": [
+    {
+      "all_guards_passed": null,
+      "all_successful": true,
+      "median": {
+        "cpu_p95_ms": 0.26521,
+        "f2": 0.792166549047283,
+        "fde16": 0.2862689526911618,
+        "recall": 0.9338842975206612
+      },
+      "seeds": [
+        0,
+        1,
+        2
+      ],
+      "trial_id": "baseline-transformer"
+    },
+    {
+      "all_guards_passed": false,
+      "all_successful": true,
+      "median": {
+        "cpu_p95_ms": 0.2656,
+        "f2": 0.8523692656220502,
+        "fde16": 0.2893638617152197,
+        "recall": 0.9276859504132231
+      },
+      "seeds": [
+        0,
+        1,
+        2
+      ],
+      "trial_id": "trial-005-lr-0006"
+    }
+  ],
+  "reruns": [
+    {
+      "base_trial_id": "trial-005-lr-0006",
+      "candidate_sha256": "94848f7ad68131a4fa97dab322c412d3157eef525bb30473675eafe51757532e",
+      "ci": {
+        "ade16": [
+          0.16502807178897363,
+          0.14587794044030328,
+          0.18150777075470817
+        ],
+        "f2": [
+          0.8523692656220502,
+          0.8200005601357129,
+          0.8779807714664372
+        ],
+        "fde16": [
+          0.2893638617152197,
+          0.25480605035504916,
+          0.319595507584099
+        ],
+        "precision": [
+          0.6336842105263157,
+          0.5792367045775837,
+          0.679836835279085
+        ],
+        "recall": [
+          0.9328512396694215,
+          0.9062197805976822,
+          0.9564386836300705
+        ]
+      },
+      "environment": {
+        "cpu_threads": 8,
+        "cuda": "12.8",
+        "device": "NVIDIA GeForce RTX 5070",
+        "python": "3.12.13",
+        "torch": "2.11.0+cu128"
+      },
+      "f2_gain": 0.05472096797375248,
+      "guards": {
+        "failures": [
+          "fde16"
+        ],
+        "passed": false
+      },
+      "metrics": {
+        "ade16": 0.16502807178897363,
+        "cpu_p95_ms": 0.283505,
+        "f2": 0.8523692656220502,
+        "fde16": 0.2893638617152197,
+        "fn": 65,
+        "fp": 522,
+        "parameters": 112047,
+        "precision": 0.6336842105263157,
+        "recall": 0.9328512396694215,
+        "tp": 903
+      },
+      "model": "candidate",
+      "rerun": true,
+      "seed": 0,
+      "status": "ok",
+      "training": {
+        "final_loss": -1.30124831199646,
+        "steps": 69591,
+        "train_seconds": 300.00306430005,
+        "warmup_steps": 10
+      },
+      "trial_id": "trial-005-lr-0006-rerun-s0",
+      "weights": "training/autoresearch/trial-005-lr-0006-rerun-s0.pt",
+      "weights_sha256": "5f38260a576de5ca342dc8bcdbc7a4c534c2240deaa40b6ced7fd0d78e907731"
+    },
+    {
+      "base_trial_id": "trial-005-lr-0006",
+      "candidate_sha256": "94848f7ad68131a4fa97dab322c412d3157eef525bb30473675eafe51757532e",
+      "ci": {
+        "ade16": [
+          0.1609658055407346,
+          0.14222183487335566,
+          0.17723943273288054
+        ],
+        "f2": [
+          0.788687862287019,
+          0.7085551372717013,
+          0.8483187446855736
+        ],
+        "fde16": [
+          0.2846517749027844,
+          0.25034695963779724,
+          0.31463997144187794
+        ],
+        "precision": [
+          0.49313563975837454,
+          0.36944039269013007,
+          0.6211338909125764
+        ],
+        "recall": [
+          0.9276859504132231,
+          0.9042126198870223,
+          0.95
+        ]
+      },
+      "environment": {
+        "cpu_threads": 8,
+        "cuda": "12.8",
+        "device": "NVIDIA GeForce RTX 5070",
+        "python": "3.12.13",
+        "torch": "2.11.0+cu128"
+      },
+      "f2_gain": -0.008960435361278662,
+      "guards": {
+        "failures": [
+          "recall"
+        ],
+        "passed": false
+      },
+      "metrics": {
+        "ade16": 0.1609658055407346,
+        "cpu_p95_ms": 0.262915,
+        "f2": 0.788687862287019,
+        "fde16": 0.2846517749027844,
+        "fn": 70,
+        "fp": 923,
+        "parameters": 112047,
+        "precision": 0.49313563975837454,
+        "recall": 0.9276859504132231,
+        "tp": 898
+      },
+      "model": "candidate",
+      "rerun": true,
+      "seed": 1,
+      "status": "ok",
+      "training": {
+        "final_loss": -1.3370904922485352,
+        "steps": 70035,
+        "train_seconds": 300.00359619996743,
+        "warmup_steps": 10
+      },
+      "trial_id": "trial-005-lr-0006-rerun-s1",
+      "weights": "training/autoresearch/trial-005-lr-0006-rerun-s1.pt",
+      "weights_sha256": "0cedac093913de5e0fce6db4e6f2f55b33b0b176f1f42d33b82f0cf449260843"
+    },
+    {
+      "base_trial_id": "trial-005-lr-0006",
+      "candidate_sha256": "94848f7ad68131a4fa97dab322c412d3157eef525bb30473675eafe51757532e",
+      "ci": {
+        "ade16": [
+          0.16475683998581175,
+          0.14579046382120242,
+          0.18071372674742242
+        ],
+        "f2": [
+          0.8559938720796629,
+          0.8273329996716912,
+          0.8780787847368335
+        ],
+        "fde16": [
+          0.2905219230009069,
+          0.25625302186476523,
+          0.3194205620869319
+        ],
+        "precision": [
+          0.6622222222222223,
+          0.6091422401248524,
+          0.7083657917178436
+        ],
+        "recall": [
+          0.9235537190082644,
+          0.8976952566343556,
+          0.9473207782804655
+        ]
+      },
+      "environment": {
+        "cpu_threads": 8,
+        "cuda": "12.8",
+        "device": "NVIDIA GeForce RTX 5070",
+        "python": "3.12.13",
+        "torch": "2.11.0+cu128"
+      },
+      "f2_gain": 0.05834557443136523,
+      "guards": {
+        "failures": [
+          "recall",
+          "fde16"
+        ],
+        "passed": false
+      },
+      "metrics": {
+        "ade16": 0.16475683998581175,
+        "cpu_p95_ms": 0.2656,
+        "f2": 0.8559938720796629,
+        "fde16": 0.2905219230009069,
+        "fn": 74,
+        "fp": 456,
+        "parameters": 112047,
+        "precision": 0.6622222222222223,
+        "recall": 0.9235537190082644,
+        "tp": 894
+      },
+      "model": "candidate",
+      "rerun": true,
+      "seed": 2,
+      "status": "ok",
+      "training": {
+        "final_loss": -1.2416635751724243,
+        "steps": 70025,
+        "train_seconds": 300.004421700025,
+        "warmup_steps": 10
+      },
+      "trial_id": "trial-005-lr-0006-rerun-s2",
+      "weights": "training/autoresearch/trial-005-lr-0006-rerun-s2.pt",
+      "weights_sha256": "0528732e9eced2368255953278549584a7a04293e1cbbe5dd4acf47a3e6488cb"
+    },
+    {
+      "base_trial_id": "baseline-transformer",
+      "candidate_sha256": "e74d9e34c3e226c23c8854516eb2d73c93ee84b97d1c91e22b23bdd3b4b3a966",
+      "ci": {
+        "ade16": [
+          0.1628510789939419,
+          0.14453801087032678,
+          0.17837307078270817
+        ],
+        "f2": [
+          0.792166549047283,
+          0.7098242371861431,
+          0.8541991747838901
+        ],
+        "fde16": [
+          0.2862689526911618,
+          0.25353861755053464,
+          0.3141162353039042
+        ],
+        "precision": [
+          0.5,
+          0.3739216137620145,
+          0.6301921425019211
+        ],
+        "recall": [
+          0.9276859504132231,
+          0.8955531635713326,
+          0.9570965321856214
+        ]
+      },
+      "environment": {
+        "cpu_threads": 8,
+        "cuda": "12.8",
+        "device": "NVIDIA GeForce RTX 5070",
+        "python": "3.12.13",
+        "torch": "2.11.0+cu128"
+      },
+      "f2_gain": -0.005481748601014691,
+      "guards": {
+        "failures": [
+          "recall",
+          "fde16"
+        ],
+        "passed": false
+      },
+      "metrics": {
+        "ade16": 0.1628510789939419,
+        "cpu_p95_ms": 0.2857249999999999,
+        "f2": 0.792166549047283,
+        "fde16": 0.2862689526911618,
+        "fn": 70,
+        "fp": 898,
+        "parameters": 112047,
+        "precision": 0.5,
+        "recall": 0.9276859504132231,
+        "tp": 898
+      },
+      "model": "candidate",
+      "rerun": true,
+      "seed": 0,
+      "status": "ok",
+      "training": {
+        "final_loss": -1.3197004795074463,
+        "steps": 70007,
+        "train_seconds": 300.00354259996675,
+        "warmup_steps": 10
+      },
+      "trial_id": "baseline-transformer-rerun-s0",
+      "weights": "training/autoresearch/baseline-transformer-rerun-s0.pt",
+      "weights_sha256": "ccaa7269f3f66bf5ca169f98177b349a0d8016538f11f76ea36c48f4a1bd5249"
+    },
+    {
+      "base_trial_id": "baseline-transformer",
+      "candidate_sha256": "e74d9e34c3e226c23c8854516eb2d73c93ee84b97d1c91e22b23bdd3b4b3a966",
+      "ci": {
+        "ade16": [
+          0.16104064457734443,
+          0.14214175765703038,
+          0.17714052094904278
+        ],
+        "f2": [
+          0.7881902107646752,
+          0.711559483555261,
+          0.8442525134205886
+        ],
+        "fde16": [
+          0.285071235489229,
+          0.2507056922771837,
+          0.3146536704705505
+        ],
+        "precision": [
+          0.48421615837346177,
+          0.3676404296751101,
+          0.6035192444237257
+        ],
+        "recall": [
+          0.9349173553719008,
+          0.91025600505689,
+          0.9564316407152428
+        ]
+      },
+      "environment": {
+        "cpu_threads": 8,
+        "cuda": "12.8",
+        "device": "NVIDIA GeForce RTX 5070",
+        "python": "3.12.13",
+        "torch": "2.11.0+cu128"
+      },
+      "f2_gain": -0.009458086883622485,
+      "guards": {
+        "failures": [
+          "fde16"
+        ],
+        "passed": false
+      },
+      "metrics": {
+        "ade16": 0.16104064457734443,
+        "cpu_p95_ms": 0.2642,
+        "f2": 0.7881902107646752,
+        "fde16": 0.285071235489229,
+        "fn": 63,
+        "fp": 964,
+        "parameters": 112047,
+        "precision": 0.48421615837346177,
+        "recall": 0.9349173553719008,
+        "tp": 905
+      },
+      "model": "candidate",
+      "rerun": true,
+      "seed": 1,
+      "status": "ok",
+      "training": {
+        "final_loss": -1.403842568397522,
+        "steps": 70247,
+        "train_seconds": 300.00356119999196,
+        "warmup_steps": 10
+      },
+      "trial_id": "baseline-transformer-rerun-s1",
+      "weights": "training/autoresearch/baseline-transformer-rerun-s1.pt",
+      "weights_sha256": "b9737155b4f9f9ea593179dc4992f1947a1f2ce244944c09b51dc829757f0c14"
+    },
+    {
+      "base_trial_id": "baseline-transformer",
+      "candidate_sha256": "e74d9e34c3e226c23c8854516eb2d73c93ee84b97d1c91e22b23bdd3b4b3a966",
+      "ci": {
+        "ade16": [
+          0.16570881746145097,
+          0.14742917665062477,
+          0.18145067668885362
+        ],
+        "f2": [
+          0.8576850094876659,
+          0.8273163116398269,
+          0.8821001444815045
+        ],
+        "fde16": [
+          0.2909785410520308,
+          0.25760870223809446,
+          0.31947990497116263
+        ],
+        "precision": [
+          0.6466380543633763,
+          0.6008885450277157,
+          0.6863510568541231
+        ],
+        "recall": [
+          0.9338842975206612,
+          0.9048041906570488,
+          0.9599635879503384
+        ]
+      },
+      "environment": {
+        "cpu_threads": 8,
+        "cuda": "12.8",
+        "device": "NVIDIA GeForce RTX 5070",
+        "python": "3.12.13",
+        "torch": "2.11.0+cu128"
+      },
+      "f2_gain": 0.060036711839368206,
+      "guards": {
+        "failures": [
+          "fde16"
+        ],
+        "passed": false
+      },
+      "metrics": {
+        "ade16": 0.16570881746145097,
+        "cpu_p95_ms": 0.26521,
+        "f2": 0.8576850094876659,
+        "fde16": 0.2909785410520308,
+        "fn": 64,
+        "fp": 494,
+        "parameters": 112047,
+        "precision": 0.6466380543633763,
+        "recall": 0.9338842975206612,
+        "tp": 904
+      },
+      "model": "candidate",
+      "rerun": true,
+      "seed": 2,
+      "status": "ok",
+      "training": {
+        "final_loss": -1.168038249015808,
+        "steps": 69706,
+        "train_seconds": 300.0022502000211,
+        "warmup_steps": 10
+      },
+      "trial_id": "baseline-transformer-rerun-s2",
+      "weights": "training/autoresearch/baseline-transformer-rerun-s2.pt",
+      "weights_sha256": "5ce5abbd7869b506e532bfd49bec3b975559da2a916272d9a639ed2cea6d6d12"
+    }
+  ],
+  "schema": 1,
+  "winner": {
+    "baseline_median": {
+      "cpu_p95_ms": 0.26521,
+      "f2": 0.792166549047283,
+      "fde16": 0.2862689526911618,
+      "recall": 0.9338842975206612
+    },
+    "candidate_sha256": "e74d9e34c3e226c23c8854516eb2d73c93ee84b97d1c91e22b23bdd3b4b3a966",
+    "commit": "8cbbcd18e5891de8e65b47eb53088913f9b834b3",
+    "f2_gain": 0.0,
+    "median": {
+      "cpu_p95_ms": 0.26521,
+      "f2": 0.792166549047283,
+      "fde16": 0.2862689526911618,
+      "recall": 0.9338842975206612
+    },
+    "minimum_success": false,
+    "selected_commit": "eed9f3684d3e97442d4f9ca138c5cf566df214c9",
+    "source_commit": "8cbbcd18e5891de8e65b47eb53088913f9b834b3",
+    "trial_id": "baseline-transformer",
+    "weights": "training/autoresearch/baseline-transformer-rerun-s0.pt",
+    "weights_sha256": "ccaa7269f3f66bf5ca169f98177b349a0d8016538f11f76ea36c48f4a1bd5249"
+  }
+}
