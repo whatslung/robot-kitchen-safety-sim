@@ -8119,8 +8119,51 @@ function buildPushables() {
      solid 기본값(true)으로 부르므로 밀 수 있는 물건도 벽으로 취급된다. */
   resolvePersonCollision(person.node.position);
   for (const e of EXTRAS) if (e && e.node) resolvePersonCollision(e.node.position);
+  buildStaticPropColliders();
   console.log("[PUSH] 밀 수 있는 물건 " + PUSH.bodies.length + "개 — " +
               PUSH.bodies.map(b => b.label + " " + b.size.join("×")).join(" · "));
+}
+
+/* ══ 설비 정적 충돌체 — 밀린 카트가 설비를 뚫고 들어가던 문제 (2026-08-24) ═══════
+   buildColliders()가 만드는 정적 충돌체는 **셀 안쪽 9개뿐**이다(바닥·벽4·튀김솥·조리대·
+   선반·제어반·로봇받침). ENV_PROPS로 놓은 나머지 설비 — 국솥·냉장고·세척대·배식구·
+   재료선반·건조선반·작업대 — 는 **충돌체가 아예 없었다.** 그래서 사람이 민 카트가
+   설비를 그대로 통과했다(실측 스크린샷).
+
+   프롭마다 상수를 적지 않고 **자식 메시의 월드 AABB에서 잰다** — GLB가 바뀌거나 배치를
+   옮겨도 따라간다. 밀 수 있는 물건은 건너뛴다(그쪽은 동적 바디가 따로 있다).
+
+   ⚠️ 0.94로 살짝 줄인다. 붙여 놓은 설비끼리 AABB가 1~2cm 겹치는 경우가 있는데,
+   정적끼리는 서로 안 밀지만 그 사이에 낀 카트가 떨리는 것을 막는다.
+   ⚠️ 벽선반처럼 공중에 뜬 것도 그대로 만든다 — 카트가 닿지 않으므로 무해하고,
+   높이를 따져 거르면 규칙이 하나 더 늘 뿐이다. */
+function buildStaticPropColliders() {
+  if (!PHYS.ready || PHYS.propCols) return;
+  PHYS.propCols = [];
+  const ST = BABYLON.PhysicsShapeType;
+  for (let i = 0; i < ENV_PROPS.length; i++) {
+    const h = scene.getTransformNodeByName("envProp_" + i);
+    if (!h) continue;
+    if (h.metadata && h.metadata.pushable) continue;          // 동적 바디가 이미 있다
+    let x0=1e9, x1=-1e9, y0=1e9, y1=-1e9, z0=1e9, z1=-1e9, n=0;
+    for (const m of h.getChildMeshes()) {
+      if (!m.getTotalVertices || !m.getTotalVertices()) continue;
+      m.computeWorldMatrix(true);
+      const bb = m.getBoundingInfo().boundingBox;
+      const a = bb.minimumWorld, b = bb.maximumWorld;
+      x0=Math.min(x0,a.x); x1=Math.max(x1,b.x);
+      y0=Math.min(y0,a.y); y1=Math.max(y1,b.y);
+      z0=Math.min(z0,a.z); z1=Math.max(z1,b.z); n++;
+    }
+    if (!n) continue;
+    const sx=(x1-x0)*0.94, sy=(y1-y0)*0.94, sz=(z1-z0)*0.94;
+    if (sx < 0.05 || sz < 0.05) continue;                     // 장식용 얇은 것은 건너뛴다
+    const box = invisibleBox("col_env_" + i, [sx, sy, sz],
+                             [(x0+x1)/2, (y0+y1)/2, (z0+z1)/2]);
+    new BABYLON.PhysicsAggregate(box, ST.BOX, {mass:0, friction:0.7, restitution:0.05}, scene);
+    PHYS.propCols.push(box);
+  }
+  console.log("[PHYS] 설비 정적 충돌체 " + PHYS.propCols.length + "개 생성");
 }
 /* ══ 사람 → 카트 밀기 ═══════════════════════════════════════════════════════
    **키네마틱 캡슐에 물리 접촉만 맡기면 사람이 카트를 뚫고 지나간다**(실측: 카트가 4cm만
