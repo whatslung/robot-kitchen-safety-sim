@@ -1,9 +1,12 @@
 import pytest
 
+from trajectory.sim_traj import Window
+from trajectory.types import Track, TrackScene
 from train.autoresearch_contract import (
     Metrics,
     TestSplitLockedError,
     development_windows,
+    evaluate_windows,
     evaluate_guards,
     f2_score,
     rank_key,
@@ -71,3 +74,38 @@ def test_rank_prefers_f2_then_recall_then_lower_fde_and_latency():
 def test_development_loader_rejects_non_development_splits(split):
     with pytest.raises(TestSplitLockedError, match="train/val만"):
         development_windows(split)
+
+
+class FixedPredictor:
+    def predict_batch(self, hists):
+        # The second mode enters stopR. Its probability mass is above tau.
+        return [
+            [
+                {"path": [(4.0, 0.0)] * 12, "w": 0.85, "sigma": [0.0] * 12},
+                {"path": [(3.0, 0.0)] * 12, "w": 0.15, "sigma": [0.0] * 12},
+                {"path": [(5.0, 0.0)] * 12, "w": 0.0, "sigma": [0.0] * 12},
+            ]
+            for _ in hists
+        ]
+
+
+def _window():
+    hist = [(i * 0.4, 5.0, 0.0) for i in range(8)]
+    gt = [((i + 8) * 0.4, 3.0, 0.0) for i in range(12)]
+    return Window(
+        "scene-1",
+        31,
+        "extra_0",
+        TrackScene(2.8, 4.8, [Track(0, hist)]),
+        gt,
+        None,
+        True,
+        (0.0, 0.0),
+    )
+
+
+def test_evaluation_uses_probability_mass_for_runtime_alert():
+    out = evaluate_windows(FixedPredictor(), [_window()], bootstrap_samples=20)
+    assert (out.metrics.tp, out.metrics.fp, out.metrics.fn) == (1, 0, 0)
+    assert out.metrics.recall == 1.0 and out.metrics.precision == 1.0
+    assert abs(out.metrics.fde16 - 1.0) < 1e-9
