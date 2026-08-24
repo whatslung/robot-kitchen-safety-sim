@@ -12458,12 +12458,13 @@ const TRAJ = {
    레이아웃은 로드 시 URL로 결정(ISLAND·ISLAND_HALF 상수)되므로 여기서 실제 값을 읽는다. */
 function trajGeom() {
   const island = !(typeof ISLAND !== "undefined" && !ISLAND);
-  const lay = island ? "island" : "legacy";
+  const lay = CORRIDOR ? "corridor" : (island ? "island" : "legacy");
   // half는 island 방 크기 파라미터라 island에서만 의미. legacy는 실제 room 범위로만 기술.
-  const half = (island && typeof ISLAND_HALF !== "undefined" && isFinite(ISLAND_HALF)) ? +ISLAND_HALF.toFixed(2) : null;
+  const half = lay === "island" && typeof ISLAND_HALF !== "undefined" && isFinite(ISLAND_HALF)
+    ? +ISLAND_HALF.toFixed(2) : null;
   const R = LAYOUT.room, b = LAYOUT.robot.base;
   return { layout: lay, half,
-           tag: lay + (half != null ? "_h" + Math.round(half * 10) : ""),   // 예 island_h58 · legacy
+           tag: lay === "island" ? "island_h" + Math.round(half * 10) : lay,
            room: { x0:+R.x0.toFixed(2), x1:+R.x1.toFixed(2), z0:+R.z0.toFixed(2), z1:+R.z1.toFixed(2) },
            robot: { x:+b.x.toFixed(3), z:+b.z.toFixed(3) },
            mPerAU: +SCALE.mPerAU.toFixed(4) };
@@ -12492,7 +12493,7 @@ function trajSnap(nodes, t) {
 function trajStep(dtMs) { extrasUpdate(dtMs); resolvePeopleSeparation(); }
 /* scene 하나 생성 → JSON 반환(+ /traj POST). 하네스 상태(seedBase·WF·EXTRA_GEN)는
    이 함수가 스스로 저장·복원한다 — 직접 호출해도 평소 스폰 시드가 오염되지 않게. */
-async function trajRunScene(sceneSeed, seconds, jobs, idx) {
+async function trajRunScene(sceneSeed, seconds, jobs, idx, datasetName) {
   const saved = { seedBase: TRAJ.seedBase, wf: WF.on, gen: EXTRA_GEN };
   try {
     TRAJ.seedBase = sceneSeed >>> 0; EXTRA_GEN = 0; RNG.reseed(sceneSeed); WF.on = true;
@@ -12527,7 +12528,8 @@ async function trajRunScene(sceneSeed, seconds, jobs, idx) {
       nodes: nodes.map(nd => ({ id:nd.id, job:nd.job, role:nd.role, discarded:!!nd.discarded, frames:nd.frames })),
     };
     try {
-      const r = await fetch(TRAJ.url, { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify(scene) });
+      const r = await fetch(TRAJ.url, { method:"POST", headers:{ "Content-Type":"application/json" },
+                                      body:JSON.stringify({ ...scene, dataset: datasetName }) });
       const j = await r.json();
       console.log("[TRAJ]", scene.scene_id, "— 노드", scene.nodes.length, "· 스텝", steps,
                   (scene.discarded ? "· ⚠폐기노드 " + scene.nodes.filter(n=>n.discarded).length : ""), "· 저장", j.count || "?");
@@ -12557,16 +12559,19 @@ async function trajRun(opts) {
   opts = opts || {};
   const scenes = opts.scenes || 40, base = (opts.seed != null ? opts.seed : 1) >>> 0;
   const seconds = opts.seconds || 60, jobsOverride = opts.jobs || null;
+  const datasetName = opts.dataset || "trajectories";
+  const allowedDatasets = new Set(["trajectories","trajectories_v2"]);
+  if (!allowedDatasets.has(datasetName)) throw new Error("허용되지 않은 trajectory dataset: " + datasetName);
   if (TRAJ.running) { console.warn("[TRAJ] 이미 실행 중"); return; }
   TRAJ.running = true;                          // 하네스 상태(seedBase·WF·GEN) 복원은 trajRunScene이 담당
-  console.log("[TRAJ] 시작 — scene", scenes, "· 기준시드", base, "· 각", seconds + "초");
+  console.log("[TRAJ] 시작 — scene", scenes, "· 기준시드", base, "· 각", seconds + "초", "· dataset", datasetName);
   const out = [];
   try {
     await trajWarmup();                         // 첫 스폰 워밍업 소진 → scene 0도 재현 가능
     for (let k = 0; k < scenes; k++) {
       const jobs = jobsOverride || TRAJ.jobSets[k % TRAJ.jobSets.length];
       setStatus("궤적 수집 — scene " + (k + 1) + "/" + scenes + " (seed " + (base + k) + ")");
-      const scene = await trajRunScene(base + k, seconds, jobs, k);
+      const scene = await trajRunScene(base + k, seconds, jobs, k, datasetName);
       if (scene) out.push(scene);
       await new Promise(r => setTimeout(r, 0));   // UI가 상태 갱신할 틈을 준다
     }
