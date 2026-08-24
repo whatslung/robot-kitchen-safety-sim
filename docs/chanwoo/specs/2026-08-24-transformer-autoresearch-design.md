@@ -1,6 +1,6 @@
 # Transformer 자동 실험과 궤적 데이터 v2 — 설계
 
-> 작성 2026-08-24 · 담당 chanwoo · 상태: **설계 — 승인 대기**
+> 작성 2026-08-24 · 담당 chanwoo · 상태: **설계 승인 — 구현 계획 작성**
 > 기준 브랜치: `chanwoo/traj-cvae-2026-08-24` · 기준 커밋: `6e16b9c`
 > 실험 브랜치: `chanwoo/autoresearch-transformer-2026-08-24`
 
