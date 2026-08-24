@@ -12300,16 +12300,25 @@ function extraNextTarget(P) {
   }
   return null;
 }
+function clampExtraToRoom(P) {
+  const room = LAYOUT.room, n = P.root.position;
+  const oldX = n.x, oldZ = n.z;
+  n.x = clamp(n.x, room.x0, room.x1);
+  n.z = clamp(n.z, room.z0, room.z1);
+  return n.x !== oldX || n.z !== oldZ;
+}
 function enforceExtraRoleRadius(P) {
   const R = ROLE[P.role] || ROLE.far;
   const minR = R.zone === "out" ? SAFE.NOM_SLOW : R.zone === "slow" ? SAFE.NOM_STOP : 0;
-  if (minR <= 0) return false;
   const B = LAYOUT.robot.base, n = P.root.position;
   const ox = n.x - B.x, oz = n.z - B.z, od = Math.hypot(ox, oz);
-  if (od >= minR || od <= 1e-4) return false;
-  n.x = B.x + ox / od * minR;
-  n.z = B.z + oz / od * minR;
-  return true;
+  let changed = false;
+  if (minR > 0 && od < minR && od > 1e-4) {
+    n.x = B.x + ox / od * minR;
+    n.z = B.z + oz / od * minR;
+    changed = true;
+  }
+  return clampExtraToRoom(P) || changed;
 }
 function extrasUpdate(dt) {
   for (const P of EXTRAS) {
@@ -12666,6 +12675,7 @@ function resolvePeopleSeparation() {
       }
     }
   }
+  for (const P of EXTRAS) clampExtraToRoom(P);
 }
 /* ══ 팔↔사람 접촉 ═══════════════════════════════════════════════════════════
    안전 링(1.2/2.0m)은 **베이스 중심 원**이라 팔이 어느 쪽을 향하는지 모른다.

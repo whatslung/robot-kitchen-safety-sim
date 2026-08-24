@@ -38,3 +38,10 @@ def test_job_spawn_enforces_role_radius_before_path_creation():
         "  extraNextTarget(P);"
     )
     assert expected in SIM
+
+
+def test_role_radius_and_people_separation_stay_inside_room():
+    assert "function clampExtraToRoom(P)" in SIM
+    assert "n.x = clamp(n.x, room.x0, room.x1);" in SIM
+    assert "n.z = clamp(n.z, room.z0, room.z1);" in SIM
+    assert "for (const P of EXTRAS) clampExtraToRoom(P);" in SIM
