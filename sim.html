@@ -12664,7 +12664,13 @@ function demoExitView() {
     if (typeof viewSel !== "undefined" && viewSel) viewSel.value = "free";
     applyCameras();
   }
-  camera.setTarget(new V3(1.80, 1.00, 4.60));   // 통로~문 사이를 잡는다
+  /* 조준점은 **문 메시에서 계산한다.** 처음에 섬 배치 좌표(1.8, 4.6)를 박아 뒀는데
+     복도형(`?layout=corridor`)에서는 방이 z1=3.5까지라 **벽 바깥을 보게 된다**(실측 1.55m 어긋남).
+     각도(alpha·beta)는 월드 기준이라 그대로 둬도 두 배치 모두 방 안에 카메라가 선다. */
+  const d = scene.getMeshByName("door");
+  const dx = d ? d.position.x : 1.8;
+  const zt = LAYOUT.room.z1 - 1.15;              // 문 조금 안쪽 — 걸어오는 구간이 같이 잡힌다
+  camera.setTarget(new V3(dx, 1.00, zt));
   camera.alpha = -2.60; camera.beta = 1.28; camera.radius = 5.3;
 }
 
