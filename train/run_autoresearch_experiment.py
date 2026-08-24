@@ -15,6 +15,11 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from train.autoresearch_contract import Metrics, evaluate_guards
+from train.lock_autoresearch_contract import (
+    LOCK_PATH,
+    ContractLockError,
+    verify_lock,
+)
 
 
 AUTORESEARCH_DIR = ROOT / "training" / "autoresearch"
@@ -208,6 +213,7 @@ def parse_args(argv=None):
     parser.add_argument("--timeout-seconds", type=float, default=600.0)
     parser.add_argument("--results", type=Path, default=DEFAULT_RESULTS)
     parser.add_argument("--baselines", type=Path, default=DEFAULT_BASELINES)
+    parser.add_argument("--lock", type=Path, default=LOCK_PATH)
     parser.add_argument("--rerun", action="store_true")
     parser.add_argument("--smoke", action="store_true")
     args = parser.parse_args(argv)
@@ -222,8 +228,22 @@ def main(argv=None) -> int:
     args = parse_args(argv)
     previous_rows = _read_jsonl(args.results)
     failure = _validate_trial_id(args.trial_id, args.seed, args.rerun)
+    failure_detail = None
     if any(row.get("trial_id") == args.trial_id for row in previous_rows):
         failure = "duplicate_trial_id"
+
+    if failure is None:
+        try:
+            lock = json.loads(args.lock.read_text(encoding="utf-8"))
+            verify_lock(ROOT, lock)
+        except (
+            ContractLockError,
+            FileNotFoundError,
+            KeyError,
+            json.JSONDecodeError,
+        ) as error:
+            failure = "contract_lock"
+            failure_detail = str(error)
 
     output_json = AUTORESEARCH_DIR / f"{args.trial_id}.json"
     weights_path = AUTORESEARCH_DIR / f"{args.trial_id}.pt"
@@ -238,6 +258,8 @@ def main(argv=None) -> int:
             "status": "failed",
             "failure": failure,
         }
+        if failure_detail:
+            record["detail"] = failure_detail
     else:
         returncode, timed_out, child_result, stderr = _run_child(
             args.model,
