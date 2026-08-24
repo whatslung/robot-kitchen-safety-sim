@@ -5867,7 +5867,8 @@ const CPRED = { fn:null, hz:10, acc:0, busy:false, path:null, modes:null, at:0, 
    — 안전 제어는 PRED의 로컬 칼만 바닥이 담당하므로 네트워크와 무관하게 로봇은 즉시 반응한다. */
 const MPRED = { hist:new Map(), pred:new Map(), worst:null,
                 hz:10, acc:0, busy:false, reqId:0, lastT:0, at:0,
-                cap:10, lastN:0, lastMs:0, err:0, lastErr:null, _capLogN:0 };
+                cap:10, lastN:0, lastMs:0, err:0, lastErr:null, _capLogN:0,
+                _milSeenT:new Map() };   // 검출 모드: 트랙별 마지막으로 담은 검출 시각(중복 push 방지)
 function mpredFresh(rec) { return !!(rec && performance.now() - rec.at < 1000); }
 // 신선한 사람별 예측이 하나라도 있나 — 대표선(PRED.line) 표시 게이트에 쓴다.
 function mpredAnyFresh() { for (const r of MPRED.pred.values()) if (mpredFresh(r)) return true; return false; }
@@ -5937,21 +5938,44 @@ if (!window.__customPredictor) window.__customPredictor = trajPredict;   // 팀 
 /* ══ 다인원 관측·배치 예측 (감사 P0-5 1단계) ═══════════════════════════════
    매 프레임 활성 전원의 좌표를 사람별 이력에 쌓고(mpredObserve), hz로 제한해 전원을 한 번에
    /predict 배치로 보낸다(mpredTick). GT 모드는 peopleList()(idx 0=주인물, i+1=EXTRAS[i])를 쓴다. */
+/* 검출 모드에서 **관측·렌더·제어가 같은 트랙 집합**을 보도록 하는 단일 소스.
+   신선(5s 이내)·유효(pos 존재) 트랙만 {id:"mil:"+key, tr}로 돌려준다.
+   now 를 인자로 받아 관측(mpredObserve)과 렌더(mpredAgents)가 같은 시각 기준을 쓴다. */
+function milFreshTracks(now) {
+  const out = [];
+  for (const key of Object.keys(MIL.tracks)) {
+    const tr = MIL.tracks[key];
+    if (!tr || !tr.pos || now - tr.t > 5000) continue;       // 만료(5s)·무효 트랙 제외
+    out.push({ id: "mil:" + key, tr });
+  }
+  return out;
+}
 function mpredObserve(now) {
-  const nodes = peopleList();
   const live = new Set();
-  nodes.forEach((node, idx) => {
-    const id = "gt:" + idx;
+  const push = (id, x, z) => {                               // 사람별 이력에 한 점 추가(+3.2s 트림)
     live.add(id);
     let h = MPRED.hist.get(id);
     if (!h) { h = []; MPRED.hist.set(id, h); }
-    const p = node.position;
-    h.push({ t: now, x: p.x, z: p.z });
+    h.push({ t: now, x, z });
     while (h.length && now - h[0].t > 3200) h.shift();       // 학습형 입력용 여유 3.2s
-  });
-  // 사라진 사람(인원 감소)의 이력·예측 폐기 — 좌표가 다른 사람에게 섞이지 않게.
+  };
+  if (MIL.safety && MIL.on) {
+    /* 검출 모드: 로봇이 실제로 본 것(YOLO+ByteTrack 트랙)만 관측한다 — GT 전지성 누출 방지.
+       MIL.tracks 는 검출 응답이 올 때만 갱신되므로 **새 검출(tr.t 증가)일 때만** 한 점 쌓는다.
+       (매 프레임 같은 위치를 복붙하면 공백 동안 계단형 이력이 되어 속도·예측이 왜곡됨.) */
+    for (const { id, tr } of milFreshTracks(now)) {
+      if (MPRED._milSeenT.get(id) === tr.t) { live.add(id); continue; }   // 새 검출 아님 → 유지만
+      MPRED._milSeenT.set(id, tr.t);
+      push(id, tr.pos.x, tr.pos.z);
+    }
+  } else {
+    // GT 모드: 시뮬이 아는 진짜 위치. idx 0=주인물, i+1=EXTRAS[i].
+    peopleList().forEach((node, idx) => { const p = node.position; push("gt:" + idx, p.x, p.z); });
+  }
+  // 사라진 사람(인원 감소·트랙 만료)의 이력·예측 폐기 — 좌표가 다른 사람에게 섞이지 않게.
   for (const id of [...MPRED.hist.keys()]) if (!live.has(id)) MPRED.hist.delete(id);
   for (const id of [...MPRED.pred.keys()]) if (!live.has(id)) MPRED.pred.delete(id);
+  for (const id of [...MPRED._milSeenT.keys()]) if (!live.has(id)) MPRED._milSeenT.delete(id);
 }
 function mpredTick(now, dtMs) {
   if (typeof window.__customPredictor !== "function") return;   // 예측기 훅 없으면 배치 안 함
@@ -6125,25 +6149,33 @@ function peopleList() {
   if (typeof EXTRAS !== "undefined") for (const P of EXTRAS) if (P && P.root) out.push(P.root);
   return out;
 }
-function pmodeArrowsFor(node, idx, dt) {
-  const p = node.position;
-  let st = PVEL.get(node);
-  if (!st) { PVEL.set(node, { x:p.x, z:p.z, vx:0, vz:0 }); return 0; }
-  if (dt > 1e-3) {
-    const ivx = (p.x - st.x)/dt, ivz = (p.z - st.z)/dt;
-    st.vx = st.vx*0.75 + ivx*0.25; st.vz = st.vz*0.75 + ivz*0.25;
+function pmodeArrowsFor(agent, idx, dt) {
+  const p = agent.pos;
+  /* 속도: GT는 노드 위치 차분 EMA(PVEL), 검출은 트랙이 이미 낸 월드 속도(vWorld).
+     (검출 모드엔 Babylon 노드가 없어 위치 차분 대신 트랙 속도를 그대로 쓴다.) */
+  let vx, vz;
+  if (agent.node) {
+    let st = PVEL.get(agent.node);
+    if (!st) { PVEL.set(agent.node, { x:p.x, z:p.z, vx:0, vz:0 }); return 0; }
+    if (dt > 1e-3) {
+      const ivx = (p.x - st.x)/dt, ivz = (p.z - st.z)/dt;
+      st.vx = st.vx*0.75 + ivx*0.25; st.vz = st.vz*0.75 + ivz*0.25;
+    }
+    st.x = p.x; st.z = p.z;
+    vx = st.vx; vz = st.vz;
+  } else {
+    vx = (agent.vel && agent.vel.x) || 0; vz = (agent.vel && agent.vel.z) || 0;
   }
-  st.x = p.x; st.z = p.z;
-  const speed = Math.hypot(st.vx, st.vz);
+  const speed = Math.hypot(vx, vz);
   /* 다인원(P0-5): 이 사람의 실제 LSTM 모드를 MPRED에서 조회(신선할 때만) → 화살표·경로선·바닥
      구름이 goalModesAt(목표 휴리스틱) 대신 학습형 봉우리를 그린다. 없으면 휴리스틱 폴백. */
-  const _rec = MPRED.pred.get("gt:" + idx);
+  const _rec = MPRED.pred.get(agent.id);
   const L = mpredFresh(_rec) ? _rec.modes : null;
   const modes = L
     ? L.map((m, i) => { const e = m.path[m.path.length - 1];
         const dx = e.x - p.x, dz = e.z - p.z, d = Math.hypot(dx, dz) || 1e-6;
         return { name:"L" + i, w:m.w, dist:d, ux:dx / d, uz:dz / d }; })
-    : goalModesAt(p, st.vx, st.vz, speed);
+    : goalModesAt(p, vx, vz, speed);
   let n = 0;
   /* 이 사람의 **띠 성분**도 같이 만든다 — 화살표는 "몇 가지 가능성"을, 띠는 "어디쯤"을 말한다.
      학습형이면 각 모드의 실제 곡선 경로 점(모델 σ)을, 아니면 방향 외삽 띠를 쓴다.
@@ -6182,7 +6214,7 @@ function pmodeArrowsFor(node, idx, dt) {
       /* 최고위험(worst)의 최빈 경로는 **미래 위험색**으로 — 반응형 링(지금)과 달리 '앞으로 진입'을
          보여준다(2단계). 빨강=정지 예상, 주황=감속 예상. 굵게 강조. */
       let phex = hex, pw = w;
-      if (mi === 0 && MPRED.worst && MPRED.worst.id === ("gt:" + idx)) {
+      if (mi === 0 && MPRED.worst && MPRED.worst.id === agent.id) {
         phex = MPRED.worst.tEntryStop != null ? "#f85149"
              : MPRED.worst.tEntrySlow != null ? "#e3853d" : hex;
         pw = PMODE.w * 1.4;
@@ -6204,14 +6236,22 @@ function pmodeArrowsFor(node, idx, dt) {
 }
 /* Fig.1처럼 **모든 보행자**에게 각자 화살표를 그린다 — 위협 1명만 그리면 "여러 주체가
    각자 여러 가능성을 갖는다"는 그림의 요지가 사라진다. */
+/* 렌더·속도추정용 에이전트 목록 — 관측(mpredObserve)과 **같은 규칙**으로 만들어
+   id 가 MPRED.pred/worst 키와 일치한다(화면과 판정이 어긋나지 않게). */
+function mpredAgents() {
+  if (MIL.safety && MIL.on)   // 검출 모드: 로봇이 실제로 본 트랙만(관측과 동일 소스). GT 노드를 쓰면 진짜 위치가 샌다.
+    return milFreshTracks(performance.now()).map(({ id, tr }) =>
+      ({ id, pos: tr.pos, vel: tr.vWorld || { x:0, z:0 } }));
+  return peopleList().map((node, i) => ({ id: "gt:" + i, pos: node.position, node }));
+}
 function predModeArrows(dtMs) {
   for (const k in PMODE.mesh) PMODE.mesh[k].setEnabled(false);
   PRED.bands = [];
   if (!PMODE.on || vizSuppressed) return;
   const dt = Math.min(Math.max((dtMs || 16)/1000, 1e-3), 0.5);
   // 다인원(P0-5): 사람별 학습 모드는 각 pmodeArrowsFor가 MPRED.pred에서 직접 조회한다
-  // (예전의 '최근접 1명만 학습형' 방식은 폐기).
-  peopleList().forEach((node, i) => pmodeArrowsFor(node, i, dt));
+  // (예전의 '최근접 1명만 학습형' 방식은 폐기). GT=진짜 노드, 검출=MIL.tracks(로봇이 본 것).
+  mpredAgents().forEach((a, i) => pmodeArrowsFor(a, i, dt));
 }
 /* 진행 방향과 정렬된 스테이션들을 '행동 모드'로 뽑는다.
    정렬도(진행방향·목표방향 내적)를 제곱해 가중치로 쓴다 — 정면 목표가 확실히 더 진하게.
@@ -6684,12 +6724,11 @@ function safetyUpdate() {
     /* 2단계(P0-5): 로컬 칼만 바닥과 백엔드 최고위험(worst) 중 **더 이른(보수적)** 진입시각을 쓴다.
        worst는 '최근접'이 아니라 '예측상 최고위험'이라, 멀지만 빨리 진입할 사람을 여기서 잡는다.
        백엔드 응답이 없거나 낡으면 로컬 칼만 값 그대로(로봇은 네트워크를 안 기다림).
-       ※ 현재 MPRED 관측은 GT 기반이라, 검출 모드에선 worst를 제어에 반영하지 않는다
-         (GT 전지성 누출 방지 — 검출 모드 관측은 후속). */
+       관측 출처는 모드에 맞춘다 — GT 모드=진짜 위치, 검출 모드=MIL.tracks(로봇이 실제로 본 것).
+       그래서 검출 모드에서도 GT 전지성 누출 없이 worst를 제어에 반영한다. */
     let effStop = PRED.tStop, effSlow = PRED.tSlow;
-    const inGT = !(MIL.safety && MIL.on);
     const w = MPRED.worst;
-    if (inGT && w && performance.now() - MPRED.at < 1000) {
+    if (w && performance.now() - MPRED.at < 1000) {
       if (w.tEntryStop != null) effStop = Math.min(effStop, w.tEntryStop);
       if (w.tEntrySlow != null) effSlow = Math.min(effSlow, w.tEntrySlow);
     }
@@ -6714,7 +6753,7 @@ function safetyUpdate() {
       const el = (PRED.effSlow != null ? PRED.effSlow : PRED.tSlow);
       const isStop = es < Infinity, tIn = isStop ? es : el;
       const w = MPRED.worst;
-      const byWorst = w && !(MIL.safety && MIL.on) && performance.now() - MPRED.at < 1000
+      const byWorst = w && performance.now() - MPRED.at < 1000
         && ((isStop && w.tEntryStop != null && w.tEntryStop <= es + 1e-6)
             || (!isStop && w.tEntrySlow != null && w.tEntrySlow <= el + 1e-6));
       setStatus("🟡 선제 감속 — " + (byWorst ? ("최고위험 작업자 " + w.id + "의 예측 경로가 ")
