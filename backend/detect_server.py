@@ -40,13 +40,12 @@ import io
 import json
 import math
 import os
+import sys
 import time
 import argparse
 from pathlib import Path
 
 import numpy as np
-
-from trajectory.collection import save_trajectory_scene
 
 # ── 의존성 로드 — 없으면 DUMMY 모드로 떠서 배선을 먼저 검증한다 ──────────────
 MODEL = None
@@ -59,6 +58,11 @@ MODE = "dummy"
 # 학습 산출물(training/)은 용량이 커서 git에 없다. 로컬에 없으면 허깅페이스에서 받아온다
 # → 팀원은 아무것도 내려받지 않고 서버만 켜면 된다.
 _ROOT = Path(__file__).resolve().parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+from trajectory.collection import save_trajectory_scene
+
 _MODEL_PATH = os.environ.get(
     "DETECT_MODEL", str(_ROOT / "training" / "island_yolo11s" / "weights" / "best.pt"))
 _HUB_REPO = os.environ.get("DETECT_MODEL_REPO", "chanubc/robot-kitchen-nadir-yolo11s")

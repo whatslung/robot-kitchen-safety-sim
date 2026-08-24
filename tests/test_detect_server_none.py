@@ -11,6 +11,10 @@ serve 그룹(fastapi 등)이 없으면 detect_server가 import 단계에서 Syst
 그 경우 이 테스트는 skip 된다:  uv run --group serve --with pytest python -m pytest tests/
 """
 import importlib
+import os
+from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 
@@ -53,3 +57,19 @@ def test_off_detect_returns_no_boxes(monkeypatch):
 def test_health_reports_off_mode(monkeypatch):
     ds = _load(monkeypatch, "none")
     assert ds.health()["mode"] == "off"
+
+
+def test_detect_server_script_can_resolve_project_packages():
+    root = Path(__file__).parents[1]
+    env = {**os.environ, "DETECT_MODEL": "none", "HF_HUB_OFFLINE": "1"}
+
+    result = subprocess.run(
+        [sys.executable, str(root / "backend" / "detect_server.py"), "--help"],
+        cwd=root,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert result.returncode == 0, result.stderr
