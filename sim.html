@@ -3463,8 +3463,18 @@ function fireSeekTo(sec) {
   const target = Math.min(fsmoke.getCapacity() * 0.9, fsmoke.emitRate * avgLife);
   const sv = [firePS, fsmoke, steam, bubbles].map(P => ({ P, s: P.updateSpeed }));
   sv.forEach(x => { x.P.updateSpeed = x.s * 10; });
-  let guard = 0;
-  while (fsmoke.particles.length < target && guard++ < 90) scene.render();
+  /* ⚠️ 가드가 90이었는데 **후반 단계가 목표의 절반도 안 찼다**(2026-08-24 실측):
+       10s 목표 2,472 → 2,474 (달성) · 40s 6,304 → 4,537 · 80s 9,104 → 4,541
+     빨리감기로 200프레임을 더 주면 9,295까지 오른다 — 평형이 아니라 **상한에 걸린 것**이다.
+     그대로 두면 fire_progress는 0.9인데 연기는 절반인 표본이 데이터셋에 들어간다.
+     상한을 올리되, 더 이상 안 늘면(평형 도달) 바로 빠져나와 프레임을 낭비하지 않는다. */
+  let guard = 0, stall = 0, prev = -1;
+  while (fsmoke.particles.length < target && guard++ < 400) {
+    scene.render();
+    const n = fsmoke.particles.length;
+    if (n <= prev) { if (++stall >= 12) break; } else stall = 0;
+    prev = n;
+  }
   sv.forEach(x => { x.P.updateSpeed = x.s; });
   FIRE_FOG.t = t;                 // 빨리감기 동안 틱이 밀어 놓은 값을 목표로 되돌린다
   fireFogTick(0);                 // 연무 농도·배출량을 그 시점 값으로 확정
