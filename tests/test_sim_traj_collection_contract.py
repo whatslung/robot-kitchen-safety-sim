@@ -16,3 +16,8 @@ def test_traj_run_accepts_only_v1_or_v2_dataset():
 
 def test_collection_log_names_target_dataset():
     assert '"· dataset", datasetName' in SIM
+
+
+def test_collection_button_passes_selected_dataset():
+    assert 'id="trajDataset"' in SIM
+    assert 'dataset: $("trajDataset").value' in SIM

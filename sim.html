@@ -544,11 +544,12 @@
 
   <div class="section">궤적 데이터 수집 <span class="note" style="font-weight:400">예측기 학습용 (이슈 #2)</span></div>
   <div class="row"><span>scene 수</span><input id="trajScenes" type="range" min="1" max="60" step="1" value="40"><b id="trajScenesV">40</b></div>
+  <div class="row"><span>저장 대상</span><select id="trajDataset"><option value="trajectories">v1 · trajectories</option><option value="trajectories_v2">v2 · trajectories_v2</option></select></div>
   <div class="btnrow">
     <button id="trajRunBtn">궤적 수집 시작</button>
   </div>
   <div class="hint">1단계 WORKFLOW 동선을 고정 dt로 돌려 추가 인원 궤적을 2.5Hz로 <b>detect_server의 /traj</b>에
-    저장합니다(<b>dataset/trajectories/</b>). 세부 조정은 콘솔 <code>__sim.trajRun({scenes,seed,seconds,jobs})</code>.</div>
+    저장합니다. 기본은 기존 <b>dataset/trajectories/</b>이며 v2는 명시적으로 선택해야 합니다.</div>
 
   <div class="section">전문가 기능</div>
   <label class="row" style="cursor:pointer"><input type="checkbox" id="devMode" style="accent-color:#76b900">
@@ -10798,7 +10799,7 @@ $("trajScenes").addEventListener("input", e => $("trajScenesV").textContent = e.
 $("trajRunBtn").addEventListener("click", async () => {
   if (TRAJ.running) { setStatus("궤적 수집 이미 실행 중"); return; }
   const btn = $("trajRunBtn"); btn.disabled = true; btn.textContent = "수집 중…";
-  try { await trajRun({ scenes: +$("trajScenes").value }); }
+  try { await trajRun({ scenes: +$("trajScenes").value, dataset: $("trajDataset").value }); }
   finally { btn.disabled = false; btn.textContent = "궤적 수집 시작"; }
 });
 $("inspectorBtn").addEventListener("click", showInspector);
