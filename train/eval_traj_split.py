@@ -20,7 +20,8 @@ sys.path.insert(0, str(ROOT))
 
 from trajectory.predictors import ConstantVelocityPredictor, KalmanPredictor   # noqa: E402
 from trajectory.sim_predictors import StationHeuristicPredictor                # noqa: E402
-from trajectory.learned_predictor import LearnedPredictor, build_transformer_net, K  # noqa: E402
+from trajectory.learned_predictor import (LearnedPredictor, build_transformer_net,  # noqa: E402
+                                          build_cvae_net, K)
 from trajectory.evaluator import ade, fde, enters_radius, entry_confusion      # noqa: E402
 from trajectory.bootstrap import scene_bootstrap_ci                            # noqa: E402
 from trajectory.sim_traj import load_windows, OBS, PRED                        # noqa: E402
@@ -49,8 +50,12 @@ def learned_predictors():
     if tf.exists():
         out["Transformer"] = LearnedPredictor(net=build_transformer_net(), weights_path=str(tf), device="cpu")
     else:
-        print(f"[eval] Transformer 가중치 없음({tf}) → LSTM만. "
-              "먼저 `python train/train_traj_transformer.py` 실행.")
+        print(f"[eval] Transformer 가중치 없음({tf}) → 생략. `python train/train_traj_transformer.py`.")
+    cv = _TRAJ / "model_cvae.pt"
+    if cv.exists():
+        out["CVAE"] = LearnedPredictor(net=build_cvae_net(), weights_path=str(cv), device="cpu")
+    else:
+        print(f"[eval] CVAE 가중치 없음({cv}) → 생략. `python train/train_traj_cvae.py`.")
     return out
 
 

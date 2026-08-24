@@ -97,6 +97,71 @@ def build_transformer_net(h=64, k=K, pred=PRED, layers=2, heads=4):
     return TrajTransformer()
 
 
+def build_cvae_net(h=64, z=K, pred=PRED, layers=2, heads=4):
+    """이산 잠재 CVAE(Trajectron++식) — best-of-K MTP 대신 ELBO로 학습(옵션 B 임팩트판).
+
+    추론(forward)은 사전분포 p(z|past)로 전 z를 열거해 기존 head와 **동일한 계약**
+    (paths(B,Z,PRED,2), logits(B,Z), logsig(B,Z,PRED))을 낸다 → LearnedPredictor 드롭인.
+    학습(elbo)은 인식망 q(z|past,future)로 이산 z를 **정확히 주변화**(샘플링 없음, 결정적).
+    """
+    import torch
+    import torch.nn as nn
+    import torch.nn.functional as F
+
+    class TrajCVAE(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.z, self.pred = z, pred
+            self.inp = nn.Linear(2, h)
+            self.pos = nn.Parameter(torch.zeros(1, 64, h))
+            enc_layer = nn.TransformerEncoderLayer(d_model=h, nhead=heads, dim_feedforward=h * 4,
+                                                   batch_first=True, dropout=0.0)
+            self.enc = nn.TransformerEncoder(enc_layer, num_layers=layers)
+            self.prior = nn.Linear(h, z)                                   # p(z|past)
+            self.fut = nn.Sequential(nn.Linear(pred * 2, h), nn.ReLU())    # 미래 요약(학습 전용)
+            self.recog = nn.Linear(2 * h, z)                              # q(z|past,future)
+            self.zemb = nn.Embedding(z, h)
+            self.dec = nn.Sequential(nn.Linear(2 * h, h), nn.ReLU(),       # decode(c,z) → path+logsig
+                                     nn.Linear(h, pred * 2 + pred))
+
+        def _ctx(self, x):                                                # (B,OBS,2) → (B,h)
+            t = x.shape[1]
+            e = self.inp(x) + self.pos[:, :t, :]
+            return self.enc(e)[:, -1, :]
+
+        def _decode_all(self, c):
+            b = c.shape[0]
+            zc = self.zemb.weight.unsqueeze(0).expand(b, self.z, -1)      # (B,Z,h)
+            cc = c.unsqueeze(1).expand(b, self.z, -1)                     # (B,Z,h)
+            o = self.dec(torch.cat([cc, zc], -1))                         # (B,Z,pred*2+pred)
+            paths = o[..., :self.pred * 2].reshape(b, self.z, self.pred, 2)
+            logsig = o[..., self.pred * 2:].reshape(b, self.z, self.pred)
+            return paths, logsig
+
+        def forward(self, x):                                             # 추론 = 사전분포
+            c = self._ctx(x)
+            paths, logsig = self._decode_all(c)
+            return paths, self.prior(c), logsig
+
+        def elbo(self, x, gt, beta=1.0):                                  # 학습 = ELBO(이산 z 주변화)
+            c = self._ctx(x)
+            paths, logsig = self._decode_all(c)
+            prior_logits = self.prior(c)
+            f = self.fut(gt.reshape(gt.shape[0], -1))
+            post_logits = self.recog(torch.cat([c, f], -1))
+            sig = logsig.exp().clamp(min=1e-2)                            # (B,Z,PRED)
+            d2 = ((paths - gt.unsqueeze(1)) ** 2).sum(-1)                 # (B,Z,PRED)
+            n_z = (0.5 * d2 / (sig ** 2) + 2.0 * torch.log(sig)).mean(-1)  # (B,Z) per-z NLL
+            q = F.softmax(post_logits, dim=1)
+            recon = (q * n_z).sum(1)                                      # Σ_z q·NLL
+            kl = (q * (F.log_softmax(post_logits, dim=1)
+                       - F.log_softmax(prior_logits, dim=1))).sum(1)      # 범주형 KL(q‖p) ≥ 0
+            return {"loss": recon.mean() + beta * kl.mean(),
+                    "recon": recon.mean(), "kl": kl.mean()}
+
+    return TrajCVAE()
+
+
 def mtp_loss(paths, logits, logsig, gt):
     """best-of-K 회귀(가우시안 NLL) + 모드 분류(CE). gt (B,PRED,2)."""
     import torch
