@@ -18,7 +18,7 @@ class CandidateConfig:
     dropout: float = 0.0
     norm_first: bool = False
     pooling: str = "last"
-    learning_rate: float = 1e-3
+    learning_rate: float = 6e-4
     weight_decay: float = 0.0
     batch_size: int = 512
 
