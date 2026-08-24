@@ -86,3 +86,15 @@ def test_failed_or_guard_failing_seed_falls_back_to_baseline():
     assert winner["trial_id"] == "baseline-transformer"
     assert not winner["minimum_success"]
     assert winner["source_commit"] == "base"
+
+
+def test_baseline_reruns_define_reference_even_if_point_guard_varies():
+    rows = [
+        _rerun("baseline-transformer", 0, 0.70, passed=False),
+        _rerun("baseline-transformer", 1, 0.72, passed=False),
+        _rerun("baseline-transformer", 2, 0.68, passed=False),
+    ]
+    winner = select_winner(rows, {"baseline-transformer": "base"})
+    assert winner["trial_id"] == "baseline-transformer"
+    assert winner["median"]["f2"] == 0.70
+    assert not winner["minimum_success"]
