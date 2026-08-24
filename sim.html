@@ -12574,7 +12574,7 @@ async function trajRun(opts) {
   try {
     await trajWarmup();                         // 첫 스폰 워밍업 소진 → scene 0도 재현 가능
     for (let k = 0; k < scenes; k++) {
-      const jobs = jobsOverride || TRAJ.jobSets[k % TRAJ.jobSets.length];
+      const jobs = jobsOverride || TRAJ.jobSets[((base + k) - 1) % TRAJ.jobSets.length];
       setStatus("궤적 수집 — scene " + (k + 1) + "/" + scenes + " (seed " + (base + k) + ")");
       const scene = await trajRunScene(base + k, seconds, jobs, k, datasetName);
       if (scene) out.push(scene);

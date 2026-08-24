@@ -26,3 +26,7 @@ def test_collection_button_passes_selected_dataset():
 def test_collection_button_passes_start_seed():
     assert 'id="trajSeed"' in SIM
     assert 'seed: +$("trajSeed").value' in SIM
+
+
+def test_job_set_selection_depends_on_seed_not_batch_position():
+    assert 'TRAJ.jobSets[((base + k) - 1) % TRAJ.jobSets.length]' in SIM
