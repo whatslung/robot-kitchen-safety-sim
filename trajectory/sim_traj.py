@@ -50,16 +50,16 @@ def is_val(seed: int) -> bool:
     return seed % 5 == 0
 
 
-def load_manifest(traj_dir=None):
+def load_manifest(traj_dir=None, manifest_path=None):
     """split_manifest.json 로드(없으면 None). {'train','val','test': [filename…]}."""
     d = Path(traj_dir) if traj_dir else TRAJ_DIR
-    p = d / MANIFEST_NAME
+    p = Path(manifest_path) if manifest_path else d / MANIFEST_NAME
     if not p.exists():
         return None
     return json.loads(p.read_text(encoding="utf-8"))
 
 
-def load_windows(split: str = "val", traj_dir=None) -> list:
+def load_windows(split: str = "val", traj_dir=None, manifest_path=None) -> list:
     """split in {"train","val","test","all"}. 폐기 노드는 건너뛴다.
 
     train/val/test 는 split_manifest.json 멤버십으로 필터(P0-1, seed 단위 분할).
@@ -69,10 +69,11 @@ def load_windows(split: str = "val", traj_dir=None) -> list:
     d = Path(traj_dir) if traj_dir else TRAJ_DIR
     members = None
     if split in ("train", "val", "test"):
-        man = load_manifest(d)
+        man = load_manifest(d, manifest_path)
         if man is None:
+            source = Path(manifest_path) if manifest_path else d / MANIFEST_NAME
             raise FileNotFoundError(
-                f"{MANIFEST_NAME} 없음 ({d}). 먼저 `python train/make_traj_split.py` 로 split 생성.")
+                f"manifest 없음: {source}. 먼저 split manifest를 생성하세요.")
         members = set(man[split])
     elif split != "all":
         raise ValueError(f"알 수 없는 split: {split!r} (train/val/test/all)")
