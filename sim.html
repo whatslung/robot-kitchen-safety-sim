@@ -2670,11 +2670,29 @@ if (ISLAND) (function () {
   /* corner(광역 남서 2.4m)도 뺐다 — 구역 담당 8대가 그 범위를 덮으면서 역할이 겹친다.
      lowFloor(저상 1.6m)는 남긴다: 8대가 전부 36~44°로 내려다보므로 **넘어져 누운 사람의
      옆모습**은 저상 시점에서만 잡힌다. 각도가 겹치지 않는 유일한 보조 카메라다. */
+  /* ── 회의 결정(2026-08-24) — 발표에서 쓸 10대만 남긴다 ─────────────────────
+     남기는 것: 저상 · 불꽃 · 불꽃2 · 북서 · 조리라인 · 북동 · 입구 · 로봇 남 ·
+                배식구 · 해치정면    (저상은 맑음/연기 두 컷을 같은 카메라로 쓴다)
+     빠지는 것: cvE(동벽 통로) · cvW(서벽 로봇 서) · cvTop(탑뷰) ·
+                orthotop(직교 상부) · cv45(45° 기준) · cvPole(뚜껑 뒤 판)
+
+     ⚠️ 기록해 둘 것 — 이 삭제로 잃는 것이 둘 있다. 회의 결정이므로 그대로 반영하되
+        나중에 필요해지면 여기를 되돌리면 된다(정의는 위에 그대로 있고 이 목록에서만 뺀다).
+       · `orthotop` — 팀원2의 검출 모델을 **이 카메라로 학습**했다
+         (docs/chanwoo/detection-eval.md "sim 200장(직교 나디르 orthotop)",
+          산출물 yolo11s_orthotop/weights/best.pt). 빠지면 그 회차를 재현할 수 없다.
+       · `cvTop`·`cv45` — 개요서의 "탑뷰에서 테스트, 이후 45도 뷰에서 테스트" 짝이다.
+       · 벽 8대 → 6대가 되므로 MODEL_HANDOFF의 "정지링 진입로 93% 커버"는 다시 재야 한다. */
   ["overhead", "eye", "top", "front", "seCorner", "wideAll",
-   "deg45", "southTop", "corner"].forEach(id => {
+   "deg45", "southTop", "corner",
+   "cvE", "cvW", "cvTop", "orthotop", "cv45", "cvPole"].forEach(id => {
     const i = CAM_DEFS.findIndex(d => d.id === id);
     if (i >= 0) CAM_DEFS.splice(i, 1);
   });
+  /* RING_IDS도 같이 줄인다 — CAM_DEFS에 없는 id가 남으면 ORDER·FIXED_BITS가
+     유령 카메라를 들고 있게 된다(다음 사람이 링 대수를 셀 때 헷갈린다). */
+  for (let i = RING_IDS.length - 1; i >= 0; i--)
+    if (!CAM_DEFS.some(d => d.id === RING_IDS[i])) RING_IDS.splice(i, 1);
   /* ── 이름·번호 정리 ────────────────────────────────────────────────────────
      종전 라벨은 **옛 비대칭 방 기준이라 지금과 안 맞았다**(실측 방위):
        "코너 월마운트"  → 실제 남서 132°     "45° 벽마운트" → 실제 서 173°
@@ -8574,9 +8592,10 @@ const RUNLOG = {
 /* cam — **자유 시점일 때 대신 쓸 카메라.** 종전 기본값 `corner`(CAM2 코너 월마운트)는
    섬 배치에서 SURV에 등록되지 않는 카메라라, 자유 시점에서 검증을 켜면 milCapture가
    매번 조용히 실패했다(실측: 박스 0개 · MIL.err만 증가). 실제 설치각에 가장 가까운
-   `cv45`로 바꾼다. 배치가 달라 이것마저 없으면 milCamId()가 첫 카메라로 물러선다. */
+   `cvN`(북벽 조리라인)으로 둔다 — 2026-08-24 회의에서 카메라를 10대로 줄이며 cv45가
+   빠졌다. 배치가 달라 이것마저 없으면 milCamId()가 첫 카메라로 물러선다. */
 const MIL = { on:false, mode:"mock", url:"http://localhost:8000/detect",
-              latency:2000, hz:1, acc:0, busy:false, cam:"cv45",
+              latency:2000, hz:1, acc:0, busy:false, cam:"cvN",
               lastBoxes:null, lastAge:0, drift:0, err:0, n:0,
               safety:false, lastPersonSeen:null,
               // 트래킹 연동: 서버가 track id를 주면 트랙별 월드 위치·이력·속도를 여기 유지한다.
