@@ -196,7 +196,10 @@
   .snode.cam{padding-left:18px}
   .snode .camname{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   #viewport{flex:1;position:relative;min-width:0;background:#000}
-  #consolePanel{flex:0 0 108px;background:#1c1c1e;border-top:1px solid #0a0a0a;
+  /* 발표에서 화면 아래 콘솔이 보이면 완성도가 떨어진다 — 실측 959×108px로 화면 높이의
+     14%를 먹고 있었다. **기본 숨김**으로 바꾸고 ⚙ 고급의 체크박스나 ?console=1 로 켠다. */
+  #consolePanel{display:none;flex:0 0 108px;background:#1c1c1e;border-top:1px solid #0a0a0a;
+  
     display:flex;flex-direction:column;min-height:0}
   #consoleLog{flex:1;overflow-y:auto;padding:4px 10px;font:10.5px/1.55 ui-monospace,monospace;color:#9da7b0}
   #consoleLog .t{color:#5b6570;margin-right:8px}
@@ -558,6 +561,8 @@
   </div>
 
   <div class="section">시각화 표시 <span class="note" style="font-weight:400">기본 꺼짐 — 필요할 때 켜기</span></div>
+  <label class="row" style="cursor:pointer"><input type="checkbox" id="vizConsole" style="accent-color:#76b900">
+    <span style="width:auto;color:#c9d1d9">콘솔 패널 (화면 아래 로그)</span></label>
   <label class="row" style="cursor:pointer"><input type="checkbox" id="vizRarr" style="accent-color:#76b900">
     <span style="width:auto;color:#c9d1d9">로봇 기동 화살표</span></label>
   <label class="row" style="cursor:pointer"><input type="checkbox" id="vizPmode" style="accent-color:#76b900">
@@ -12662,7 +12667,7 @@ setStatus(V.ok ? "준비 완료 — ▶ 자동 작업(튀김 배출)을 눌러�
    ⚠️ 이 블록은 **파일 끝에 몰아 둔다.** 같은 sim.html을 팀원이 동시에 고치고 있어
    (로봇 회피 기동), 기존 함수 사이에 끼워 넣으면 병합할 때 통째로 충돌한다.
    렌더 훅도 공용 registerBeforeRender에 줄을 더하지 않고 **관찰자를 따로 등록**한다. */
-const DEMO = { on:false, kind:null, t:0, beat:-1, saved:null, fade:null, evac:null };
+const DEMO = { on:false, kind:null, t:0, beat:-1, saved:null, fade:null, evac:null, follow:null };
 
 /* 화재 진행을 4배로 감는다 — 90초 곡선을 발표용 22초로 압축한다.
    fireSeekTo로 순간이동시키지 않는 이유: **연기가 서서히 차오르는 과정 자체가**
@@ -12672,6 +12677,42 @@ const DEMO_FIRE_SPEED = 4;
 function demoSay(msg) {
   setStatus(msg);
   const n = $("demoNote"); if (n) n.textContent = msg;
+}
+
+/* ── 비트마다 카메라가 무엇을 보는지 정한다 ────────────────────────────────
+   기본 자유 시점은 **로봇 셀**을 보도록 잡혀 있다. 그래서 조리원이 나오는 비트에서
+   사람이 화면 밖이었다 — 실측: ① 화면좌표 (1.67, 1.20) · ⑤ 쓰러짐 (1.54, 1.47).
+   둘 다 0~1 범위 밖이라 **아무것도 안 보이는 채로 자막만 나왔다.**
+   비트가 무엇을 보여주려는지에 따라 사람 / 솥 / 방 전체로 나눈다. */
+function demoFreeCam(alpha, beta, radius, target) {
+  if (mainView !== "free") {
+    mainView = "free";
+    if (typeof viewSel !== "undefined" && viewSel) viewSel.value = "free";
+    applyCameras();
+  }
+  /* ⚠️ 순서가 중요하다. ArcRotateCamera.setTarget()은 **카메라 위치를 유지한 채**
+     alpha·beta·radius를 다시 계산한다. 각도를 먼저 넣고 setTarget을 뒤에 부르면
+     방금 넣은 값이 통째로 덮어써진다(실측: 반경 7.6 → 2.5, beta 1.14 → 0.83).
+     조준점을 먼저 옮기고 각도를 나중에 못박는다. */
+  camera.setTarget(target);
+  camera.alpha = alpha; camera.beta = beta; camera.radius = radius;
+}
+/* 조리원을 따라간다. 거리 4.6m로 잡았다가 **7.6m로 넓혔다** — 4.6에서는 사람이 화면을
+   가득 채워 주방도 로봇도 안 보였다. "조리원이 평소대로 작업한다"는 사람만이 아니라
+   **일하는 자리**가 같이 보여야 성립한다. */
+function demoPersonView() {
+  const p = person.node.position;
+  demoFreeCam(-2.05, 1.14, 7.6, new V3(p.x, 1.05, p.z));
+  DEMO.follow = "person";
+}
+function demoKettleView() {                       // 솥 — 김·불꽃이 여기서 난다
+  DEMO.follow = null;
+  const k = (anchors["kettle"] && anchors["kettle"].node) ? anchors["kettle"].node.position : new V3(0,0,0);
+  demoFreeCam(-2.25, 1.12, 4.2, new V3(k.x, 1.00, k.z));
+}
+function demoWideView() {                         // 방 전체 — 연기가 차는 것을 보여준다
+  DEMO.follow = null;
+  demoFreeCam(-2.35, 1.20, 8.6, new V3(0.2, 1.10, 1.6));
 }
 
 /* 어느 시나리오든 ①번은 같다 — 직전 회차의 잔재(불·연기·쓰러짐·검출)를 먼저 지운다.
@@ -12685,6 +12726,11 @@ function demoNormalWork() {
   STEAM.k = 0.6; steamSettle();
   person.freeze = false;
   if (!state.auto) $("autoBtn").click();      // 로봇은 평소처럼 튀김 작업 중
+  /* "정상 작업"이 서 있는 그림이면 안 된다. 조리 전용 액션(젓기·투입)은 리그에 없지만,
+     스테이션 작업 루트가 선반에서 집고(pickup) 조리대·솥에서 다루는(interact) 동작을
+     돌려 준다 — 지금 가진 것 중 작업으로 보이는 유일한 경로다. */
+  if (typeof personRoute === "function") personRoute("work", { loop:true });
+  demoPersonView();
 }
 
 function demoSteamUp() { STEAM.k = 5; steamSettle(); }
@@ -12695,6 +12741,7 @@ function demoIgnite() { FIRE_FOG.speed = DEMO_FIRE_SPEED; setFire(true); }
    쓴다) 화재가 제일 잘 보이는 CCTV로 먼저 옮긴다. 모드는 기본 mock —
    .onnx 파일 없이도 도는 경로라 발표 자리에서 실패하지 않는다. */
 function demoDetectOn() {
+  DEMO.follow = null;                            // CCTV 화면으로 넘어간다
   if (!SURV[mainView]) {
     mainView = "cvN";
     if (typeof viewSel !== "undefined" && viewSel) viewSel.value = "cvN";
@@ -12724,6 +12771,7 @@ function demoStandUp() { if (PERSON && PERSON.acting === "down") personGetUp(); 
    → 대피 비트에서만 **자유 시점을 문 쪽으로 돌린다.** 실제 CCTV 성능을 속이는 게 아니라
      (그건 ④ 감지 비트가 CCTV로 보여준다) 이야기를 보여주는 컷이다. */
 function demoExitView() {
+  DEMO.follow = null;                            // 문 쪽 고정 컷 — 따라가기와 싸우면 안 된다
   if (mainView !== "free") {
     mainView = "free";
     if (typeof viewSel !== "undefined" && viewSel) viewSel.value = "free";
@@ -12787,23 +12835,23 @@ const DEMO_SCRIPTS = {
   /* before — 지금 현장에서 실제로 일어나는 순서. 감지가 없으면 어떻게 끝나는가. */
   before: [
     { at:0,     msg:"① 조리원이 평소대로 작업합니다",                   act: demoNormalWork },
-    { at:7000,  msg:"② 국솥에서 김이 오릅니다",                         act: demoSteamUp },
-    { at:15000, msg:"③ 과열된 기름에 불이 붙었습니다",                  act: demoIgnite },
-    { at:24000, msg:"④ 연기가 자욱합니다 — 카메라가 화재를 놓칩니다",   act: () => {} },
+    { at:7000,  msg:"② 국솥에서 김이 오릅니다",                         act: () => { demoSteamUp(); demoKettleView(); } },
+    { at:15000, msg:"③ 과열된 기름에 불이 붙었습니다",                  act: () => { demoIgnite(); demoKettleView(); } },
+    { at:24000, msg:"④ 연기가 자욱합니다 — 카메라가 화재를 놓칩니다",   act: demoWideView },
     /* ⚠️ demoHazard는 "push"/"pinch"만 받는다. 처음에 "fall"을 넘겼더니 findHazardSpot이
        null을 돌려주고 **조용히 아무 일도 안 일어났다.** 실신은 주인공 액션이다. */
-    { at:33000, msg:"⑤ 연기 속에서 조리원이 쓰러집니다",                act: demoCollapse },
+    { at:33000, msg:"⑤ 연기 속에서 조리원이 쓰러집니다",                act: () => { demoPersonView(); demoCollapse(); } },
     { at:44000, msg:"⑥ 아무도 모릅니다 — 뒤늦게 발견됩니다",            act: () => {} },
   ],
   /* after — 같은 사고에 감지를 넣으면 어디서 갈라지는가.
      ③까지는 before와 **완전히 같아야 한다.** 다르면 "조건이 달랐잖아"가 된다. */
   after: [
     { at:0,     msg:"① 조리원이 평소대로 작업합니다",                   act: demoNormalWork },
-    { at:7000,  msg:"② 국솥에서 김이 오릅니다",                         act: demoSteamUp },
-    { at:15000, msg:"③ 과열된 기름에 불이 붙었습니다",                  act: demoIgnite },
+    { at:7000,  msg:"② 국솥에서 김이 오릅니다",                         act: () => { demoSteamUp(); demoKettleView(); } },
+    { at:15000, msg:"③ 과열된 기름에 불이 붙었습니다",                  act: () => { demoIgnite(); demoKettleView(); } },
     { at:21000, msg:"④ 화재를 즉시 감지했습니다 — 검출 시작",           act: demoDetectOn },
     { at:30000, msg:"⑤ 조리원이 출입구로 대피합니다",                   act: demoEvacuate },
-    { at:42000, msg:"⑥ 진화 — 연기가 걷힙니다",                        act: () => demoExtinguish(9000) },
+    { at:42000, msg:"⑥ 진화 — 연기가 걷힙니다",                        act: () => { demoWideView(); demoExtinguish(9000); } },
   ],
 };
 
@@ -12811,6 +12859,17 @@ function demoTick(dt) {
   /* 페이드와 대피 도착 판정은 **DEMO.on과 무관하게** 돈다.
      마지막 비트에서 시계가 멈춘 뒤에도 연기는 계속 걷혀야 하고,
      조리원은 계속 문까지 걸어가야 한다. */
+  /* 조리원 따라가기 — 사람이 걸어 다니므로 고정 조준으로는 금방 프레임을 벗어난다.
+     부드럽게 쫓아가되(0.08) 자유 시점일 때만 — CCTV 컷을 빼앗으면 안 된다. */
+  if (DEMO.follow === "person" && mainView === "free" && person.node.isEnabled()) {
+    /* **setTarget을 쓰면 안 된다** — 위 주석대로 매 프레임 각도·거리를 다시 계산해
+       카메라가 사람 쪽으로 빨려 들어간다(실측: 몇 초 만에 반경 7.6 → 2.5).
+       target 벡터를 제자리에서 옮기면 alpha·beta·radius가 그대로 유지된다. */
+    const p = person.node.position, t = camera.target;
+    t.x += (p.x - t.x) * 0.08;
+    t.z += (p.z - t.z) * 0.08;
+    t.y += (1.05 - t.y) * 0.08;
+  }
   if (DEMO.fade) {
     const f = DEMO.fade; f.t += dt;
     const k = Math.min(1, f.t / f.dur);
@@ -12886,7 +12945,7 @@ function demoReset(quiet) {
   if (MIL.on) $("milBtn").click();
   /* 진화 페이드가 돌던 중이면 끊는다 — 위에서 이미 setFire(false)를 불렀으므로
      안개는 정식 복원돼 있다. 남겨 두면 복원된 밀도를 페이드가 다시 덮어쓴다. */
-  DEMO.fade = null; DEMO.evac = null;
+  DEMO.fade = null; DEMO.evac = null; DEMO.follow = null;
   if (VID.open) { VID.detect = false; const vb = $("vidDetectBtn"); if (vb) vb.textContent = "검출 시작"; vidOpen(false); }
   person.node.setEnabled(true);                 // 대피로 감췄던 경우 되돌린다
   person.freeze = false;
@@ -13194,6 +13253,15 @@ function vidTick(dt) {
 }
 
 vidProbe();
+
+/* 콘솔 패널 표시 — 기본 꺼짐. ?console=1 이면 켠 채로 시작한다(개발용). */
+(() => {
+  const cp = document.getElementById("consolePanel"), cb = $("vizConsole");
+  const on = new URLSearchParams(location.search).get("console") === "1";
+  const apply = v => { if (cp) cp.style.display = v ? "flex" : "none"; };
+  if (cb) { cb.checked = on; cb.addEventListener("change", e => apply(e.target.checked)); }
+  apply(on);
+})();
 
 $("demoBefore").addEventListener("click", () => demoRun("before"));
 $("demoAfter").addEventListener("click",  () => demoRun("after"));
