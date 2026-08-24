@@ -120,6 +120,18 @@ def test_manifest_rejects_missing_layout(tmp_path):
         build_manifest(data, code_commit="abc123")
 
 
+def test_manifest_rejects_unflagged_teleport(tmp_path):
+    data = tmp_path / "v2"
+    _full_dataset(data)
+    path = next(data.glob("island_h58_seed1_*.json"))
+    scene = json.loads(path.read_text(encoding="utf-8"))
+    scene["nodes"][0]["frames"][2]["x"] += 1.0
+    path.write_text(json.dumps(scene), encoding="utf-8")
+
+    with pytest.raises(DatasetAuditError, match="이동량"):
+        build_manifest(data, code_commit="abc123")
+
+
 def test_audit_cli_resolves_project_packages():
     root = Path(__file__).parents[1]
 
