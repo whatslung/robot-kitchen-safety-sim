@@ -963,6 +963,16 @@ if (REACH.k !== 1) {
 
 /* ══ 엔진 / 씬 ═══════════════════════════════════════════════════════════ */
 const canvas = $("c");
+/* ══ 진단 로그 — sim.html?debug=1 일 때만 콘솔에 찍는다 ═══════════════════════
+   평소 콘솔이 35줄씩 차서 **정작 봐야 할 경고가 묻혔다**(2026-08-24 사용자 지시).
+   그렇다고 지우면 안 된다 — [REACH]·[NAV]·[COLL]·[GLB] 같은 값은 배치·리깅이
+   틀어졌을 때 원인을 찾는 유일한 단서고, 이 프로젝트가 실제로 그걸로 여러 번 잡았다.
+   그래서 **console.log만** 막고 **console.warn/error는 그대로 둔다** — 경고는
+   "지금 뭔가 잘못됐다"는 신호라 조용해지면 안 된다.
+   켜는 법: sim.html?debug=1  (배포본·데이터셋 생성에는 영향 없다) */
+const DEBUG_LOG = new URLSearchParams(location.search).get("debug") === "1";
+if (!DEBUG_LOG) console.log = function () {};
+
 const engine = new BABYLON.Engine(canvas, true, { preserveDrawingBuffer:true, stencil:true }, true);
 const scene  = new BABYLON.Scene(engine);
 scene.clearColor = new C4(0.80,0.83,0.87,1);            // 밝은 주방 톤
@@ -5222,6 +5232,54 @@ const PROP_MAT = (() => {
   };
 })();
 
+/* ══ 튀김 바스켓 내용물 ═══════════════════════════════════════════════════
+   빈 망바구니를 로봇이 건져 올리면 **무엇을 조리 중인지 알 수 없다.** 발표에서도
+   "기름에서 뭘 꺼내는가"가 안 보인다. 실사 참조(로봇고_배출)에서도 바구니에는
+   항상 튀김이 담겨 있다.
+
+   지오메트리는 새로 만들지 않고 **PROP_MAT.food의 'fried' 재질을 재사용**한다 —
+   선반·호텔팬 내용물과 같은 색 계열이라 씬에서 따로 놀지 않고, 머티리얼을 공유하므로
+   드로우콜도 안 는다(프롭 재질을 한 번만 만드는 이유와 같다).
+
+   실측 바스켓(2026-08-24): 바닥 y 0.544 · 림 y 0.78 · 지름 0.59(바닥)~0.74(림).
+   내용물은 바닥에서 살짝 띄워 y 0.55~0.64에 쌓는다 — 림까지 채우면 그물망이 안 보여
+   바구니가 아니라 통처럼 보인다. 반경은 0.25로 잡아 벽에 안 묻히게 한다.
+
+   조각은 **하나로 병합**한다. 낱개로 두면 24개 자식에 조각 수만큼 드로우콜이 붙는다. */
+function fillBasket() {
+  if (!basketNode) return 0;
+  const MB = BABYLON.MeshBuilder, rnd = (a,b) => a + Math.random()*(b-a);
+  /* 34개로는 **바닥이 비쳐 보였다**(화면 확인). 아래층을 촘촘히 깔고 위에 얹는 2층
+     구조로 간다 — 실제 튀김 바구니도 바닥부터 쌓인다. 병합하므로 개수는 공짜다. */
+  const N = 96;
+  const parts = [];
+  for (let i = 0; i < N; i++) {
+    /* 원판 위 균일 분포 — sqrt를 안 쓰면 가운데로 몰린다 */
+    const th = Math.random()*Math.PI*2;
+    const lower = i < N*0.62;                       // 아래층을 더 많이·더 넓게 깐다
+    const r = (lower ? 0.255 : 0.195) * Math.sqrt(Math.random());
+    const p = MB.CreateBox("friedBit"+i, { width:rnd(0.050,0.082), height:rnd(0.028,0.044),
+                                           depth:rnd(0.050,0.082) }, scene);
+    p.position.set(Math.cos(th)*r,
+                   lower ? rnd(0.010, 0.048) : rnd(0.042, 0.088),
+                   Math.sin(th)*r);
+    p.rotation.set(rnd(-0.5,0.5), Math.random()*Math.PI*2, rnd(-0.5,0.5));
+    parts.push(p);
+  }
+  const merged = BABYLON.Mesh.MergeMeshes(parts, true, true, undefined, false, false);
+  if (!merged) return 0;
+  merged.name = "basketFood";
+  merged.material = PROP_MAT.food[2].mat;               // 'fried'
+  merged.isPickable = false;
+  merged.receiveShadows = true;
+  if (typeof shadows !== "undefined" && shadows) shadows.addShadowCaster(merged);
+  /* 바스켓 로컬 좌표로 옮긴다 — 노드가 y 1.120에 있고 바닥은 월드 0.544다.
+     로봇이 바구니를 집으면 basketNode가 손목에 붙으므로 내용물도 같이 따라간다. */
+  merged.parent = basketNode;
+  merged.position.y = 0.544 - basketNode.getAbsolutePosition().y + 0.004;
+  return N;
+}
+
 function dressProp(file, holder, idx, inst) {
   const MB = BABYLON.MeshBuilder, put = [];
   const rnd = (a, b) => a + Math.random() * (b - a);
@@ -5452,6 +5510,7 @@ async function loadAssets() {
   lidNode.rotation.z = -1.40;
   basketNode     = await pivoted("basket.glb",         "bkNode",   ASSETS.pivots.grip);
   basketNode.__home = basketNode.position.clone();     // 파지 시퀀스 리스타트용 원위치
+  fillBasket();                                        // 튀김 바스켓에 내용물을 담는다
   robotGlb.base  = await pivoted("robot_pedestal.glb", "rgBase",   ASSETS.pivots.base);
   robotGlb.j1    = await pivoted("robot_j1.glb",       "rgJ1",     ASSETS.pivots.j1);
   robotGlb.upper = await pivoted("robot_upper.glb",    "rgUpper",  ASSETS.pivots.s);
