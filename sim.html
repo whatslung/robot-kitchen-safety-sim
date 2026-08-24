@@ -12835,7 +12835,12 @@ const DEMO_SCRIPTS = {
   /* before — 지금 현장에서 실제로 일어나는 순서. 감지가 없으면 어떻게 끝나는가. */
   before: [
     { at:0,     msg:"① 조리원이 평소대로 작업합니다",                   act: demoNormalWork },
-    { at:7000,  msg:"② 국솥에서 김이 오릅니다",                         act: () => { demoSteamUp(); demoKettleView(); } },
+    /* ⚠️ 자막에서 "김"을 뺐다 (2026-08-24). 김은 켜지긴 하는데 **화면에 안 보인다** —
+       김이 제일 잘 보일 조건(해치 근접 카메라 · 김 5배)에서도 화면 기여가
+       2.96/255 = 1.16%다. 안 보이는 것을 자막으로 우기면 관객이 먼저 알아챈다.
+       김 자체를 보이게 만드는 작업은 팀의 수증기 방침 결정 뒤에 한다(별건).
+       demoSteamUp()은 그대로 둔다 — 데이터에는 남고, 보이게 되면 자막만 되돌리면 된다. */
+    { at:7000,  msg:"② 국솥이 끓습니다 — 조리가 한창입니다",             act: () => { demoSteamUp(); demoKettleView(); } },
     { at:15000, msg:"③ 과열된 기름에 불이 붙었습니다",                  act: () => { demoIgnite(); demoKettleView(); } },
     { at:24000, msg:"④ 연기가 자욱합니다 — 카메라가 화재를 놓칩니다",   act: demoWideView },
     /* ⚠️ demoHazard는 "push"/"pinch"만 받는다. 처음에 "fall"을 넘겼더니 findHazardSpot이
@@ -12847,7 +12852,12 @@ const DEMO_SCRIPTS = {
      ③까지는 before와 **완전히 같아야 한다.** 다르면 "조건이 달랐잖아"가 된다. */
   after: [
     { at:0,     msg:"① 조리원이 평소대로 작업합니다",                   act: demoNormalWork },
-    { at:7000,  msg:"② 국솥에서 김이 오릅니다",                         act: () => { demoSteamUp(); demoKettleView(); } },
+    /* ⚠️ 자막에서 "김"을 뺐다 (2026-08-24). 김은 켜지긴 하는데 **화면에 안 보인다** —
+       김이 제일 잘 보일 조건(해치 근접 카메라 · 김 5배)에서도 화면 기여가
+       2.96/255 = 1.16%다. 안 보이는 것을 자막으로 우기면 관객이 먼저 알아챈다.
+       김 자체를 보이게 만드는 작업은 팀의 수증기 방침 결정 뒤에 한다(별건).
+       demoSteamUp()은 그대로 둔다 — 데이터에는 남고, 보이게 되면 자막만 되돌리면 된다. */
+    { at:7000,  msg:"② 국솥이 끓습니다 — 조리가 한창입니다",             act: () => { demoSteamUp(); demoKettleView(); } },
     { at:15000, msg:"③ 과열된 기름에 불이 붙었습니다",                  act: () => { demoIgnite(); demoKettleView(); } },
     { at:21000, msg:"④ 화재를 즉시 감지했습니다 — 검출 시작",           act: demoDetectOn },
     { at:30000, msg:"⑤ 조리원이 출입구로 대피합니다",                   act: demoEvacuate },
