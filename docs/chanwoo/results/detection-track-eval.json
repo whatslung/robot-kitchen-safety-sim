@@ -1,0 +1,202 @@
+{
+  "spec": "docs/chanwoo/specs/2026-08-24-detection-track-eval-design.md",
+  "split": "test",
+  "dataset": "C:\\Users\\chanwoo\\workspace\\robot-kitchen-safety-sim\\dataset\\overhead-person-v3",
+  "assumptions": {
+    "frame_width_m": 6.0,
+    "dt_s": 0.4,
+    "robot": "clip GT centroid",
+    "stopR_m": 1.2,
+    "slowR_m": 2.0,
+    "horizon_s": 1.6,
+    "match_dist_norm": 0.08,
+    "note": "absolute risk-entry is assumption-based; signal = GT vs det diff; data is generic overhead-person, not kitchen"
+  },
+  "clips": 5,
+  "windows_gt": 287,
+  "windows_det": 87,
+  "failures": {
+    "miss": 733,
+    "fragments": 14,
+    "id_switches": 1,
+    "gt_tracks": 66
+  },
+  "predictors": [
+    "CV",
+    "Kalman",
+    "LSTM"
+  ],
+  "ade_fde": {
+    "gt|CV": {
+      "n": 287,
+      "ade": 0.2390753934409554,
+      "fde": 0.4323353212002534,
+      "n_moved": 137,
+      "ade_moved": 0.3913289998106118,
+      "fde_moved": 0.7020430587427826
+    },
+    "gt|Kalman": {
+      "n": 287,
+      "ade": 0.2784272601181766,
+      "fde": 0.5099103162987559,
+      "n_moved": 137,
+      "ade_moved": 0.45567528684482267,
+      "fde_moved": 0.8327036530969117
+    },
+    "gt|LSTM": {
+      "n": 287,
+      "ade": 0.6126746929478145,
+      "fde": 1.0511087473537057,
+      "n_moved": 137,
+      "ade_moved": 0.6365419980147135,
+      "fde_moved": 1.06682447633026
+    },
+    "det|CV": {
+      "n": 87,
+      "ade": 0.3332440071521186,
+      "fde": 0.521596563416739,
+      "n_moved": 61,
+      "ade_moved": 0.3102061476402525,
+      "fde_moved": 0.4766955249315384
+    },
+    "det|CV|degraded": {
+      "n": 77,
+      "ade": 0.3569952465209231,
+      "fde": 0.5656714862076426,
+      "n_moved": 61,
+      "ade_moved": 0.3102061476402525,
+      "fde_moved": 0.4766955249315384
+    },
+    "gt|CV|paired": {
+      "n": 87,
+      "ade": 0.32834453485521403,
+      "fde": 0.584331928391674,
+      "n_moved": 61,
+      "ade_moved": 0.2818255668918846,
+      "fde_moved": 0.49096038243203094
+    },
+    "det|CV|paired": {
+      "n": 87,
+      "ade": 0.3332440071521186,
+      "fde": 0.521596563416739,
+      "n_moved": 61,
+      "ade_moved": 0.3102061476402525,
+      "fde_moved": 0.4766955249315384
+    },
+    "det|Kalman": {
+      "n": 87,
+      "ade": 0.4316572280049015,
+      "fde": 0.7100521782379886,
+      "n_moved": 61,
+      "ade_moved": 0.4123133979723717,
+      "fde_moved": 0.6714634492732717
+    },
+    "det|Kalman|degraded": {
+      "n": 77,
+      "ade": 0.46529045858936063,
+      "fde": 0.7719405930381422,
+      "n_moved": 61,
+      "ade_moved": 0.4123133979723717,
+      "fde_moved": 0.6714634492732717
+    },
+    "gt|Kalman|paired": {
+      "n": 87,
+      "ade": 0.4544873341850495,
+      "fde": 0.8336633104469998,
+      "n_moved": 61,
+      "ade_moved": 0.42837182242234095,
+      "fde_moved": 0.7850244230888245
+    },
+    "det|Kalman|paired": {
+      "n": 87,
+      "ade": 0.4316572280049015,
+      "fde": 0.7100521782379886,
+      "n_moved": 61,
+      "ade_moved": 0.4123133979723717,
+      "fde_moved": 0.6714634492732717
+    },
+    "det|LSTM": {
+      "n": 87,
+      "ade": 0.7236175683749833,
+      "fde": 1.1365229085323194,
+      "n_moved": 61,
+      "ade_moved": 0.7315875263433531,
+      "fde_moved": 1.1357009373442701
+    },
+    "det|LSTM|degraded": {
+      "n": 77,
+      "ade": 0.752740905852982,
+      "fde": 1.169013649014455,
+      "n_moved": 61,
+      "ade_moved": 0.7315875263433531,
+      "fde_moved": 1.1357009373442701
+    },
+    "gt|LSTM|paired": {
+      "n": 87,
+      "ade": 0.6179921850667643,
+      "fde": 1.003574196923595,
+      "n_moved": 61,
+      "ade_moved": 0.6231534161485754,
+      "fde_moved": 0.9932967616914904
+    },
+    "det|LSTM|paired": {
+      "n": 87,
+      "ade": 0.7236175683749833,
+      "fde": 1.1365229085323194,
+      "n_moved": 61,
+      "ade_moved": 0.7315875263433531,
+      "fde_moved": 1.1357009373442701
+    },
+    "det|CV|clean": {
+      "n": 10,
+      "ade": 0.15035946401232375,
+      "fde": 0.1822196579267818,
+      "n_moved": 0,
+      "ade_moved": NaN,
+      "fde_moved": NaN
+    },
+    "det|Kalman|clean": {
+      "n": 10,
+      "ade": 0.17268135250456615,
+      "fde": 0.23351138427680657,
+      "n_moved": 0,
+      "ade_moved": NaN,
+      "fde_moved": NaN
+    },
+    "det|LSTM|clean": {
+      "n": 10,
+      "ade": 0.49936786979439224,
+      "fde": 0.886344206819875,
+      "n_moved": 0,
+      "ade_moved": NaN,
+      "fde_moved": NaN
+    }
+  },
+  "risk_entry": {
+    "CV": {
+      "n": 87,
+      "gt_entry": 58,
+      "det_entry": 58,
+      "missed_by_det": 0,
+      "false_by_det": 0,
+      "mean_abs_dt": 0.0
+    },
+    "Kalman": {
+      "n": 87,
+      "gt_entry": 70,
+      "det_entry": 70,
+      "missed_by_det": 0,
+      "false_by_det": 0,
+      "mean_abs_dt": 0.017142857142857147
+    },
+    "LSTM": {
+      "n": 87,
+      "gt_entry": 68,
+      "det_entry": 70,
+      "missed_by_det": 0,
+      "false_by_det": 2,
+      "mean_abs_dt": 0.029411764705882346
+    }
+  },
+  "reproduce": "uv run --group serve python train/eval_traj_dettrack.py --split test"
+}
