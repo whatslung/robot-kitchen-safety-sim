@@ -21,3 +21,8 @@ def test_collection_log_names_target_dataset():
 def test_collection_button_passes_selected_dataset():
     assert 'id="trajDataset"' in SIM
     assert 'dataset: $("trajDataset").value' in SIM
+
+
+def test_collection_button_passes_start_seed():
+    assert 'id="trajSeed"' in SIM
+    assert 'seed: +$("trajSeed").value' in SIM

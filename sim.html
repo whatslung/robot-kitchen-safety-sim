@@ -544,6 +544,7 @@
 
   <div class="section">궤적 데이터 수집 <span class="note" style="font-weight:400">예측기 학습용 (이슈 #2)</span></div>
   <div class="row"><span>scene 수</span><input id="trajScenes" type="range" min="1" max="60" step="1" value="40"><b id="trajScenesV">40</b></div>
+  <div class="row"><span>시작 seed</span><input id="trajSeed" type="number" min="1" step="1" value="1"></div>
   <div class="row"><span>저장 대상</span><select id="trajDataset"><option value="trajectories">v1 · trajectories</option><option value="trajectories_v2">v2 · trajectories_v2</option></select></div>
   <div class="btnrow">
     <button id="trajRunBtn">궤적 수집 시작</button>
@@ -10799,7 +10800,10 @@ $("trajScenes").addEventListener("input", e => $("trajScenesV").textContent = e.
 $("trajRunBtn").addEventListener("click", async () => {
   if (TRAJ.running) { setStatus("궤적 수집 이미 실행 중"); return; }
   const btn = $("trajRunBtn"); btn.disabled = true; btn.textContent = "수집 중…";
-  try { await trajRun({ scenes: +$("trajScenes").value, dataset: $("trajDataset").value }); }
+  try {
+    await trajRun({ scenes: +$("trajScenes").value, seed: +$("trajSeed").value,
+                    dataset: $("trajDataset").value });
+  }
   finally { btn.disabled = false; btn.textContent = "궤적 수집 시작"; }
 });
 $("inspectorBtn").addEventListener("click", showInspector);
