@@ -3891,8 +3891,9 @@ function personRoute(name, opts) {
   const keys = ROUTE[name];
   if (!keys) { console.warn("[ROUTE] 없는 경로:", name); return null; }
   const st = keys.map(k => STATION[k]).filter(Boolean);
-  person.stations = st;
+  /* ⚠️ 순서 — personGo가 목록을 비우므로 **반드시 그 뒤에** 건다. */
   personGo(st.map(s => s.pos.clone()), { loop: !!opts.loop, speed: opts.speed || 0.62 });
+  person.stations = st;
   setStatus("동선 " + name + " — " + st.map(s => s.label).join(" → "));
   return st;
 }
@@ -3976,8 +3977,10 @@ function wanderStep() {
     t = workflowTarget(WANDER.job, { key:WANDER.last, step:WANDER.step },
                        person.node.position, RNG);
   WANDER.count++;
-  if (!t) { t = wanderTarget(); person.stations = [t];
-            personGo([t.pos], { speed: RNG.range(0.42, 0.88) }); return; }
+  if (!t) { t = wanderTarget();
+            personGo([t.pos], { speed: RNG.range(0.42, 0.88) });
+            person.stations = [t];            // personGo가 비운 뒤에 건다
+            return; }
   WANDER.last = t.key; WANDER.step = t.step;
   /* 직무 전이는 방 반대편이 아니라 **작업 구역 안**을 오간다. 직선으로 가면 설비 측면을
      긁는다(기존 균등 랜덤은 거리가 멀어 통로를 지나는 경우가 많았다). 추가 인원과 같은
@@ -3988,8 +3991,8 @@ function wanderStep() {
      일을 시작하는 그림이 된다(extrasUpdate가 "경유점 소진이 먼저다"로 막는 것과 같은 함정). */
   let route = navPath(person.node.position, t.pos);
   if (!route || !route.length) route = [t.pos];
-  person.stations = route.map((_, i) => i === route.length - 1 ? t : null);
   personGo(route, { speed: RNG.range(0.42, 0.88) });
+  person.stations = route.map((_, i) => i === route.length - 1 ? t : null);   // personGo 뒤에
 }
 /* ══ 인원 역할 ═══════════════════════════════════════════════════════════
    회의 요구: 여러 명이 **각기 다른 위험 수준**으로 움직여야 한다.
@@ -4120,6 +4123,16 @@ function personGo(points, opts) {
   person.path = points; person.pi = 0;
   person.loop = !!opts.loop; person.speed = opts.speed || 0.55;
   person.mode = "walk";
+  /* ⚠️ **스테이션 목록을 반드시 비운다** (2026-08-24).
+     personRoute가 남겨 둔 `person.stations`가 그대로 있으면, 그 뒤에 personGo로 준
+     **전혀 다른 경로**의 도착점에서도 그 목록을 스테이션으로 착각한다.
+     실측: 발표 ①번이 켠 순회 6곳이 남아 있어서, ⑤번 대피 때 조리원이 **문 앞에서
+     "선반 앞" 작업으로 인식해 무릎을 꿇고 2.2초 머물렀다.**
+     체류 시간과 진행 중인 액션도 같이 끊는다 — 걸어가라고 시켰는데 포즈가 화면을
+     잡고 있으면 보행 애니메이션이 한 프레임도 안 나온다(locoPlay가 acting을 존중한다). */
+  person.stations = null;
+  person.dwellT = 0;
+  if (typeof PERSON !== "undefined" && PERSON) PERSON.acting = null;
 }
 /* 사람 원기둥(r≈0.26) vs 설비 AABB — 최소 침투축으로 밀어내 통과 방지.
    GT용 FOOTPRINTS(여유 패딩)와 달리 실제 설비 치수의 타이트 박스를 쓴다 —
