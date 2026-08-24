@@ -5089,11 +5089,18 @@ const ENV_PROPS = [
       { f:"env_table.glb",  pos:[X1-0.45, 0,  3.40], ry:-P/2 },
 
       /* ── 남벽 배식·보관 라인 ── ry=180°로 방 안(−Z)을 향한다 */
+      /* ── 남벽 배식·보관 라인 ──
+         ⚠️ **출입문 정면(x 1.32~2.27)은 비운다.** 종전 선반이 x 2.20(반폭 0.55 → 1.65~2.75)
+         이라 문을 **0.62m 가로막고** 있었다(문에서 0.26m). 대피 시나리오를 하려면
+         문에서 방 안쪽으로 곧장 빠지는 통로가 있어야 한다(2026-08-24 사용자 지시).
+         선반 2대는 문 오른쪽으로 밀어 붙인다 — 벽 라인 성격은 그대로 유지된다. */
       { f:"env_serve.glb",  pos:[-2.00, 0, Z1-0.45], ry: P },            // 배식구
       { f:"env_table.glb",  pos:[ 0.20, 0, Z1-0.40], ry: P },
-      { f:"env_rack.glb",   pos:[ 2.20, 0, Z1-0.30], ry: P },
-      { f:"env_rack.glb",   pos:[ 3.50, 0, Z1-0.30], ry: P },
-      { f:"env_bin.glb",    pos:[ 4.50, 0, Z1-0.30], ry: P },
+      /* 간격: 선반 반폭 0.55 · 쓰레기통 0.25. 문 통로대(x 1.18~2.42) 밖에서 시작해
+         서로 안 겹치게 3.05 → 4.25 → 5.25 (동벽 5.75까지 0.25 여유). */
+      { f:"env_rack.glb",   pos:[ 3.05, 0, Z1-0.30], ry: P },           // 문 오른쪽으로 물림
+      { f:"env_rack.glb",   pos:[ 4.25, 0, Z1-0.30], ry: P },
+      { f:"env_bin.glb",    pos:[ 5.25, 0, Z1-0.30], ry: P },
 
       /* ── 통로 — 카트와 중앙 준비대. 빈 바닥을 메우되 **로봇 팔 반경(1.87m) 밖**에 둔다.
          안에 넣으면 통행 격자에서 로봇 옆 접근 칸이 사라져 끼임 시나리오가 죽는다. */
@@ -5102,7 +5109,7 @@ const ENV_PROPS = [
       { f:"env_pancart.glb",    pos:[ 3.10, 0,  2.60], ry:-0.15 },
       { f:"env_pancart.glb",    pos:[-1.60, 0,  3.60], ry: 1.35 },
       { f:"env_basketcart.glb", pos:[-2.90, 0,  2.30], ry: 0.30 },
-      { f:"env_basketcart.glb", pos:[ 0.90, 0,  3.20], ry:-0.25 },
+      { f:"env_basketcart.glb", pos:[-1.30, 0,  4.30], ry:-0.25 },   // 문 통로대 밖·사방 트인 자리(실측)
       { f:"env_bin.glb",        pos:[-3.30, 0, -3.30], ry:0 },  // 북서 모서리 — 국솥 라인 앞으로 물림
       /* 북측 통로 — 벽 라인과 아일랜드 사이가 4m 넘게 비어 있었다. 준비대와 카트를 채운다.
          전부 로봇 베이스에서 2.2m 밖이라 안전링 안쪽 통행 칸을 잡아먹지 않는다. */
@@ -5116,7 +5123,9 @@ const ENV_PROPS = [
       { f:"env_table.glb",      pos:[ 2.60, 0, -3.30], ry:0 },           // 북동 준비대
       { f:"env_basketcart.glb", pos:[ 1.20, 0, -3.20], ry: 0.35 },
       { f:"env_pancart.glb",    pos:[-3.60, 0,  0.20], ry:-0.30 },       // 서측 통로 대기 카트
-      { f:"env_pancart.glb",    pos:[ 2.00, 0,  3.80], ry: 0.55 }        // 배식 대기 카트
+      /* 배식 대기 카트 — 종전 (2.00, 3.80)은 **문 정면 1.9m**라 대피로를 정통으로 막았다.
+         통로 성격은 유지한 채 동쪽으로 비켜 세운다. */
+      { f:"env_pancart.glb",    pos:[ 3.60, 0,  4.65], ry: 0.55 }        // 배식 대기 카트
     );
     return;
   }
@@ -5452,15 +5461,42 @@ async function loadAssets() {
   //    이후 슬라이더·IK의 델타 회전이 정확한 피벗(S/E/W)에서 세그먼트를 구동한다.
   applyAll();
   const jn = JOINTS.map(j => j.node);
+  /* ?reach= 로 팔을 키웠으면 **부모로 붙이는 동안만 관절 앵커를 원래 길이로 되돌린다.**
+     ── 왜 필요한가 (2026-08-24, 사용자 보고 "모양이 틀어져서 이상해 보인다") ──
+     setParent는 월드 위치를 보존하며 로컬 오프셋을 역산한다. 그런데 세그먼트 노드는
+     GLB가 구워진 **원래 피벗(S/E/W)**에 놓여 있고, 앵커는 이미 REACH.k만큼 바깥으로
+     나가 있다. 그래서 역산된 로컬 오프셋이 그 차이를 그대로 흡수한다 — 즉 메시가
+     **관절을 따라가지 않고 원래 자리에 남는다.** 실측(k=1.308):
+       rgFore  (0.016, 0.014, 0) → (−0.142, −0.132, 0)   ≈ 19cm 처짐
+       rgHand  (0.015, 0.014, 0.030) → (−0.328, −0.132, 0.030) ≈ 35cm 처짐
+     팔뚝·손목이 팔꿈치보다 아래·뒤에 붙어 관절이 어긋나 보인다.
+     앵커를 원래 길이로 되돌린 상태에서 붙이면 오프셋은 GLB 원점 보정분(~1.5cm)만
+     남고, 그 보정분에 배율을 곱해 주면 확대해도 관절에 정확히 붙는다.
+     ⚠️ 배율만 주고 이 보정을 빼먹으면 안 된다 — 그게 원래 버그였다. */
+  const REACH_FIX = REACH.k !== 1 ? (() => {
+    const saved = [jn[2].position.x, jn[3].position.x];
+    jn[2].position.x /= REACH.k; jn[3].position.x /= REACH.k;   // 붙이는 동안만 원래 길이
+    jn[2].computeWorldMatrix(true); jn[3].computeWorldMatrix(true);
+    return () => { jn[2].position.x = saved[0]; jn[3].position.x = saved[1];
+                   jn[2].computeWorldMatrix(true); jn[3].computeWorldMatrix(true); };
+  })() : null;
   robotGlb.j1.setParent(jn[0]);
   robotGlb.upper.setParent(jn[1]);
   robotGlb.fore.setParent(jn[2]);
   robotGlb.hand.setParent(jn[4]);   // wrist=0 → j5가 W에 위치, 피치(J4)+롤(J5) 모두 반영
+  if (REACH_FIX) {
+    /* 남은 오프셋은 GLB 원점 보정분이다 — 메시가 배율만큼 커지므로 보정분도 같이 커져야
+       같은 자리를 가리킨다. 앵커 길이를 되돌리기 **전에** 곱한다. */
+    [robotGlb.upper, robotGlb.fore, robotGlb.hand].forEach(n => n && n.position.scaleInPlace(REACH.k));
+    REACH_FIX();
+  }
   robotGlb.base.setParent(scene.getTransformNodeByName("robotRoot"));   // GT 분류·이동 일관성
   /* ?reach= 로 팔을 키웠으면 **GLB 세그먼트도 같은 배율로** 늘린다.
      링크 길이(R.upper/R.fore)만 키우면 관절 앵커는 벌어지는데 메시는 원래 크기라
      세그먼트 사이가 빈다. 각 세그먼트는 자기 피벗(S/E/W)에 놓여 있으므로 그 노드에
      배율을 주면 피벗에서 늘어나 다음 앵커와 정확히 맞물린다.
+     ⚠️ **비균일 배율(길이축만 늘리기)은 쓰지 마라** — 관절 구가 타원으로 찌그러진다
+     (2026-08-24 시도했다가 되돌림). 굵어지는 게 싫으면 배율이 아니라 ?reach= 값을 낮춘다.
      setParent 뒤에 넣는다 — setParent가 월드 보존으로 로컬 스케일을 다시 계산하므로
      그 전에 주면 상쇄된다(실측). 페데스탈·J1은 그대로 둔다(바닥 고정면). */
   if (REACH.k !== 1) {
