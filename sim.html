@@ -3875,6 +3875,11 @@ const SCENARIO = {
 };
 /* 경로 = 스테이션 이름의 나열. 회의가 지목한 "선반-조리대-로봇 반경"이 work·toKettle이다. */
 const ROUTE = {
+  /* 정리 동선 (2026-08-24) — 발표 ①번 "평소대로 작업"에 쓴다.
+     종전 work는 선반↔조리대 2곳 왕복이라 같은 자리를 오갔다. 조리 전용 클립이 없으므로
+     **집고(pickup)·쭈그리고(kneel)·다루는(interact)** 동작이 붙은 스테이션을 넓게 돌아
+     "주변을 정리하는 중"으로 읽히게 한다. 솥 앞은 뺐다 — 조리 동작이 없어 어색하다. */
+  tidy : ["shelf", "store", "wrack", "etable", "prep", "shelf"],
   work    : ["shelf","prep","shelf","prep"],                        // 정상 조리 왕복
   toKettle: ["aisle","shelf","kettle"],                             // 솥 접근 — 감속·정지 트리거
   full    : ["door","aisle","shelf","prep","kettle","panel","aisle","door"],
@@ -8189,12 +8194,20 @@ function pushUpdate(dt) {
 function demoPushCart() {
   if (!PUSH.active) { setStatus("물리가 꺼져 있어 카트를 밀 수 없습니다"); return null; }
   const B = LAYOUT.robot.base;
-  // 로봇에서 가장 가까운 카트를 고른다 — 가장 짧게 밀어도 링에 들어간다
+  /* 로봇에서 가까운 것 중 **손 높이에 맞는 카트**를 고른다 (2026-08-24).
+     종전에는 거리만 봐서 바스켓 카트(윗면 0.81m)가 뽑혔는데, `Push_Loop`은 손을
+     1.18m로 내밀어 민다. 0.37m 차이를 상체 숙임으로 메우느라 **동작이 카트에 비해
+     과하게** 보였다. 팬 카트(1.43m)는 손이 오히려 윗면보다 낮아 숙일 필요가 없다.
+     거리에 높이 벌점을 더해 고른다 — 가까워도 낮은 카트면 밀린다. */
+  const HAND_Y = 1.18;
   let best = null, bd = 1e9;
   for (const b of PUSH.bodies) {
     const d = Math.hypot(b.box.position.x - B.x, b.box.position.z - B.z);
-    if (d < bd) { bd = d; best = b; }
+    const topY = b.box.position.y + b.half[2];
+    const cost = d + Math.max(0, HAND_Y - topY) * 6;      // 손보다 낮을수록 벌점
+    if (cost < bd) { bd = cost; best = b; }
   }
+  bd = best ? Math.hypot(best.box.position.x - B.x, best.box.position.z - B.z) : 0;
   if (!best) return null;
   const c = best.box.position;
   // 카트 → 로봇 방향. 사람은 그 반대편에 선다
@@ -8230,7 +8243,12 @@ function demoPushCart() {
 /* 상한 0.50rad(29°) — 스파인 굽힘 1rad당 손이 약 0.58m 내려간다(실측: 0.20→0.113m,
    0.40→0.232m). 낮은 물건(0.69~0.80m)에서 필요한 굽힘이 약 0.56rad이라 상한에 걸리지만,
    그 이상은 미는 자세가 아니라 절하는 자세가 된다. 손이 조금 뜨는 쪽을 택한다. */
-const PUSH_LEAN_MAX = 0.50, PUSH_LEAN_GAIN = 2.2, PUSH_LEAN_RELAX = 1.5;
+/* 상한 0.50rad(28.6°)은 제일 낮은 물건(쓰레기통 0.69m)에 손을 닿게 하려고 잡은 값이다.
+   그런데 그만큼 숙이면 **평범한 카트에서는 동작이 과해 보인다**(2026-08-24 피드백).
+   0.34rad(19.5°)로 낮춘다 — 바스켓 카트(0.81m)까지는 이걸로 닿고, 그보다 낮은 물건은
+   손이 조금 뜬다. 과한 자세보다 그쪽이 낫다. 런타임에서 __sim.PUSH_LEAN으로 조절 가능. */
+const PUSH_LEAN = { max: 0.34, gain: 1.8, relax: 1.5 };
+const PUSH_LEAN_MAX = PUSH_LEAN.max, PUSH_LEAN_GAIN = PUSH_LEAN.gain, PUSH_LEAN_RELAX = PUSH_LEAN.relax;
 function pushLeanRig(rig, sk, dt) {
   if (!rig || !sk) return;
   if (!rig.__hands) {
@@ -8250,10 +8268,10 @@ function pushLeanRig(rig, sk, dt) {
   const sec = (dt / 1000);
   if (rig.pushT > 0 && rig.pushTopY != null) {
     const handY = (hL.getAbsolutePosition(mesh).y + hR.getAbsolutePosition(mesh).y) / 2;
-    rig.__lean = clamp((rig.__lean || 0) + (handY - rig.pushTopY) * PUSH_LEAN_GAIN * sec,
-                       0, PUSH_LEAN_MAX);
+    rig.__lean = clamp((rig.__lean || 0) + (handY - rig.pushTopY) * PUSH_LEAN.gain * sec,
+                       0, PUSH_LEAN.max);
   } else {
-    rig.__lean = Math.max(0, (rig.__lean || 0) - PUSH_LEAN_RELAX * sec);
+    rig.__lean = Math.max(0, (rig.__lean || 0) - PUSH_LEAN.relax * sec);
   }
   if (rig.__lean > 0.002) {
     const e = tn.rotationQuaternion.toEulerAngles();
@@ -12729,7 +12747,7 @@ function demoNormalWork() {
   /* "정상 작업"이 서 있는 그림이면 안 된다. 조리 전용 액션(젓기·투입)은 리그에 없지만,
      스테이션 작업 루트가 선반에서 집고(pickup) 조리대·솥에서 다루는(interact) 동작을
      돌려 준다 — 지금 가진 것 중 작업으로 보이는 유일한 경로다. */
-  if (typeof personRoute === "function") personRoute("work", { loop:true });
+  if (typeof personRoute === "function") personRoute("tidy", { loop:true });
   demoPersonView();
 }
 
@@ -12750,7 +12768,7 @@ function demoDetectOn() {
   if (!MIL.on) $("milBtn").click();
   /* 실영상 패널도 같이 연다 — 시뮬이 시뮬을 검출하는 그림만으로는 설득이 안 된다.
      클립이 하나도 없으면 조용히 넘어간다(패널이 안 열릴 뿐 시나리오는 계속 간다). */
-  if (vidPlaySeq() && ONNX.session && !VID.detect) $("vidDetectBtn").click();
+  if (vidShowFor("fire") && ONNX.session && !VID.detect) $("vidDetectBtn").click();
 }
 
 function demoCollapse() { personFall(); }
@@ -12840,8 +12858,8 @@ const DEMO_SCRIPTS = {
        2.96/255 = 1.16%다. 안 보이는 것을 자막으로 우기면 관객이 먼저 알아챈다.
        김 자체를 보이게 만드는 작업은 팀의 수증기 방침 결정 뒤에 한다(별건).
        demoSteamUp()은 그대로 둔다 — 데이터에는 남고, 보이게 되면 자막만 되돌리면 된다. */
-    { at:7000,  msg:"② 국솥이 끓습니다 — 조리가 한창입니다",             act: () => { demoSteamUp(); demoKettleView(); } },
-    { at:15000, msg:"③ 과열된 기름에 불이 붙었습니다",                  act: () => { demoIgnite(); demoKettleView(); } },
+    { at:7000,  msg:"② 국솥이 끓습니다 — 조리가 한창입니다",             act: () => { demoSteamUp(); demoKettleView(); vidShowFor("normal"); } },
+    { at:15000, msg:"③ 과열된 기름에 불이 붙었습니다",                  act: () => { demoIgnite(); demoKettleView(); vidShowFor("smoke"); } },
     { at:24000, msg:"④ 연기가 자욱합니다 — 카메라가 화재를 놓칩니다",   act: demoWideView },
     /* ⚠️ demoHazard는 "push"/"pinch"만 받는다. 처음에 "fall"을 넘겼더니 findHazardSpot이
        null을 돌려주고 **조용히 아무 일도 안 일어났다.** 실신은 주인공 액션이다. */
@@ -12857,8 +12875,8 @@ const DEMO_SCRIPTS = {
        2.96/255 = 1.16%다. 안 보이는 것을 자막으로 우기면 관객이 먼저 알아챈다.
        김 자체를 보이게 만드는 작업은 팀의 수증기 방침 결정 뒤에 한다(별건).
        demoSteamUp()은 그대로 둔다 — 데이터에는 남고, 보이게 되면 자막만 되돌리면 된다. */
-    { at:7000,  msg:"② 국솥이 끓습니다 — 조리가 한창입니다",             act: () => { demoSteamUp(); demoKettleView(); } },
-    { at:15000, msg:"③ 과열된 기름에 불이 붙었습니다",                  act: () => { demoIgnite(); demoKettleView(); } },
+    { at:7000,  msg:"② 국솥이 끓습니다 — 조리가 한창입니다",             act: () => { demoSteamUp(); demoKettleView(); vidShowFor("normal"); } },
+    { at:15000, msg:"③ 과열된 기름에 불이 붙었습니다",                  act: () => { demoIgnite(); demoKettleView(); vidShowFor("smoke"); } },
     { at:21000, msg:"④ 화재를 즉시 감지했습니다 — 검출 시작",           act: demoDetectOn },
     { at:30000, msg:"⑤ 조리원이 출입구로 대피합니다",                   act: demoEvacuate },
     { at:42000, msg:"⑥ 진화 — 연기가 걷힙니다",                        act: () => { demoWideView(); demoExtinguish(9000); } },
@@ -13102,11 +13120,26 @@ const VID_LABEL  = { normal:"① 정상 조리", smoke:"② 연기 낀 조리", 
    여기서만 색을 얹는다(시뮬 오버레이 색은 건드리지 않는다). */
 const VID_COLORS = Object.assign({ fire:"#ff7043", smoke:"#b0bec5" }, MIL_COLORS);
 
+/* 패널을 3D 화면 안 오른쪽 아래에 붙인다. 위쪽은 PiP, 왼쪽 위는 상태 HUD,
+   아래 가운데는 FPS 줄이 쓰므로 남는 자리가 여기다. 아래 여백을 44로 둔 것은
+   캔버스 우하단 모서리의 작은 토글 버튼을 가리지 않기 위해서다. */
+function vidPlace() {
+  if (!VID.wrap) return;
+  const cv = engine.getRenderingCanvas().getBoundingClientRect();
+  const w = Math.max(280, Math.min(Math.round(cv.width * 0.42), 420));
+  VID.wrap.style.width = w + "px";
+  VID.wrap.style.left = Math.round(cv.right - w - 12) + "px";
+  VID.wrap.style.top = "auto";
+  VID.wrap.style.bottom = Math.round(window.innerHeight - cv.bottom + 44) + "px";
+}
+
 function vidBuild() {
   if (VID.wrap) return;
   const w = document.createElement("div");
   w.id = "vidPanel";
-  w.style.cssText = "position:fixed;right:12px;top:64px;width:min(38vw,520px);z-index:120;" +
+  /* 위치는 vidPlace()가 **캔버스 기준으로** 잡는다. 종전에는 right:12px 고정이라
+     3D 화면(200~950px)을 넘어 **오른쪽 제어판까지 덮었다**(2026-08-24 피드백). */
+  w.style.cssText = "position:fixed;z-index:120;" +
     "background:#0d1117ee;border:1px solid #30363d;border-radius:8px;overflow:hidden;display:none;" +
     "font:12px/1.5 system-ui,sans-serif;color:#e6edf3;box-shadow:0 8px 24px #0008";
   w.innerHTML =
@@ -13117,10 +13150,14 @@ function vidBuild() {
     '<div style="position:relative;background:#000;line-height:0">' +
       '<video id="vidEl" muted playsinline style="display:block;width:100%"></video>' +
       '<canvas id="vidOv" style="position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none"></canvas>' +
+      '<div id="vidPh" style="display:none;align-items:center;justify-content:center;height:150px;' +
+        'color:#8b949e;font-size:12px;background:#0d1117;line-height:1.6;text-align:center"></div>' +
     '</div>' +
     '<div id="vidStatus" style="padding:5px 10px;color:#8b949e">대기</div>';
   document.body.appendChild(w);
   VID.wrap = w;
+  vidPlace();
+  window.addEventListener("resize", vidPlace);
   VID.el = w.querySelector("#vidEl");
   VID.ov = w.querySelector("#vidOv");
   w.querySelector("#vidClose").addEventListener("click", () => vidOpen(false));
@@ -13130,6 +13167,7 @@ function vidBuild() {
 
 function vidOpen(show) {
   vidBuild();
+  vidPlace();                                   // 창 크기가 바뀌었을 수 있다
   VID.open = !!show;
   VID.wrap.style.display = VID.open ? "block" : "none";
   if (!VID.open) { VID.el.pause(); VID.detect = false; }
@@ -13163,6 +13201,29 @@ function vidNext() {
   const i = have.indexOf(VID.cur);
   if (i >= 0 && i + 1 < have.length) vidPlay(have[i + 1]);
   else VID.el.pause();                      // 마지막 클립 — 멈춰서 마지막 프레임을 남긴다
+}
+
+/* 지금 장면에 **맞는** 클립만 튼다 (2026-08-24 피드백).
+   종전에는 비트와 무관하게 항상 첫 클립(정상 조리)을 틀었다. 그래서 시뮬은 연기로
+   자욱한데 우측 패널은 **환한 정상 주방**이 나왔다 — 보는 사람이 먼저 이상함을 느낀다.
+   해당 클립이 없으면 **아무 클립도 틀지 않고** 무엇이 없는지 적는다. 없는 것을 있는 척
+   메우는 것보다 비어 있는 편이 정직하고, 클립이 들어오면 그 자리에 그대로 채워진다. */
+function vidShowFor(slot) {
+  vidBuild(); vidOpen(true);
+  const ph = VID.wrap.querySelector("#vidPh");
+  if (VID.clips[slot]) {
+    if (ph) ph.style.display = "none";
+    VID.el.style.display = "block";
+    if (VID.cur !== slot) vidPlay(slot);
+    return true;
+  }
+  VID.el.pause(); VID.el.style.display = "none";
+  VID.cur = null;
+  if (ph) { ph.style.display = "flex"; ph.textContent = (VID_LABEL[slot] || slot) + " 클립 준비 중"; }
+  const c = VID.wrap.querySelector("#vidClip");
+  if (c) c.textContent = VID_LABEL[slot] || slot;
+  VID.boxes = null; vidDraw();
+  return false;
 }
 
 function vidPlaySeq() {
@@ -13287,6 +13348,8 @@ window.__sim.demoEvacuate = demoEvacuate;
 window.__sim.VID = VID;
 window.__sim.vidPlaySeq = vidPlaySeq;
 window.__sim.vidOpen = vidOpen;
+window.__sim.vidShowFor = vidShowFor;
+window.__sim.PUSH_LEAN = PUSH_LEAN;   // 밀기 숙임 조절 — max 0.34rad
 window.__sim.vidDetectOnce = vidDetectOnce;
 window.__sim.SHOTS = SHOTS;
 window.__sim.SHOW = SHOW;
