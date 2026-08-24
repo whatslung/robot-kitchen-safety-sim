@@ -46,6 +46,8 @@ from pathlib import Path
 
 import numpy as np
 
+from trajectory.collection import save_trajectory_scene
+
 # ── 의존성 로드 — 없으면 DUMMY 모드로 떠서 배선을 먼저 검증한다 ──────────────
 MODEL = None
 TRACKER_CLS = None
@@ -379,22 +381,16 @@ async def shot(req: Request):
 
 @app.post("/traj")
 async def traj(req: Request):
-    """시뮬이 만든 궤적 scene 하나를 dataset/trajectories/<scene_id>.json 에 쓴다.
+    """시뮬이 만든 궤적 scene 하나를 허용된 trajectory dataset에 쓴다.
 
     /dataset·/shot과 같은 규약 — 시뮬이 scene 완결 시 scene JSON 전체를 POST하면 서버가
     받아 쓴다(폴더 선택창 없음, 클릭 0회). dataset/이 gitignore라 궤적도 자동 제외된다.
     요청: {"scene_id":"island_seed7_0000", "schema":1, "seed":7, ..., "nodes":[...]}
     """
     try:
-        body = await req.json()
-        safe = lambda v, d: "".join(c for c in str(v) if c.isalnum() or c in "-_")[:80] or d
-        sid = safe(body.get("scene_id", "scene"), "scene")
-        root = _ROOT / "dataset" / "trajectories"
-        root.mkdir(parents=True, exist_ok=True)
-        (root / (sid + ".json")).write_text(
-            json.dumps(body, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-        n = len(list(root.glob("*.json")))
-        return {"ok": True, "count": n, "dir": str(root)}
+        return save_trajectory_scene(await req.json(), _ROOT)
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"error": str(exc)})
     except Exception as e:                # noqa: BLE001
         return JSONResponse(status_code=500, content={"error": str(e)})
 
