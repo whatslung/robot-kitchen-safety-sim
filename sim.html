@@ -3463,18 +3463,28 @@ function fireSeekTo(sec) {
   const target = Math.min(fsmoke.getCapacity() * 0.9, fsmoke.emitRate * avgLife);
   const sv = [firePS, fsmoke, steam, bubbles].map(P => ({ P, s: P.updateSpeed }));
   sv.forEach(x => { x.P.updateSpeed = x.s * 10; });
-  /* ⚠️ 가드가 90이었는데 **후반 단계가 목표의 절반도 안 찼다**(2026-08-24 실측):
+  /* ⚠️ **여기는 아직 완전히 해결되지 않았다** (2026-08-24).
+     가드가 90이었을 때 후반 단계가 목표의 절반도 안 찼다:
        10s 목표 2,472 → 2,474 (달성) · 40s 6,304 → 4,537 · 80s 9,104 → 4,541
-     빨리감기로 200프레임을 더 주면 9,295까지 오른다 — 평형이 아니라 **상한에 걸린 것**이다.
      그대로 두면 fire_progress는 0.9인데 연기는 절반인 표본이 데이터셋에 들어간다.
-     상한을 올리되, 더 이상 안 늘면(평형 도달) 바로 빠져나와 프레임을 낭비하지 않는다. */
-  let guard = 0, stall = 0, prev = -1;
-  while (fsmoke.particles.length < target && guard++ < 400) {
-    scene.render();
-    const n = fsmoke.particles.length;
-    if (n <= prev) { if (++stall >= 12) break; } else stall = 0;
-    prev = n;
-  }
+     (새로 넣은 meta.scene.smoke_particles가 이 어긋남을 드러냈다.)
+
+     상한을 400으로 올려 개선했다 — 빠른 환경에서는 80s가 9,105/9,100으로 **100%** 찬다.
+     다만 **느린 환경에서는 400프레임으로도 부족하다**: 렌더가 40ms대인 검증용
+     브라우저에서 12s 표본이 1,838/2,902(63%)에 그쳤다.
+
+     근본 원인은 프레임 수가 아니라 **프레임당 붙는 입자 수**다. Babylon은
+     emitRate × updateSpeed × getAnimationRatio() 만큼 배출하는데, 이런 강제 루프에서는
+     animationRatio가 0.06까지 떨어진다(인계문서의 그 함정). 그래서 프레임을 더 줘도
+     선형으로만 는다.
+
+     제대로 고치려면 **빨리감기 배수(아래 ×10)를 올려야 한다.** 다만 배수를 올리면 한
+     스텝의 이동거리가 커져 smokeConfineTick의 천장·후드 가두기를 넘어설 수 있으므로,
+     정상 속도 머신에서 **연기 분포(평균 높이·반경)를 켜기 전후로 비교**한 뒤 정해야 한다.
+     ⚠️ 조기 탈출("더 이상 안 늘면 그만")도 넣어 봤다가 뺐다 — 한 프레임에 붙는 입자가
+     워낙 적어 **안 느는 프레임이 정상적으로 섞이는데** 그걸 평형으로 오인해 끊었다. */
+  let guard = 0;
+  while (fsmoke.particles.length < target && guard++ < 400) scene.render();
   sv.forEach(x => { x.P.updateSpeed = x.s; });
   FIRE_FOG.t = t;                 // 빨리감기 동안 틱이 밀어 놓은 값을 목표로 되돌린다
   fireFogTick(0);                 // 연무 농도·배출량을 그 시점 값으로 확정
