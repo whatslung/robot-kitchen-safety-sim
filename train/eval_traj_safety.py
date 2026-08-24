@@ -32,6 +32,17 @@ from trajectory.sim_traj import load_windows, PRED
 RADII = [3.1, 2.0]
 PREDICTORS = ["등속(const-vel)", "칼만(Kalman)", "학습형 LSTM(최빈)", "학습형 LSTM(전모드)"]
 
+# 평가 지평선. 캡처는 균일 0.4s(2.5Hz)라 스텝수×0.4 = 초.
+#   라이브(1.6s=4스텝) — sim.html PRED.horizon 과 동일한 '실제 로봇 제어' 조건.
+#   오프라인(4.8s=12스텝) — 학습·오프라인 평가 지평선(PRED). 발표 대표 수치는 라이브 조건을 쓴다.
+STEP_DT = 0.4
+HORIZONS = [("라이브 제어 1.6s(4스텝)", 4), ("오프라인 평가 4.8s(12스텝)", PRED)]
+
+
+def _truncate(path, horizon_steps):
+    """예측/GT 경로를 앞에서 horizon_steps개만 남긴다(라이브 지평선 모사). None이면 그대로."""
+    return path[:horizon_steps] if horizon_steps else path
+
 
 def _resolve_weights() -> str:
     """학습형 가중치: 로컬 있으면 그대로, 없으면 허깅페이스에서 받는다(검출기와 동일 방식)."""
@@ -51,8 +62,13 @@ def _cur_dist(win) -> float:
     return ((last[1] - win.robot[0]) ** 2 + (last[2] - win.robot[1]) ** 2) ** 0.5
 
 
-def evaluate(R: float, split: str = "val", traj_dir=None):
-    """반경 R에서 예측기별 TP/FP/FN 을 센다. 대상 = 현재 반경 밖 윈도우."""
+def evaluate(R: float, split: str = "val", traj_dir=None, horizon_steps=None):
+    """반경 R에서 예측기별 TP/FP/FN 을 센다. 대상 = 현재 반경 밖 윈도우.
+
+    horizon_steps: 예측/GT 경로를 앞에서 이만큼 스텝만 보고 판정한다(라이브 1.6s=4스텝).
+                   None이면 전체 지평선(4.8s=12스텝). GT·예측 양쪽을 같은 지평선으로 잘라
+                   '지평선을 짧게 보면 진입을 덜 미리 본다'는 라이브 조건을 그대로 반영한다.
+    """
     wins = load_windows(split, traj_dir=traj_dir)
     cv = ConstantVelocityPredictor(n_steps=PRED)
     kf = KalmanPredictor(n_steps=PRED)
@@ -66,17 +82,17 @@ def evaluate(R: float, split: str = "val", traj_dir=None):
         if cur < R:
             continue                                    # 이미 안쪽 → 반응형 몫, 대상 아님
         n_anti += 1
-        gt_xz = [(x, z) for (_, x, z) in win.gt]
+        gt_xz = _truncate([(x, z) for (_, x, z) in win.gt], horizon_steps)
         gt_entry = enters_radius(gt_xz, win.robot, R)
         if gt_entry:
             n_pos += 1
-        cv_xz = [(x, z) for (_, x, z, _) in cv.predict(win.scene).per_agent[0][0].steps]
-        kf_xz = [(x, z) for (_, x, z, _) in kf.predict(win.scene).per_agent[0][0].steps]
+        cv_xz = _truncate([(x, z) for (_, x, z, _) in cv.predict(win.scene).per_agent[0][0].steps], horizon_steps)
+        kf_xz = _truncate([(x, z) for (_, x, z, _) in kf.predict(win.scene).per_agent[0][0].steps], horizon_steps)
         pred_entry = {
             "등속(const-vel)": enters_radius(cv_xz, win.robot, R),
             "칼만(Kalman)": enters_radius(kf_xz, win.robot, R),
-            "학습형 LSTM(최빈)": enters_radius(modes[0]["path"], win.robot, R),
-            "학습형 LSTM(전모드)": any(enters_radius(m["path"], win.robot, R) for m in modes),
+            "학습형 LSTM(최빈)": enters_radius(_truncate(modes[0]["path"], horizon_steps), win.robot, R),
+            "학습형 LSTM(전모드)": any(enters_radius(_truncate(m["path"], horizon_steps), win.robot, R) for m in modes),
         }
         for k in PREDICTORS:
             cell = entry_confusion(cur, gt_entry, pred_entry[k], R)
@@ -99,10 +115,13 @@ def _table(res) -> str:
 
 
 def main():
-    results = [evaluate(R, "val") for R in RADII]
-    for res in results:
-        print(f"\n[R={res['R']}m 정지반경] 대상(진입전 밖) {res['n_anti']} · 실제 진입 {res['n_pos']}")
-        print(_table(res))
+    # (지평선 라벨, 스텝수) × 반경 = 표 하나. 라이브 1.6s와 오프라인 4.8s를 나란히 낸다.
+    results = {label: [evaluate(R, "val", horizon_steps=steps) for R in RADII]
+               for label, steps in HORIZONS}
+    for label, _ in HORIZONS:
+        for res in results[label]:
+            print(f"\n[{label} · R={res['R']}m] 대상(진입전 밖) {res['n_anti']} · 실제 진입 {res['n_pos']}")
+            print(_table(res))
     print("  참고: 반응형(예측 없음)은 이 윈도우에서 recall=0 (지금 밖이라 진입을 못 봄).")
 
     doc = ROOT / "docs" / "chanwoo" / "prediction-safety-eval.md"
@@ -110,20 +129,29 @@ def main():
         "# 궤적 예측 안전 지표 — 정지반경 진입 recall/precision (이슈 #2)\n",
         "> 자동 생성: `train/eval_traj_safety.py` · 데이터 `dataset/trajectories/`",
         "> ADE/FDE(위치오차)는 [prediction-eval.md](prediction-eval.md), 여기는 **안전 결정** 지표.",
-        "> val = seed%5==0 · 관측 8스텝(3.2s) → 예측 12스텝(4.8s)\n",
-        "\"지금 정지반경 **밖**에 있는 사람이 4.8s 안에 반경 안으로 진입하는지\"를 미리 맞혔나.",
+        "> val = seed%5==0 · 관측 8스텝(3.2s) → 예측 최대 12스텝(4.8s)\n",
+        "\"지금 정지반경 **밖**에 있는 사람이 지평선 안에 반경 안으로 진입하는지\"를 미리 맞혔나.",
         "현재 반경 안의 사람은 이미 반응형이 멈추므로 대상 제외. 선제 안전층이라 **recall(놓치면 충돌) 우선**.\n",
+        "> ⚠️ **지평선을 반드시 구분한다.** 아래는 두 지평선의 값을 나란히 낸다.",
+        "> **라이브 제어 1.6s** = `sim.html`의 `PRED.horizon`, 즉 실제 로봇이 감속·정지에 쓰는 조건이다.",
+        "> **오프라인 평가 4.8s** = 학습·오프라인 지평선(12스텝). 지평선이 길수록 진입을 더 일찍 보므로",
+        "> recall이 높게 나온다 — **발표 대표 수치는 라이브 1.6s 값을 쓴다.** 4.8s 수치를 라이브 성능처럼",
+        "> 제시하지 않는다.\n",
     ]
-    for res in results:
-        body.append(f"## 정지반경 R = {res['R']} m\n")
-        body.append(f"대상(진입 전 밖) 윈도우 **{res['n_anti']}** · 실제 진입 **{res['n_pos']}**\n")
-        body.append(_table(res) + "\n")
+    for label, _ in HORIZONS:
+        body.append(f"# {label}\n")
+        for res in results[label]:
+            body.append(f"## 정지반경 R = {res['R']} m\n")
+            body.append(f"대상(진입 전 밖) 윈도우 **{res['n_anti']}** · 실제 진입 **{res['n_pos']}**\n")
+            body.append(_table(res) + "\n")
     body += [
         "## 읽는 법\n",
         "- **recall**: 실제 진입 중 미리 잡은 비율(놓치면 충돌). **precision**: 경보 중 진짜 비율(낮으면 헛정지).",
         "- **학습형(최빈)**: 가중치 최상위 단일 모드. **학습형(전모드)**: K개 모드 합집합(보수적, recall↑·헛정지↑).",
         "- 반응형(예측 없음)은 이 윈도우에서 recall=0 — 지금 밖이라 진입을 못 본다. 예측기의 값어치가 여기서 드러난다.",
         "- 운영점(경보 임계 τ)으로 recall↔precision 균형 조절은 `train/spike_oppoint.py` 참고.",
+        "- **지평선 비교**: 같은 예측기라도 1.6s에서 recall이 4.8s보다 낮은 게 정상이다(짧게 보므로).",
+        "  라이브 로봇은 1.6s로 판정하므로, 안전 성능 주장은 1.6s 값 기준이어야 한다.",
     ]
     doc.write_text("\n".join(body) + "\n", encoding="utf-8")
     print(f"\n표를 {doc} 에 기록했다.")

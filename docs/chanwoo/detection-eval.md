@@ -371,7 +371,7 @@ uv run python backend/detect_server.py --port 8001
 | `best.onnx` | 37 MB | ONNX Runtime (opset 12, 브라우저 ort-web 호환) |
 
 모델 카드에 클래스 순서·in-domain 지표·학습 조건과 함께 **"실사에는 쓸 수 없다"**(실사 recall
-0.048)를 명시했다. §2·§5-7의 결론이라 외부 이용자가 오용하지 않도록 카드에 직접 박아둔다.
+0.270 / precision 0.072 / mAP50 0.048)를 명시했다. §2·§5-7의 결론이라 외부 이용자가 오용하지 않도록 카드에 직접 박아둔다.
 
 라이선스는 **AGPL-3.0** — 베이스 Ultralytics YOLO11이 AGPL이고 학습 가중치도 그 범위로 본다.
 GitHub 저장소가 이미 공개라 소스공개 의무는 충족된 상태다. 상용에서 이 의무를 피해야 하면
