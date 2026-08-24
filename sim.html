@@ -12412,7 +12412,10 @@ async function spawnJob(jobKey) {
   const taken = EXTRAS.filter(o => o !== P).map(o => o.root.position);
   const spot = J.route.map(k => STATION[k]).filter(Boolean)
     .find(st => taken.every(t => Math.hypot(t.x - st.pos.x, t.z - st.pos.z) > PERSON_SEP * 2));
-  if (spot) P.root.position.copyFrom(spot.pos);
+  if (spot) {
+    P.root.position.copyFrom(spot.pos);
+    resolvePersonCollision(P.root.position);
+  }
   extraNextTarget(P);
   const B = LAYOUT.robot.base;
   const minD = Math.min(...J.route.map(k => STATION[k])

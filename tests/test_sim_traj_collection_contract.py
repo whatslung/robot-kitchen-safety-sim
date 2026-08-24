@@ -30,3 +30,11 @@ def test_collection_button_passes_start_seed():
 
 def test_job_set_selection_depends_on_seed_not_batch_position():
     assert 'TRAJ.jobSets[((base + k) - 1) % TRAJ.jobSets.length]' in SIM
+
+
+def test_job_spawn_resolves_equipment_collision_before_path_creation():
+    expected = (
+        "P.root.position.copyFrom(spot.pos);\n"
+        "    resolvePersonCollision(P.root.position);"
+    )
+    assert expected in SIM
