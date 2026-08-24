@@ -28,6 +28,7 @@ from trajectory.sim_traj import load_windows, OBS, PRED                        #
 STEP_DT = 0.4
 SAFE_R = 3.1                 # 정지반경(SAFE.NOM_STOP)
 SAFE_HORIZON_STEPS = 4       # 라이브 제어 1.6s (발표 대표 조건)
+H_LIVE = 4                   # 라이브 1.6s(4스텝) — 안전 결정 지평선
 B = 2000                     # bootstrap 반복
 _TRAJ = ROOT / "training" / "traj_predictor"
 
@@ -101,38 +102,41 @@ def eval_accuracy(split, learned):
     modes_by = {name: lp.predict_batch(hists) for name, lp in learned.items()}
 
     names = acc_names(learned)
-    per = defaultdict(lambda: {p: {"ade": [], "fde": [], "ade_m": [], "fde_m": []} for p in names})
+    # 두 지평선을 함께 낸다: 4.8s(전체 12스텝) + 라이브 1.6s(4스텝, 안전 결정 지평선).
+    fields = ["ade", "fde", "ade_m", "fde_m", "ade16", "fde16", "ade16_m", "fde16_m"]
+    per = defaultdict(lambda: {p: {k: [] for k in fields} for p in names})
+
+    def _af(steps, gt):
+        return (ade(steps, gt), fde(steps, gt),
+                ade(steps[:H_LIVE], gt[:H_LIVE]), fde(steps[:H_LIVE], gt[:H_LIVE]))
+
+    def _af_min(mode_steps, gt):        # minADE@K: 모드 중 최선 (각 지평선 독립)
+        return (min(ade(s, gt) for s in mode_steps), min(fde(s, gt) for s in mode_steps),
+                min(ade(s[:H_LIVE], gt[:H_LIVE]) for s in mode_steps),
+                min(fde(s[:H_LIVE], gt[:H_LIVE]) for s in mode_steps))
+
     for i, w in enumerate(wins):
         cv_s = cv.predict(w.scene).per_agent[0][0].steps
         kf_s = kf.predict(w.scene).per_agent[0][0].steps
         sh_s = sh.predict_steps(w.scene.agents[0], w.scene.now, w.scene.horizon, w.goal)
-        vals = {
-            "등속(const-vel)": (ade(cv_s, w.gt), fde(cv_s, w.gt)),
-            "칼만(Kalman)": (ade(kf_s, w.gt), fde(kf_s, w.gt)),
-            "스테이션(goal)": (ade(sh_s, w.gt), fde(sh_s, w.gt)),
-        }
+        vals = {"등속(const-vel)": _af(cv_s, w.gt), "칼만(Kalman)": _af(kf_s, w.gt),
+                "스테이션(goal)": _af(sh_s, w.gt)}
         for name in learned:
-            modes = modes_by[name][i]
-            ml_s = _steps_from_path(modes[0]["path"])
-            vals[f"학습형 {name}(최빈)"] = (ade(ml_s, w.gt), fde(ml_s, w.gt))
-            vals[f"학습형 {name}(minADE@{K})"] = (
-                min(ade(_steps_from_path(m["path"]), w.gt) for m in modes),
-                min(fde(_steps_from_path(m["path"]), w.gt) for m in modes))
-        for p, (a, f) in vals.items():
+            mode_steps = [_steps_from_path(m["path"]) for m in modes_by[name][i]]
+            vals[f"학습형 {name}(최빈)"] = _af(mode_steps[0], w.gt)
+            vals[f"학습형 {name}(minADE@{K})"] = _af_min(mode_steps, w.gt)
+        for p, (a, f, a16, f16) in vals.items():
             d = per[w.scene_id][p]
-            d["ade"].append(a); d["fde"].append(f)
+            d["ade"].append(a); d["fde"].append(f); d["ade16"].append(a16); d["fde16"].append(f16)
             if w.moved:
                 d["ade_m"].append(a); d["fde_m"].append(f)
+                d["ade16_m"].append(a16); d["fde16_m"].append(f16)
 
     scenes = list(per.keys())
     out = {"split": split, "n_scenes": len(scenes), "n_windows": len(wins), "order": names, "preds": {}}
     for p in names:
-        out["preds"][p] = {
-            "ade": _ci([per[s][p]["ade"] for s in scenes], _mean_concat),
-            "fde": _ci([per[s][p]["fde"] for s in scenes], _mean_concat),
-            "ade_moved": _ci([per[s][p]["ade_m"] for s in scenes], _mean_concat),
-            "fde_moved": _ci([per[s][p]["fde_m"] for s in scenes], _mean_concat),
-        }
+        out["preds"][p] = {k.replace("_m", "_moved") if k.endswith("_m") else k:
+                           _ci([per[s][p][k] for s in scenes], _mean_concat) for k in fields}
     return out
 
 
@@ -211,6 +215,17 @@ def _acc_table(res):
     return "\n".join(lines)
 
 
+def _acc16_table(res):
+    """라이브 1.6s(안전 결정 지평선) 정확도 — 안전 recall/precision과 같은 지평선."""
+    lines = ["| 예측기 | ADE@1.6s 95%CI | FDE@1.6s 95%CI | ADE@1.6s(움직임) | FDE@1.6s(움직임) |",
+             "|---|---|---|---|---|"]
+    for p in res["order"]:
+        d = res["preds"][p]
+        lines.append(f"| {p} | {_f(d['ade16'])} | {_f(d['fde16'])} | "
+                     f"{_f(d['ade16_moved'])} | {_f(d['fde16_moved'])} |")
+    return "\n".join(lines)
+
+
 def _safe_table(res):
     lines = ["| 예측기 | recall 95%CI | precision 95%CI | (TP/FP/FN) |", "|---|---|---|---|"]
     for p in res["order"]:
@@ -249,7 +264,8 @@ def main():
 
     print(f"split scenes: {counts} · 백본: {list(learned)} · 선택(val): 정확도={val_champ_acc} · 안전={val_champ_safe}")
     for s in ("val", "test"):
-        print(f"\n[{s}] 정확도 (scene {acc[s]['n_scenes']} · win {acc[s]['n_windows']})\n" + _acc_table(acc[s]))
+        print(f"\n[{s}] 정확도 4.8s (scene {acc[s]['n_scenes']} · win {acc[s]['n_windows']})\n" + _acc_table(acc[s]))
+        print(f"[{s}] 정확도 1.6s(라이브)\n" + _acc16_table(acc[s]))
         print(f"[{s}] 안전 1.6s R={SAFE_R} (대상 {safe[s]['n_anti']} · 진입 {safe[s]['n_pos']})\n" + _safe_table(safe[s]))
 
     _write_docs(man, acc, safe, selection, list(learned))
@@ -270,13 +286,21 @@ def _write_docs(man, acc, safe, selection, backbones):
     (ROOT / "docs" / "chanwoo" / "prediction-eval.md").write_text(
         "# 궤적 예측 정확도 — ADE/FDE (P0-1 split·CI · 백본 비교)\n\n" + head +
         f"\n선택(val 기준): 정확도 대표 = **{selection['chosen_accuracy']}**\n\n"
-        f"## val (선택 근거)\n\n{_acc_table(acc['val'])}\n\n"
-        f"## test (최종 1회)\n\n{_acc_table(acc['test'])}\n\n"
+        "## 4.8s 지평선 (전체 예측 12스텝)\n\n"
+        f"### val (선택 근거)\n\n{_acc_table(acc['val'])}\n\n"
+        f"### test (최종 1회)\n\n{_acc_table(acc['test'])}\n\n"
+        "## 1.6s 지평선 (라이브 제어 4스텝 — 안전 결정과 같은 지평선)\n\n"
+        "> 로봇이 실제 정지·감속 판단에 쓰는 지평선. 4.8s ADE/FDE는 안전 기준으론 과대평가이므로,\n"
+        "> **안전 논의는 이 1.6s 값과 아래 안전 recall/precision을 함께 본다.**\n\n"
+        f"### val\n\n{_acc16_table(acc['val'])}\n\n"
+        f"### test (최종 1회)\n\n{_acc16_table(acc['test'])}\n\n"
         "## 읽는 법\n\n"
         "- 값은 `point [lo, hi]` = scene 단위 bootstrap 95% CI. 겹치면 차이가 유의하지 않을 수 있다.\n"
         "- **움직임** 열 = 예측 구간이 실제로 움직인 윈도우만(정지·지터 제외, 진짜 난이도).\n"
         "- 스테이션(goal)=현재 목표를 아는 상한 · minADE@K=K모드 중 최선(멀티모달 상한, 오라클).\n"
         "- **LSTM vs Transformer**: 백본만 다르고 나머지 동일 → 차이는 백본에서 온다.\n"
+        "- **안전 기준**: 단일 'ADE<X' 임계는 없다. 로봇 속도·제동·ISO 여유마진에 달림. 실무 기준은\n"
+        "  1.6s FDE가 정지반경(공칭 1.2m)·마진보다 충분히 작을 것(대략 ≲0.3~0.5m) + 진입 recall↑.\n"
         "- test 는 val 선택을 고정한 뒤 1회만 평가(운영점 과적합 방지 — 감사 P0-1).\n",
         encoding="utf-8")
 
