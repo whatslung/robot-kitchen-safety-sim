@@ -1,4 +1,13 @@
-from train.autoresearch_contract import Metrics, evaluate_guards, f2_score, rank_key
+import pytest
+
+from train.autoresearch_contract import (
+    Metrics,
+    TestSplitLockedError,
+    development_windows,
+    evaluate_guards,
+    f2_score,
+    rank_key,
+)
 
 
 def _m(**overrides):
@@ -56,3 +65,9 @@ def test_rank_prefers_f2_then_recall_then_lower_fde_and_latency():
     a = _m(precision=0.70, recall=0.70, fde16=0.25, cpu_p95_ms=2.0)
     b = _m(precision=0.70, recall=0.70, fde16=0.30, cpu_p95_ms=1.0)
     assert rank_key(a) > rank_key(b)
+
+
+@pytest.mark.parametrize("split", ["test", "locked_test", "all"])
+def test_development_loader_rejects_non_development_splits(split):
+    with pytest.raises(TestSplitLockedError, match="train/val만"):
+        development_windows(split)
