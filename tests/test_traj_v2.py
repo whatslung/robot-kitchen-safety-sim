@@ -1,4 +1,7 @@
 import json
+from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 
@@ -115,3 +118,17 @@ def test_manifest_rejects_missing_layout(tmp_path):
 
     with pytest.raises(DatasetAuditError, match="누락"):
         build_manifest(data, code_commit="abc123")
+
+
+def test_audit_cli_resolves_project_packages():
+    root = Path(__file__).parents[1]
+
+    result = subprocess.run(
+        [sys.executable, str(root / "train" / "audit_traj_v2.py"), "--help"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert result.returncode == 0, result.stderr

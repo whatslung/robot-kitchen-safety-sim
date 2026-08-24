@@ -5,11 +5,13 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import subprocess
-
-from trajectory.traj_v2 import build_manifest, validate_manifest
-
+import sys
 
 ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from trajectory.traj_v2 import build_manifest, validate_manifest
 
 
 def parse_args() -> argparse.Namespace:
