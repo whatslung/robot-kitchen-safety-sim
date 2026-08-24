@@ -4672,27 +4672,23 @@ const WALK_REF = 0.979, RUN_REF = 2.717, RUN_AT = 1.9;
 
    PUSH_REF는 위 WALK_REF 표와 **같은 방법으로 직접 잰 값**이다(0.349㎧).
    걷기의 0.357배로, 카트에 몸을 실어 미는 만큼 걸음이 짧고 느리다. */
-/* PUSH_BLEND — 밀기 클립을 걷기와 **얼마나 섞을지**. 0 = 그냥 걷기 · 1 = 원래 밀기.
-   `Push_Loop`은 **무거운 물건을 미는 동작**이다(깊게 기울이고 보폭이 넓다). 캐스터로
-   굴러가는 카트에 그대로 쓰면 "돌을 미는 것 같다"가 된다(2026-08-24 피드백).
-   클립을 새로 받을 수는 없으므로 걷기와 가중치로 섞어 **강도만 낮춘다.**
-   런타임 조절: __sim.PUSH_BLEND.k = 0.3 */
-const PUSH_BLEND = { k: 0.45 };
+/* ⚠️ 걷기와 섞어 밀기 강도를 낮추려다 **되돌렸다** (2026-08-24).
+   `Push_Loop`이 무거운 물건을 미는 동작이라 카트에 과해 보인다는 피드백이 맞고,
+   가중치 블렌딩(setWeightForAllAnimatables)도 동작은 한다. 그런데 **손이 카트에서
+   떨어진다** — 걷기는 팔을 흔드는 동작이라 조금만 섞어도 자세가 그쪽으로 무너진다.
+   손 중심 ↔ 카트 중심 거리 실측(카트 반폭 0.40m):
+       blend 1.0 → 0.18m (카트 위) · 0.9 → 0.60m · 0.75 → 0.97m · 0.45 → 0.98m
+   0.9에서도 이미 카트 밖이다. **점진적으로 약해지는 게 아니라 걷기로 무너진다** —
+   쓸 수 있는 중간값이 없다. 카트만 저절로 굴러가는 그림이 되므로 원래대로 되돌린다.
+   제대로 고치려면 **가벼운 밀기 클립을 따로 받아야 한다**(리그가 mixamorig 67본이라
+   Mixamo에서 retarget 가능). 지금 할 수 있는 완화는 카트 선택과 숙임 각도까지다. */
 const PUSH_REF = 0.349;                            // 실측 — 위 표 참조
 const PUSH_ANIM_HOLD = 220;                        // 접촉이 끊겨도 이만큼은 밀기 자세 유지(ms)
 function locoPlay(P, moving, speed) {
   if (!P) return;
   const stop = a => { if (a && a.isPlaying) a.stop(); };
   const pushClip = P.ACT && P.ACT.push;
-  /* 섞어 놓은 가중치는 **반드시 되돌린다.** 안 되돌리면 밀기가 끝난 뒤에도 걷기가
-     절반 세기로 남아 몸이 흐물거린다. */
-  const unblend = () => {
-    if (!P.__blended) return;
-    [P.walk, P.walkSlow, pushClip].forEach(a => { if (a && a.setWeightForAllAnimatables) a.setWeightForAllAnimatables(1); });
-    P.__blended = false;
-  };
   if (!moving || speed < 0.03) {
-    unblend();
     stop(P.walk); stop(P.run); stop(P.walkSlow); stop(pushClip);
     if (P.idle && !P.idle.isPlaying) P.idle.start(true, 1.0);
     return;
@@ -4703,23 +4699,6 @@ function locoPlay(P, moving, speed) {
   /* 걸음걸이 — 사람마다 다른 클립을 쓴다. 인원이 2~3명뿐이라 둘이 똑같이 걸으면
      탑뷰에서 바로 복제처럼 보인다. P.gait는 스폰 때 인원별 시드로 정해진다. */
   const walkClip = (!useRun && P.gait === "walkSlow" && P.walkSlow) ? P.walkSlow : P.walk;
-  if (pushing && walkClip && pushClip.setWeightForAllAnimatables) {
-    /* 걷기 + 밀기를 겹쳐 튼다. 보폭 기준도 섞은 비율만큼 걷기 쪽으로 당긴다 —
-       안 그러면 발이 미끄러진다(밀기 0.349㎧ vs 걷기 0.979㎧). */
-    const w = clamp(PUSH_BLEND.k, 0, 1);
-    const refB = PUSH_REF + (WALK_REF - PUSH_REF) * (1 - w);
-    const rB = clamp(speed / refB, 0.35, 1.9);
-    stop(P.idle); stop(P.run);
-    if (P.walkSlow && P.walkSlow !== walkClip) stop(P.walkSlow);
-    if (!walkClip.isPlaying) walkClip.start(true, rB);
-    if (!pushClip.isPlaying) pushClip.start(true, rB);
-    walkClip.speedRatio = rB; pushClip.speedRatio = rB;
-    walkClip.setWeightForAllAnimatables(1 - w);
-    pushClip.setWeightForAllAnimatables(w);
-    P.__blended = true;
-    return;
-  }
-  unblend();
   const act = pushing ? pushClip : (useRun ? P.run : walkClip);
   if (!act) return;
   stop(P.idle);
@@ -13381,7 +13360,6 @@ window.__sim.vidPlaySeq = vidPlaySeq;
 window.__sim.vidOpen = vidOpen;
 window.__sim.vidShowFor = vidShowFor;
 window.__sim.PUSH_LEAN = PUSH_LEAN;     // 밀기 숙임 — max 0.25rad
-window.__sim.PUSH_BLEND = PUSH_BLEND;   // 밀기 클립 섞는 비율 — 0=걷기 1=원래 밀기
 window.__sim.vidDetectOnce = vidDetectOnce;
 window.__sim.SHOTS = SHOTS;
 window.__sim.SHOW = SHOW;
