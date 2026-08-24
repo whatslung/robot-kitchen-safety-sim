@@ -8,11 +8,14 @@ from __future__ import annotations
 
 import glob
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
 from trajectory.types import Track, TrackScene
+
+MANIFEST_NAME = "split_manifest.json"
 
 OBS, PRED = 8, 12          # 관측 3.2s / 예측 4.8s (2.5Hz)
 # '움직인' 윈도우 = 예측 구간 경로 길이(스텝 합)가 이 이상. 경로 길이라 왕복도 잡되,
@@ -42,23 +45,49 @@ class Window:
 
 
 def is_val(seed: int) -> bool:
-    """scene 단위 분할 — seed%5==0 이 val(20%). 4단계도 같은 val을 쓴다(공정 비교)."""
+    """[deprecated] 예전 seed%5==0 val 분할. 새 코드는 split_manifest.json 기반
+    load_windows 를 쓴다(P0-1). throwaway 스파이크 호환을 위해 남겨둔다."""
     return seed % 5 == 0
 
 
-def load_windows(split: str = "val", traj_dir=None) -> list:
-    """split in {"val","train","all"}. 폐기 노드는 건너뛴다."""
+def load_manifest(traj_dir=None):
+    """split_manifest.json 로드(없으면 None). {'train','val','test': [filename…]}."""
     d = Path(traj_dir) if traj_dir else TRAJ_DIR
+    p = d / MANIFEST_NAME
+    if not p.exists():
+        return None
+    return json.loads(p.read_text(encoding="utf-8"))
+
+
+def load_windows(split: str = "val", traj_dir=None) -> list:
+    """split in {"train","val","test","all"}. 폐기 노드는 건너뛴다.
+
+    train/val/test 는 split_manifest.json 멤버십으로 필터(P0-1, seed 단위 분할).
+    manifest 가 없으면 명확히 오류(silent 폴백 금지) — `python train/make_traj_split.py` 실행.
+    'all' 은 manifest 무관하게 모든 sim scene(manifest 파일·비-scene 파일 제외).
+    """
+    d = Path(traj_dir) if traj_dir else TRAJ_DIR
+    members = None
+    if split in ("train", "val", "test"):
+        man = load_manifest(d)
+        if man is None:
+            raise FileNotFoundError(
+                f"{MANIFEST_NAME} 없음 ({d}). 먼저 `python train/make_traj_split.py` 로 split 생성.")
+        members = set(man[split])
+    elif split != "all":
+        raise ValueError(f"알 수 없는 split: {split!r} (train/val/test/all)")
     wins = []
     for f in sorted(glob.glob(str(d / "*.json"))):
+        base = os.path.basename(f)
+        if base == MANIFEST_NAME:
+            continue
+        if members is not None and base not in members:
+            continue
         with open(f, encoding="utf-8") as fh:
             sc = json.load(fh)
+        if "nodes" not in sc or "seed" not in sc:      # sim scene 아님(예: real_test_sample) → 제외
+            continue
         seed = int(sc["seed"])
-        val = is_val(seed)
-        if split == "val" and not val:
-            continue
-        if split == "train" and val:
-            continue
         rb = sc.get("robot") or {}
         robot = (float(rb.get("x", ROBOT_BASE[0])), float(rb.get("z", ROBOT_BASE[1])))
         for node in sc["nodes"]:
