@@ -104,11 +104,15 @@ v2를 사용한다.
 | locked test | 41~50 | 10 | 30 |
 | 합계 | 1~50 | 50 | 150 |
 
-레이아웃은 다음 세 가지다.
+레이아웃은 실제 자유공간 모양이 다른 다음 세 가지다.
 
-- `island`: `sim.html?layout=island`
-- `island_h58`: `sim.html?layout=island&half=5.75`
+- `island_h58`: `sim.html?layout=island` (`half=5.75`가 현재 기본값)
+- `corridor`: `sim.html?layout=corridor`
 - `legacy`: `sim.html?layout=legacy`
+
+`sim.html?layout=island`와 `sim.html?layout=island&half=5.75`는 같은 배치이므로 별도 레이아웃으로
+세지 않는다. 또한 현재 `trajGeom()`은 corridor를 island로 기록하므로, 수집 전에 corridor의
+`layout`과 `scene_id` tag를 별도로 기록하도록 고치고 회귀 테스트로 고정한다.
 
 같은 seed의 세 레이아웃은 반드시 같은 split에 둔다. 생성기의 다섯 작업 조합이 seed 순서로
 순환하므로 각 범위는 작업 조합을 균등하게 포함한다. 단, 이름만 믿지 않고 생성 후 실제 `jobs`, 사람
