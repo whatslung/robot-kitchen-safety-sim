@@ -5,6 +5,10 @@ from dataclasses import dataclass
 import json
 import math
 from pathlib import Path
+import time
+
+import numpy as np
+import torch
 
 from trajectory.bootstrap import scene_bootstrap_ci
 from trajectory.evaluator import enters_radius, entry_confusion
@@ -229,3 +233,31 @@ def evaluate_windows(
         parameters,
         bootstrap_samples,
     )
+
+
+def measure_cpu_p95(
+    predictor,
+    hist,
+    warmups=100,
+    repeats=1000,
+    clock_ns=time.perf_counter_ns,
+) -> float:
+    previous_threads = torch.get_num_threads()
+    try:
+        torch.set_num_threads(1)
+        for _ in range(warmups):
+            predictor.predict_batch([hist])
+        elapsed = []
+        for _ in range(repeats):
+            start = clock_ns()
+            predictor.predict_batch([hist])
+            elapsed.append(clock_ns() - start)
+        return float(
+            np.percentile(np.asarray(elapsed, dtype=np.float64), 95) / 1_000_000
+        )
+    finally:
+        torch.set_num_threads(previous_threads)
+
+
+def count_trainable_parameters(net) -> int:
+    return sum(parameter.numel() for parameter in net.parameters() if parameter.requires_grad)

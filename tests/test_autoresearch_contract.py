@@ -1,14 +1,17 @@
 import pytest
+from types import SimpleNamespace
 
 from trajectory.sim_traj import Window
 from trajectory.types import Track, TrackScene
 from train.autoresearch_contract import (
     Metrics,
     TestSplitLockedError,
+    count_trainable_parameters,
     development_windows,
     evaluate_windows,
     evaluate_guards,
     f2_score,
+    measure_cpu_p95,
     rank_key,
 )
 
@@ -109,3 +112,24 @@ def test_evaluation_uses_probability_mass_for_runtime_alert():
     assert (out.metrics.tp, out.metrics.fp, out.metrics.fn) == (1, 0, 0)
     assert out.metrics.recall == 1.0 and out.metrics.precision == 1.0
     assert abs(out.metrics.fde16 - 1.0) < 1e-9
+
+
+def test_cpu_p95_excludes_warmups_and_uses_95th_percentile():
+    ticks = iter(range(0, 10_000_000, 1_000_000))
+    predictor = SimpleNamespace(predict_batch=lambda _: None)
+    p95 = measure_cpu_p95(
+        predictor,
+        [(0.0, 0.0)] * 8,
+        warmups=1,
+        repeats=3,
+        clock_ns=lambda: next(ticks),
+    )
+    assert p95 == 1.0
+
+
+def test_parameter_count_only_includes_trainable_values():
+    import torch.nn as nn
+
+    net = nn.Linear(2, 3)
+    net.bias.requires_grad_(False)
+    assert count_trainable_parameters(net) == 6
