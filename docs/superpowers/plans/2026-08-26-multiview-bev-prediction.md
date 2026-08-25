@@ -8,6 +8,11 @@
 
 **Tech Stack:** Python 3.11+, NumPy, SciPy, FastAPI, ByteTrack, Babylon.js, existing PyTorch LSTM, pytest, in-app browser.
 
+**Implementation status (2026-08-26):** Tasks 1–6 are implemented and regression-tested. The
+follow-up detector baseline gate failed for the existing nadir checkpoint, so multiview mode remains
+an opt-in runtime vertical slice until 4+1-view detector retraining. See
+`docs/evaluations/2026-08-26-mv5-detector-baseline.md`.
+
 ---
 
 ### Task 1: Homography calibration and projection

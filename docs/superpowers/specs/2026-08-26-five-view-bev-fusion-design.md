@@ -218,6 +218,15 @@ CPU MVP는 기존 PyTorch `.pt` 모델을 사용한다. ONNX Runtime, INT8, batc
 
 현재 나디르 중심 가중치로 얻은 결과는 배선 검증값이며 최종 recall로 인용하지 않는다.
 
+### 9.1 1차 detector gate 결과
+
+2026-08-26의 10장면×5뷰 빠른 baseline에서 현재 나디르 파인튜닝 가중치는 운영
+confidence 0.25, IoU 0.5 기준 precision/recall이 모두 0이었다. Stock YOLO11s도
+precision 0.174, recall 0.114에 그쳤다. 따라서 기존 detector가 person box와 로컬 ID를
+제공한다는 전제는 현재 성립하지 않는다. ByteTrack이나 글로벌 융합 학습보다 카메라
+ablation과 4+1뷰 detector 재학습이 먼저다. 상세 설정과 뷰별 결과는
+`docs/evaluations/2026-08-26-mv5-detector-baseline.md`에 기록한다.
+
 ## 10. 실패·저하 처리
 
 - 한 카메라 timeout: 해당 요청만 폐기하고 다음 카메라로 진행한다.

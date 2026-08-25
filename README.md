@@ -36,6 +36,11 @@ uv run python backend/detect_server.py --port 8001
 
 → <http://127.0.0.1:8001/sim.html?person=1>
 
+4개 준나디르 구획뷰와 중앙 보조뷰를 Homography BEV에서 합치는 실험 경로는
+`sim.html?multiview=1`로 명시적으로 켠다. 이 모드는 카메라별 ByteTrack, 글로벌 ID,
+K=3 미래경로까지 연결하지만 아래 1차 baseline에서 기존 검출기 recall이 0으로 확인돼
+새 4+1뷰 detector를 학습하기 전까지 기본값으로 켜지 않는다.
+
 가중치는 로컬 `training/`에 있으면 그걸, 없으면 허깅페이스에서 자동으로 받는다 —
 팀원은 파일 전달 없이 위 두 줄만 실행하면 된다. 두 모델 모두 공개 저장소다:
 검출은 [`chanubc/robot-kitchen-nadir-yolo11s`](https://huggingface.co/chanubc/robot-kitchen-nadir-yolo11s),
@@ -76,8 +81,12 @@ WebGPU가 없으면 wasm으로 자동 폴백된다. 브라우저 탭을 앞에 �
 백엔드 서버를 띄우는 법은 위 [실행 · 방법 B](#방법-b--검출예측까지-백엔드-서버). 이 절은 그 위에서
 데이터를 만들고 모델을 학습·검증하는 흐름이다.
 
-**파이프라인**: 나디르 CCTV → 검출(YOLO) → 추적(ByteTrack) → 사람별 (x,z) 궤적
+**기존 파이프라인**: 나디르 CCTV → 검출(YOLO) → 추적(ByteTrack) → 사람별 (x,z) 궤적
 → **학습형 멀티모달 예측(경량 LSTM)** → 선제 안전(감속·회피).
+
+**4+1뷰 실험 파이프라인**: `mvNW·mvNE·mvSW·mvSE+mvCenter` → 공용 YOLO →
+카메라별 ByteTrack → Homography BEV → 글로벌 ID 융합 → 글로벌 궤적별 LSTM/Kalman
+미래예측. 현재 단계는 회피 제어를 직접 바꾸지 않고 예측 계약과 시각화만 제공한다.
 
 - **궤적 데이터 수집**(예측기 학습용): 📊 데이터 탭 → *궤적 수집 시작*
   (또는 콘솔 `__sim.trajRun({scenes:40})`) → `dataset/trajectories/*.json`
@@ -85,8 +94,11 @@ WebGPU가 없으면 wasm으로 자동 폴백된다. 브라우저 탭을 앞에 �
 - **학습·평가**:
   ```bash
   uv run python train/train_traj_predictor.py    # 학습 + val ADE/FDE → docs/chanwoo/prediction-eval.md
+  uv run --group serve python train/eval_multiview_detector.py --dataset dataset/mv5-baseline-20260826
   uv run --with pytest python -m pytest tests/   # 예측 코어 테스트
   ```
+  4+1뷰 기존 YOLO의 1차 결과와 재학습 gate는
+  [검출 baseline](docs/evaluations/2026-08-26-mv5-detector-baseline.md)에 있다.
 - **학습형(LSTM) 모델 쓰는 법** — 재학습 불필요, 3단계:
   1. 백엔드를 띄운다([방법 B](#방법-b--검출예측까지-백엔드-서버)). 예측기 가중치가 로컬에 없으면
      허깅페이스 [`chanubc/human-move-lstm`](https://huggingface.co/chanubc/human-move-lstm)에서 자동으로 받는다.
@@ -157,6 +169,9 @@ MODEL_HANDOFF.md            모델 담당자용 인계 문서 — 입출력 규�
 
 ## 알려진 한계
 
+- 4+1뷰 1차 baseline에서 기존 나디르 파인튜닝 YOLO의 person precision/recall은 운영
+  confidence 0.25, IoU 0.5 기준 모두 0이었다. detector 재학습 전에는 multiview
+  ByteTrack·글로벌 ID·미래예측을 정확도 결과로 인용하지 말 것.
 - **치수 미검증 (오차 ±25%)**. 배치와 비례는 실사 기준으로 맞췄지만,
   "몇 미터"라고 수치를 인용하면 안 된다.
 - 참조 오버레이(`sim.html?ref=…`)는 `refs/` 폴더를 쓴다. 이 저장소에는 포함하지
