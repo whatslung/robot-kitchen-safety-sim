@@ -4,9 +4,8 @@
 실사 전량(4,120장)이면 real-only가 이미 천장(참고 recall 0.98)이라 sim 기여가 안 보인다.
 실사를 500장으로 제한하면 = 실사 주방 라벨이 부족한 현실을 모사 → sim의 보탬이 드러난다.
 
-클래스 공간은 6클래스로 통일(실사 라벨 class 0 = person = 우리 sim의 person). 실사엔
-person만 존재하고 나머지 5클래스는 0개 — 학습/평가에 무해. 덕분에 sim-only(6클래스) 모델을
-그대로 재사용해 같은 실사 test에서 비교할 수 있다.
+클래스 공간은 person 단일 클래스로 통일한다. 실사와 sim 모두 class 0 = person이라
+같은 출력 헤드로 동일한 실사 test에서 비교할 수 있다.
 
 평가는 세 조건 모두 **동일한 실사 test 137장**에서 person(class 0)만.
 
@@ -19,7 +18,7 @@ ROOT = Path(__file__).resolve().parent.parent
 REAL = ROOT / "dataset" / "overhead-person-v3"
 SIM_IMG = ROOT / "sim-person" / "images"
 OUT = ROOT / "dataset" / "3way"
-CLASSES = ["person", "fire", "smoke", "robot", "kettle", "equipment"]
+CLASSES = ["person"]
 N_TRAIN, N_VAL, SEED = 500, 150, 42
 EXT = {".jpg", ".jpeg", ".png"}
 

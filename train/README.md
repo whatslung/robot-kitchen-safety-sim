@@ -18,13 +18,13 @@ uv sync --group serve   # 검출 서버까지 (fastapi·uvicorn·supervision·tr
 
 | 파일 | 역할 |
 |---|---|
-| `prepare_yolo_split.py` | 시뮬 데이터셋(images/labels) → train/val 분할 + `data.yaml` (6클래스) |
+| `prepare_yolo_split.py` | 시뮬 데이터셋(images/labels) → train/val 분할 + `data.yaml` (person 1클래스) |
 | `train_sim.py` | YOLO11s 파인튜닝 + val 평가 + ONNX export → `training/yolo11s_orthotop/` |
 | `eval_stock.py` | 파인튜닝 전 stock 모델 기준선(person) |
 | `eval_real.py` | 학습 모델을 실사 데이터셋에서 평가 (sim-to-real) |
 | `prep_3way.py` | sim/real/real+sim 3-way 비교용 데이터 구성 (limited-real) |
 
-클래스: `0 person · 1 fire · 2 smoke · 3 robot · 4 kettle · 5 equipment`
+클래스: `0 person`. 예전 6클래스 데이터셋과 섞지 않는다.
 
 ## 실행
 
@@ -41,7 +41,10 @@ uv run python train/eval_real.py dataset/overhead-person-v3/data.yaml --split te
 
 ---
 
-## 결과 ① — Sim in-domain (합성 val 40장)
+## 과거 6클래스 결과 — Sim in-domain (합성 val 40장, 2026-08-13)
+
+> 아래 수치는 현재 person-only 계약으로 다시 학습한 결과가 아니라, 이전
+> `person/fire/smoke/robot/kettle/equipment` 모델의 참고 기록이다.
 
 **파인튜닝 전/후 (person):**
 
@@ -69,7 +72,7 @@ uv run python train/eval_real.py dataset/overhead-person-v3/data.yaml --split te
 </tr>
 </table>
 
-## 결과 ② — Sim-to-real 3-way (실사 test 137장, person)
+## 과거 6클래스 결과 — Sim-to-real 3-way (실사 test 137장, person)
 
 실사가 부족한 현실(주방)을 모사해 **실사 500장으로 제한**하고 합성 기여를 측정.
 
