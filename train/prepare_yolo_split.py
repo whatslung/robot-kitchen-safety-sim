@@ -21,8 +21,7 @@ import random
 from pathlib import Path
 
 # 데이터셋 클래스 순서 — sim.html GT_CLASSES와 반드시 일치시킨다.
-# (MODEL_HANDOFF.md 2026-08-13: fire·smoke를 앞에 둬 계획서 person·fire·smoke=0·1·2 보장)
-CLASSES = ["person", "fire", "smoke", "robot", "kettle", "equipment"]
+CLASSES = ["person"]
 IMG_EXT = {".png", ".jpg", ".jpeg"}
 
 

@@ -527,7 +527,7 @@
     <code>demo_clips/</code> 에 <code>normal · smoke · fire</code> (mp4·webm·mov·m4v) 를 넣으면
     자동으로 잡습니다. <code>best.onnx</code> 도 같이 넣으면 <b>모델까지 자동으로 붙습니다</b>.<br>
     영상 뒷부분에 불이 나오면 <code>?vidstart=fire:38</code>, 한 토막만 틀려면 <code>?vidend=fire:46</code>.<br>
-    모델 클래스가 우리 6종과 다르면 <code>?labels=fire,smoke</code> 처럼 모델 순서대로 적어 주세요.</div>
+    기본 모델 클래스는 <code>person</code> 하나입니다. 다른 모델은 <code>?labels=fire,smoke</code> 처럼 순서대로 적어 주세요.</div>
   <div class="row"><span>① 정상</span><input id="vidFileNormal" type="file" accept="video/*" style="flex:1;font-size:11px"></div>
   <div class="row"><span>② 연기</span><input id="vidFileSmoke" type="file" accept="video/*" style="flex:1;font-size:11px"></div>
   <div class="row"><span>③ 화재</span><input id="vidFileFire" type="file" accept="video/*" style="flex:1;font-size:11px"></div>
@@ -2888,11 +2888,9 @@ function disposeSurvCam(id) {
    원래는 "자기 하우징만 자기 시점에서 제외"였다. 그래서 **남의 카메라 장비는 찍혔다**
    (실측: CAM6 프레임에 9개 — CAM1·CAM2·CAM5의 하우징·렌즈·지지대. CAM4에는 CAM3 폴).
 
-   데이터셋에 남기면 안 된다. 클래스가 `0 person 1 fire 2 smoke 3 robot 4 kettle
-   5 equipment`인데 카메라 장비는 어디에도 없다 — 라벨 없는 검은 상자와 파이프가
-   프레임마다 고정 위치에 박히면, 모델이 그 자리를 배경으로 외우거나 equipment와
-   헷갈릴 여지를 준다. 실사 CCTV에 다른 카메라가 보이는 건 사실이지만, 그건 라벨이
-   달려 있을 때 얘기다.
+   데이터셋에 남기면 안 된다. 현재 GT는 `0 person`만 라벨링하므로 카메라 장비가
+   프레임마다 고정 위치에 박히면 모델이 그 자리를 강한 배경 특징으로 외울 수 있다.
+   실사 CCTV에 다른 카메라가 보이는 경우는 별도 배경 다양성 표본으로 다룰 일이다.
 
    자유 시점(사람이 보는 화면)에서는 그대로 보인다 — 어디에 몇 대가 달렸는지
    확인해야 하고, 지지대가 벽·천장에 제대로 붙었는지도 눈으로 봐야 한다. */
@@ -7148,20 +7146,11 @@ applyCameras();
    카메라별 RGB + 세그멘테이션 마스크 + 깊이맵 + YOLO 라벨을 생성한다.
    바운딩박스는 투영이 아니라 마스크 픽셀에서 직접 계산 — 가림(occlusion)이
    반영된 실제 가시 영역 기준이다. */
-/* 클래스 순서 = YOLO class id. 계획서가 요구하는 **person·fire·smoke를 0·1·2**로 둔다.
-   종전에는 fire·smoke가 아예 없어서, 이 시뮬로 만든 데이터로 학습하면 불과 연기를
-   배울 수 없었다(모델은 3종을 찾아야 하는데 라벨은 person 하나뿐).
-   ※ id가 바뀌었으므로 이전에 생성한 데이터셋과 섞어 쓰면 안 된다. */
+/* 현재 검출 목표는 사람 하나다. RGB에는 불·연기·로봇·설비를 그대로 남겨 배경과 가림
+   다양성으로 쓰되, GT와 YOLO 출력 계약은 class 0 person 하나로 고정한다.
+   ※ 종전 6종 데이터셋과 클래스 계약이 다르므로 섞어 쓰면 안 된다. */
 const GT_CLASSES = [
-  { id:0, key:"person", label:"person",    color:[255,0,0] },
-  { id:1, key:"fire",   label:"fire",      color:[255,255,0] },
-  /* smoke를 [128,0,255]로 뒀더니, 프록시를 씬 밖으로 치워도 smoke 라벨이 108px 남았다.
-     클래스 경계의 안티에일리어싱 혼합색이 허용오차(±8) 안에 들어온 것이다.
-     — 없는 연기를 있다고 라벨하는 셈이라 미검출보다 나쁘다. 다른 색과 최대한 떨어뜨린다. */
-  { id:2, key:"smoke",  label:"smoke",     color:[0,255,255] },
-  { id:3, key:"robot",  label:"robot",     color:[0,255,0] },
-  { id:4, key:"kettle", label:"kettle",    color:[255,128,0] },
-  { id:5, key:"equip",  label:"equipment", color:[0,128,255] },
+  { id:0, key:"person", label:"person", color:[255,0,0] },
 ];
 const GT_ENV = [18,18,18];
 const gtMats = {};
@@ -7223,16 +7212,10 @@ const INST_PALETTE = (() => {
   return base;
 })();
 function instanceOfMesh(mesh) {
-  if (mesh.metadata && mesh.metadata.gtInstance) return mesh.metadata.gtInstance;
   const cls = classOfMesh(mesh);
-  if (cls === "person") return "person_0";          // 주 조리원 (추가 인원은 metadata로 구분)
-  if (cls === "robot") return "robot_0";
-  if (cls === "kettle") return "kettle_0";
-  if (cls === "equip") {                            // 설비는 이름 접두어로 개체 분리
-    const m = /^(Kiosk|Sig|Cart|SpareBasket|Basket|Jig|FloorDuct|ZoneTape|Hood)/.exec(mesh.name || "");
-    return "equip_" + (m ? m[1].toLowerCase() : "misc");
-  }
-  return null;                                       // env는 인스턴스 없음(검정)
+  if (cls !== "person") return null;                 // 현재 GT는 사람만 마스킹한다
+  if (mesh.metadata && mesh.metadata.gtInstance) return mesh.metadata.gtInstance;
+  return "person_0";                                 // 주 조리원 (추가 인원은 metadata로 구분)
 }
 /* ── P3: 카메라 내부 파라미터 (핀홀 모델) ──────────────────────────────
    Babylon 기본 fovMode = VERTICAL_FIXED → fov는 수직각.
@@ -7290,9 +7273,8 @@ function camIntrinsics(cam, w, h) {
      예열 렌더를 20회로 늘려도 안 고쳐진다 — 렌더가 아니라 비동기 컴파일 완료를
      기다려야 한다. 자세한 실측은 groundTruthImpl의 RGB 패스 주석에 있다.
 
-   ▸ **클래스 마스크 패스도 대기가 필요하다** — gtMat 재질을 처음 만드는 곳이라
-     컴파일 전에 찍으면 그 메시들이 통째로 안 그려져 **첫 캡처가 라벨의 절반을 잃는다.**
-     (실측: 1장째 26개·71,653px → 대기 넣으면 34개·138,377px). 자세한 건 해당 패스 주석.
+   ▸ **GT 예열 패스도 대기가 필요하다** — person/env 재질을 처음 만드는 곳이라
+     컴파일 전에 지나가면 뒤 인스턴스 패스가 첫 캡처에서 사람 메시를 놓칠 수 있다.
 
    ▸ 대기가 필요 없는 패스 (연기 농도 · 인스턴스 마스크)
      바로 앞 클래스 마스크 패스가 이미 기다렸고 같은 계열 재질이라 컴파일이 끝나 있다.
@@ -7304,53 +7286,17 @@ function camIntrinsics(cam, w, h) {
         대기 없음 → 전 픽셀 226~227, 히스토그램 1구간 = "전부 0.67m" (쓰레기)
         대기 있음 → min 22 · max 255 · 15구간 정상 램프 · 평균 124.6
      깊이 패스에서 opts.wait를 빼지 말 것. 이게 그 대기가 지키고 있던 진짜 값이다. */
-/* ══ 마스크 픽셀 → 클래스 판정: 최근접 색 ══════════════════════════════════
-   캔버스 백버퍼는 4배 MSAA로 만들어져 있다(engine antialias:true, gl.SAMPLES=4).
-   그래서 물체 외곽선 픽셀이 **이웃 클래스와 정확히 25/50/75%로 섞인다.**
-   실측(cvNE 마스크 1장): 마스크 전체 색이 41가지뿐인데 클래스 색이 아닌 것들이
-     equip α0.75/배경 = (5,101,196) · α0.5 = (9,73,136) · α0.25 = (14,46,77)
-     kettle α0.75/배경 = (196,101,5) · equip α0.25/kettle 위 = (191,128,64) …
-   전부 "클래스 색을 알파 0.25/0.5/0.75로 합성한 값"과 소수점까지 일치했다.
-   종전의 "픽셀 색 == 클래스 색(±8)" 판정은 이 픽셀들을 통째로 버렸다(9,582px = 라벨 픽셀의 4.7%).
-   외곽선이라 얇은 물체일수록 손해가 크다.
-
-   해결: 정확 일치 대신 **가장 가까운 색**으로 판정한다. MSAA 혼합색은 두 원본 색의
-   선형결합이라 선분 위의 점이고, 선분 위의 점은 **커버리지가 큰 쪽 끝점에 더 가깝다.**
-   즉 최근접 색 = 그 픽셀을 실제로 더 많이 덮은 물체다. 수학적으로 정확한 복원이다.
-   배경색도 후보에 넣어야 한다 — 그래야 배경이 우세한 바깥쪽 외곽선이 물체로 끌려오지 않는다.
-
-   ⚠️ 렌더링 쪽으로 고치려던 시도(마스크만 samples=1 렌더타깃에 찍기)는 **되돌렸다.**
-   마스크는 완벽해졌지만(색 41→5, 미일치 0) RTT가 렌더 패스를 하나 더 만들면서
-   **sensorGrain 후처리가 준비 안 된 상태로 남아 2번째 캡처부터 RGB가 단색**이 됐다.
-   판정만 바꾸는 이쪽이 렌더 파이프라인을 전혀 건드리지 않아 안전하다. */
-const GT_BG_C = GT_ENV;                 // 배경(환경) 색 — 최근접 후보에 포함
-function nearestColorKey(r, g, b, palette) {
-  /* palette: [key, [r,g,b]] 배열. 배경보다 가까운 클래스가 없으면 null(=배경).
-     tol: 완전히 동떨어진 색(후처리 잔재 등)은 버린다. MSAA 혼합은 항상 두 원본
-     사이에 있으므로 최근접 거리가 클 수 없다. */
-  let bestK = null, bestD = Infinity;
-  for (const [k, c] of palette) {
-    const d = (r-c[0])*(r-c[0]) + (g-c[1])*(g-c[1]) + (b-c[2])*(b-c[2]);
-    if (d < bestD) { bestD = d; bestK = k; }
-  }
-  const db = (r-GT_BG_C[0])*(r-GT_BG_C[0]) + (g-GT_BG_C[1])*(g-GT_BG_C[1]) + (b-GT_BG_C[2])*(b-GT_BG_C[2]);
-  return db <= bestD ? null : bestK;    // 배경이 더 가까우면 그 픽셀은 배경이다
-}
-/* 이미지 전체를 훑기 전에 **서로 다른 색만 모아 한 번씩** 판정한다.
-   마스크는 색이 수십 가지뿐이라(MSAA 단계가 유한하다) 픽셀마다 팔레트를 도는 것보다
-   훨씬 싸다 — 96만 픽셀 × 팔레트 40개 대신, 색 41가지 × 40개. */
-function classifyByNearest(px, w, h, palette) {
-  const cache = new Map(), out = new Int32Array(w*h).fill(-1);
-  const keys = palette.map(e => e[0]);
+/* 인스턴스 ID는 팔레트 원색 픽셀만 인정한다. MSAA 혼합색을 최근접 색으로 돌리면
+   두 사람의 경계색이 제3의 ID로 배정되어 멀리 떨어진 픽셀이 한 bbox로 합쳐진다.
+   사람 몸통에는 원색 내부 픽셀이 충분하며, 버리는 것은 외곽 1px뿐이다. */
+function classifyByExactColor(px, w, h, palette) {
+  const colorToIndex = new Map();
+  palette.forEach(([, c], i) => colorToIndex.set((c[0] << 16) | (c[1] << 8) | c[2], i));
+  const out = new Int32Array(w*h).fill(-1);
   for (let i = 0, pi = 0; i < px.length; i += 4, pi++) {
     const code = (px[i] << 16) | (px[i+1] << 8) | px[i+2];
-    let ki = cache.get(code);
-    if (ki === undefined) {
-      const k = nearestColorKey(px[i], px[i+1], px[i+2], palette);
-      ki = k === null ? -1 : keys.indexOf(k);
-      cache.set(code, ki);
-    }
-    out[pi] = ki;
+    const ki = colorToIndex.get(code);
+    if (ki !== undefined) out[pi] = ki;
   }
   return out;
 }
@@ -7369,11 +7315,15 @@ async function renderWith(cam, setup, teardown, opts) {
   scene.render(); scene.render(); scene.render();   // 카메라·뷰포트 전환 후 첫 프레임은 포스트체인 재바인딩으로 검게 나옴 — 예열 렌더
   const w = engine.getRenderWidth(), h = engine.getRenderHeight();
   const data = await engine.readPixels(0, 0, w, h);
+  // Babylon/드라이버가 다음 readPixels에 같은 ArrayBuffer를 재사용할 수 있다.
+  // buffer 뷰만 보관하면 뒤 인스턴스 패스가 앞 클래스 마스크를 덮어쓰므로 즉시 복사한다.
+  const snapshot = new Uint8Array(data.byteLength);
+  snapshot.set(data);
   if (teardown) teardown();
   cam.viewport = savedVp;
   scene.activeCameras = savedCams;
   scene.activeCamera = savedCam;
-  return { data: new Uint8Array(data.buffer), w, h };
+  return { data: snapshot, w, h };
 }
 function pixelsToDataURL(px, w, h) {
   const cv = document.createElement("canvas");
@@ -7449,22 +7399,13 @@ async function groundTruthImpl(camId, opt) {
     ipc.toneMappingEnabled = false; ipc.exposure = 1; ipc.contrast = 1; ipc.applyByPostProcess = false;
     ipc.vignetteEnabled = false;
     scene.clearColor = new C4(0,0,0,1);
-    /* ── 안개를 끈다. 안 끄면 **모든 클래스 라벨이 통째로 날아간다** ──────────────
-       마스크는 "픽셀 색 == 클래스 색(±8)"으로 읽는다. 그런데 안개는 메시 색을
-       배경색 쪽으로 섞어 버려서, 화재 연무(EXP2 0.13)를 켠 채 찍으면
-         kettle 255,128,0 → 183,105,26 · equipment 0,128,255 → 11,119,225
-         person 255,0,0 → 222,12,12
-       처럼 전부 어긋나 어느 클래스에도 안 잡힌다. 실측(2026-08-20):
-         안개 켬 → person 0 · robot 0 · kettle 0 · equipment 0  (smoke만 남음)
-         안개 끔 → person 1590 · robot 627 · kettle 3303 · equipment 7291
-       파티클은 안개를 안 받으므로 smoke만 멀쩡해서, 겉보기엔 "연기만 잡히네"로 보인다.
-       깊이 패스는 이 뒤에 자기 안개(검정 선형 0~6m)를 따로 세우므로 영향 없다. */
+    /* 사람 팔레트 원색을 정확 일치로 읽으므로 장면 안개가 색을 섞지 못하게 한다.
+       깊이 패스는 이 뒤에서 자기 안개(검정 선형 0~6m)를 별도로 켠다. */
     savedFogGT = { enabled: scene.fogEnabled, mode: scene.fogMode, density: scene.fogDensity,
                    color: scene.fogColor.clone(), start: scene.fogStart, end: scene.fogEnd };
     scene.fogEnabled = false;
-    /* 파티클을 끄지 않는다 — 불·연기 라벨이 여기서 나온다. 대신 불투명 단색으로 찍는다.
-       색은 패스마다 다르다: 클래스 마스크는 클래스 색, 인스턴스 마스크는 팔레트 색.
-       gtOff 시점에는 어느 패스인지 모르므로, 각 패스가 gtParticleMask를 직접 부른다. */
+    /* gtOff는 공용 상태만 바꾼다. person/env 패스는 호출부에서 파티클을 끄고,
+       연기 농도 패스만 smoke 파티클을 흰색·본래 알파로 별도 렌더한다. */
     glow.isEnabled = false;
     if (SENSOR.on) { SENSOR.on = false; sensorApply(); }   // 라벨 오염 방지: 센서 효과 완전 차단
   };
@@ -7483,8 +7424,11 @@ async function groundTruthImpl(camId, opt) {
     gtParticleMask(false);
     if (savedSensor && !SENSOR.on) { SENSOR.on = true; sensorApply(); }
   };
-  const mask = await renderWith(cam, () => {
+  // 첫 마스크 패스는 공용 env/person 셰이더를 예열한다. 반환용 클래스 마스크는 아래에서
+  // 깨끗한 인스턴스 팔레트의 정확 일치 픽셀로 이진화한다.
+  await renderWith(cam, () => {
     gtOff();
+    scene.particlesEnabled = false;                  // 불·연기는 RGB 배경일 뿐 GT 클래스가 아니다
     savedMats = new Map();
     for (const m of scene.meshes) {
       // isVisible=false는 그려지지 않는다. 그런데도 목록에 넣으면 팔레트 슬롯을 먹고,
@@ -7493,27 +7437,18 @@ async function groundTruthImpl(camId, opt) {
       if (!m.isEnabled() || !m.isVisible || !m.material) continue;
       savedMats.set(m, m.material);
       const cls = classOfMesh(m);
-      const gc = GT_CLASSES.find(g => g.key === cls);
-      m.material = gtMat(cls, gc ? gc.color : GT_ENV);
+      // 사람만 별도 재질을 쓰고 나머지는 하나의 예열된 배경 재질을 공유한다.
+      // 비사람 클래스별로 같은 색의 새 재질을 만들면 첫 패스에서 원래 PBR 색이 새어
+      // person-only 마스크가 수천 색으로 오염된다.
+      m.material = cls === "person" ? gtMat("person", GT_CLASSES[0].color)
+                                    : gtMat("env", GT_ENV);
     }
-    // 연기는 여기서 빼고(only:"fire") 아래 농도 패스로 따로 처리한다
-    gtParticleMask(true, k => (GT_CLASSES.find(g => g.key === k) || {}).color, { only:"fire" });
   }, () => {
     savedMats.forEach((mat, mesh) => { mesh.material = mat; });
     gtOn();
   }, { wait:true });
-  /* ★ opts.wait 필수 — 빼면 **페이지 로드 후 첫 캡처가 라벨의 절반을 잃는다.**
-     이 패스가 gtMat 재질을 처음 만들어 메시 1591개에 붙이는 곳이다. 컴파일이 끝나기 전에
-     찍으면 Babylon이 준비 안 된 재질의 메시를 **그리지 않고 건너뛰어**, 그 물체가
-     마스크에서 통째로 빠진다. 실측(콜드 페이지, cvNE, noDepth):
-        대기 없음 → 1장째 라벨 26개·라벨픽셀 71,653 / 2장째부터 34개·138,336
-        대기 있음 → 1장째 라벨 34개·라벨픽셀 138,377 / 이후 동일
-     시간 비용은 사실상 없다(6.4s → 6.5s). 첫 캡처에만 실제로 기다리고 그 뒤로는
-     scene.isReady()가 true라 즉시 통과하기 때문이다.
-     ⚠️ 한때 "효과 없음"으로 판단해 되돌린 적이 있는데 **브라우저가 옛 sim.html을 캐시**해
-     생긴 오판이었다. 이 파일을 고치고 측정할 때는 URL에 ?v=... 를 붙여 캐시를 우회해라. */
-  /* ↑ 셰이더 대기는 renderWith에서 통째로 없앴다(2026-08-21). 근거는 renderWith 주석 참고 —
-     "항상 1.5s 만료" 진단이 틀렸고, 실제 비용은 패스당 60~600ms였다. */
+  /* 첫 person/env 재질을 여기서 만들므로 준비 완료를 기다린다. 반환용 클래스 마스크는
+     이 렌더 결과가 아니라 아래 인스턴스 원색 픽셀에서 이진화한다. */
 
   /* 2.1) 연기 농도 패스 — 전 메시를 검정으로 깔고 **연기만 흰색·본래 알파**로 찍는다.
      겹칠수록 밝아지므로 픽셀 밝기가 곧 그 시선의 연기 두께(광학 깊이)가 된다.
@@ -7545,40 +7480,18 @@ async function groundTruthImpl(camId, opt) {
      0.5는 "시선의 절반이 연기에 막힘". 낮추면 smoke가 넓어지고 사람이 다시 지워지며,
      높이면 자욱한데도 사람이 다 보이는 것으로 라벨된다. 조정은 __sim.GT_SMOKE_T. */
   const smokeThresh = () => Math.round((window.GT_SMOKE_T !== undefined ? window.GT_SMOKE_T : 0.5) * 255);
-  /* protect = 이 색 픽셀은 연기로 덮지 않는다 — **불꽃**이다.
-     불꽃은 자체발광이라 연기 속에서도 화면에 보인다. 안 지키면 불이 가장 잘 보이는
-     화염 바로 위(연기가 제일 짙은 곳)에서 fire 라벨이 통째로 사라진다(실측: fire 0). */
-  /* 연기 입자가 하나도 없으면 아예 칠하지 않는다.
-     화재를 껐는데도 smoke가 170~478px 잡히던 문제 때문이다(솥 유면 위 0.4% 영역).
-     농도 패스에 미세하게 밝은 픽셀이 남아 임계를 넘기는 것으로, 원인을 끝까지
-     특정하지 못했다. 다만 **연기가 없으면 smoke 라벨도 없어야 한다**는 것은 확실하므로
-     그 불변식을 여기서 강제한다. 평상시 조리(화재 꺼짐) 프레임에 유령 라벨이 붙는 것을 막는다. */
   const smokeAlive = fsmoke.particles.length;
-  /* 불꽃 보존은 **클래스 마스크의 불꽃 색**을 기준으로 판정한다.
-     처음에는 인스턴스 마스크에서 팔레트 색(fire_0)으로 대조했는데 실패했다 —
-     클래스 마스크에는 fire가 5409px 남는데 인스턴스 쪽 fire_0은 0이 됐다(팔레트 번호
-     대조가 어긋남). 클래스 마스크는 이 시점에 이미 칠해져 있고 그 불꽃 픽셀이
-     "살아남기로 결정된 불꽃"이므로, 인스턴스 마스크도 같은 좌표를 그대로 보존하면 된다. */
-  const FIRE_C = (GT_CLASSES.find(g => g.key === "fire") || {}).color;
-  const isFireAt = (arr, i) => FIRE_C && Math.abs(arr[i]-FIRE_C[0]) <= 8
-    && Math.abs(arr[i+1]-FIRE_C[1]) <= 8 && Math.abs(arr[i+2]-FIRE_C[2]) <= 8;
-  const paintSmoke = (target, color, protectFrom) => {
+  const paintSmoke = target => {
     if (smokeAlive === 0 || !smokeDen) return 0;   // 연기 없으면 농도 패스 자체를 건너뛴다
     const t = smokeThresh(), d = smokeDen.data, p = target.data;
     if (!d || d.length !== p.length) return 0;     // 해상도가 어긋나면 건드리지 않는다
-    const pf = (protectFrom && protectFrom.length === p.length) ? protectFrom : null;
     let n = 0;
     for (let i = 0; i < p.length; i += 4) {
       if (d[i] < t) continue;
-      if (pf && isFireAt(pf, i)) continue;
-      p[i] = color[0]; p[i+1] = color[1]; p[i+2] = color[2]; n++;
+      p[i] = GT_ENV[0]; p[i+1] = GT_ENV[1]; p[i+2] = GT_ENV[2]; n++;
     }
     return n;
   };
-  // 클래스 마스크: 자기 자신을 기준으로 본다(픽셀 i는 쓰기 전에 읽으므로 안전)
-  paintSmoke(mask, (GT_CLASSES.find(g => g.key === "smoke") || {}).color || [0,255,255],
-                   mask.data);
-
   // 2.5) P3: 인스턴스 마스크 — 개체마다 팔레트 고유색. 사람 여러 명을 개별 분리한다.
   const instIndex = new Map();                       // instKey → 팔레트 idx (등장 순)
   const instMatCache = {};
@@ -7601,6 +7514,7 @@ async function groundTruthImpl(camId, opt) {
   let savedMatsI = null;
   const inst = await renderWith(cam, () => {
     gtOff();
+    scene.particlesEnabled = false;                  // 사람 외 파티클은 인스턴스 팔레트에 넣지 않는다
     savedMatsI = new Map();
     for (const m of scene.meshes) {
       if (!m.isEnabled() || !m.isVisible || !m.material) continue;   // 위와 같은 이유
@@ -7608,30 +7522,35 @@ async function groundTruthImpl(camId, opt) {
       const key = instanceOfMesh(m);
       m.material = key ? instMat(key) : gtMat("env", GT_ENV);
     }
-    /* state.fire로 막지 않는다 — 불을 껐어도 남은 연기가 화면에 있으면 라벨돼야 맞다.
-       입자가 없으면 픽셀이 80 미만이라 아래 디코더가 알아서 버린다. */
-    // 클래스 마스크와 같은 이유로 연기는 뺀다 — 아래에서 농도 기준으로 덮는다
-    gtParticleMask(true, k => {
-      instMat(k + "_0");                                   // 팔레트 슬롯 확보
-      return INST_PALETTE[instIndex.get(k + "_0")];
-    }, { only:"fire" });
   }, () => {
     savedMatsI.forEach((mat, mesh) => { mesh.material = mat; });
     gtOn();
   });
 
-  /* YOLO 라벨은 **이 인스턴스 마스크**에서 나온다(클래스 마스크는 참고용).
-     그러므로 연기 덮기를 여기에도 반드시 적용해야 학습 라벨이 맞는다. */
-  instMat("smoke_0");                                      // 팔레트 슬롯 확보
-  // 보호 기준은 위에서 칠해 둔 **클래스 마스크**다 (팔레트 번호 대조는 어긋났다)
-  paintSmoke(inst, INST_PALETTE[instIndex.get("smoke_0")], mask.data);
+  /* YOLO 라벨은 이 사람 인스턴스 마스크에서 나온다. 짙은 연기 영역은 배경으로 지워
+     RGB에서 보이지 않는 신체까지 박스가 확장되지 않게 한다. */
+  paintSmoke(inst);
+  /* 반환용 클래스 마스크는 인스턴스 팔레트의 **원색 사람 픽셀만** 빨강으로 합친다.
+     첫 클래스 렌더는 후처리 체인의 직전 RGB가 섞여 수천 색이 새는 드라이버가 있었고,
+     비사람 색을 최근접 빨강으로 읽으면 다시 거대한 person 박스가 된다. 정확 팔레트만
+     합치면 결과는 person 빨강/배경 두 색뿐이고, YOLO 인스턴스 박스와 같은 픽셀 계약이다. */
+  const personCodes = new Set([...instIndex.values()].map(idx => {
+    const c = INST_PALETTE[idx];
+    return (c[0] << 16) | (c[1] << 8) | c[2];
+  }));
+  const classPixels = new Uint8Array(inst.data.length);
+  for (let i = 0; i < inst.data.length; i += 4) {
+    const code = (inst.data[i] << 16) | (inst.data[i+1] << 8) | inst.data[i+2];
+    const c = personCodes.has(code) ? GT_CLASSES[0].color : GT_ENV;
+    classPixels[i] = c[0]; classPixels[i+1] = c[1]; classPixels[i+2] = c[2]; classPixels[i+3] = 255;
+  }
+  const mask = { data:classPixels, w:inst.w, h:inst.h };
   // 인스턴스별 bbox (가림 반영 — 마스크 픽셀 기준)
   const instBoxes = new Map();
   {
     const { data:ip, w:iw, h:ih } = inst;
     const byColor = [...instIndex.entries()].map(([k, idx]) => [k, INST_PALETTE[idx]]);
-    // 정확 일치 대신 최근접 색 — MSAA 외곽선 픽셀을 우세한 개체로 되돌린다(위 주석)
-    const cls = classifyByNearest(ip, iw, ih, byColor);
+    const cls = classifyByExactColor(ip, iw, ih, byColor);
     for (let y = 0; y < ih; y++) for (let x = 0; x < iw; x++) {
       const ki = cls[y*iw + x];
       if (ki < 0) continue;                              // 배경
@@ -7719,9 +7638,9 @@ async function groundTruthImpl(camId, opt) {
   // 4) 마스크 픽셀 → 클래스별 bbox (YOLO 정규화, 상단 원점)
   const { data:mp, w, h } = mask;
   const boxes = {};
-  // 정확 일치 대신 최근접 색 (위 nearestColorKey 주석 참고)
+  // 위에서 만든 이진 마스크이므로 person 빨강 원색만 인정한다.
   const clsPal = GT_CLASSES.map(gc => [gc.key, gc.color]);
-  const clsIdx = classifyByNearest(mp, w, h, clsPal);
+  const clsIdx = classifyByExactColor(mp, w, h, clsPal);
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const ki = clsIdx[y*w + x];
@@ -8954,11 +8873,8 @@ async function milMaskBoxes(cam) {   // 현재 해상도 마스크 → 박스 (m
 const ONNX = {
   ort: null, session: null, name: null,
   imgsz: 640, layout: "auto",           // auto | v8 | v5
-  /* **이 시뮬이 생성하는 데이터셋의 클래스 순서와 같아야 한다.**
-     예전엔 ["person","fire","smoke"] 로 고정돼 있었는데, GT 클래스가 6종으로 늘면서
-     어긋났다 — 우리 데이터로 학습한 모델은 6개를 출력하는데 라벨은 3개뿐이라
-     class 3(robot) 이상이 이름 없이 떨어진다. GT_CLASSES에서 그대로 가져온다.
-     팀원 모델의 클래스 순서가 다르면 콘솔에서 __sim.ONNX.labels 를 덮어쓰면 된다. */
+  /* 이 시뮬이 생성하는 person-only 데이터셋과 순서를 공유한다.
+     다른 클래스 모델은 ?labels=... 또는 __sim.ONNX.labels로 명시한다. */
   labels: GT_CLASSES.map(c => c.label),
   conf: 0.25, iou: 0.45, ep: null, inName: null, outName: null, lastMs: 0,
   canvas: null, ctx: null,
@@ -8969,8 +8885,8 @@ const ONNX = {
 
 /* 라벨을 URL로 갈아끼운다: `?labels=fire,smoke`
    **왜 필요한가.** ONNX 출력에는 클래스 *이름*이 없다. 번호(0,1,2…)만 온다.
-   이름은 우리가 붙이는데 기본값이 이 시뮬의 GT 6종이다. 화재팀이 Roboflow에서
-   fire/smoke **2종**만 학습해 오면 번호 0=fire·1=smoke인데 우리 목록은 0=person·1=fire이라
+   이름은 우리가 붙이는데 기본값은 person 하나다. 화재팀이 Roboflow에서
+   fire/smoke **2종**만 학습해 오면 번호 0=fire·1=smoke인데 기본 목록은 0=person이라
    **불이 person으로 찍힌다.** 박스는 멀쩡해 보여서 아무도 못 알아챈다
    (2026-08-25 시험 모델 `_eval/onnx_shape_test/v8_2cls.onnx`로 재현). */
 try {
@@ -11516,7 +11432,7 @@ window.__sim = {
   person, personGo, SCN, SAFE, setFire, FIRE_FOG, SMOKE_LAYER, fireSeekTo, fireRandomStage,
   // Ground Truth · 데이터셋
   groundTruth, generateDataset, DATAGEN, randomizeScene, restoreAfterDataset,
-  GT_CLASSES, classOfMesh, showInspector,
+  GT_CLASSES, classOfMesh, classifyByExactColor, showInspector,
   // 물리 · 안전
   PHYS, ROBOT_GUARD, buildRobotGuard, resetBasket, ONNX, onnxLoadModel, onnxInfer, PRED, ENV_RAND, randomizeEnvironment, placeOccluder, setExtraCount, spawnDebris, triggerEstop, clearEstop,
   // 모델 검증
@@ -11739,9 +11655,8 @@ initPhysics();   // 비동기 — 파일 없으면 물리만 꺼진 채 계속 �
       <ol>
         <li><b>이 탭을 앞에 두세요.</b> 백그라운드로 내리면 브라우저가 렌더를 멈춰
             불·연기가 안 자라고 캡처가 느려집니다.</li>
-        <li><b>데이터셋 클래스는 6종</b>입니다 —
-            <code>0 person · 1 fire · 2 smoke · 3 robot · 4 kettle · 5 equipment</code>.
-            <b>예전에 뽑은 데이터와 섞지 마세요</b> (id가 바뀌었습니다).</li>
+        <li><b>데이터셋 클래스는 1종</b>입니다 — <code>0 person</code>.
+            <b>예전 6종 데이터와 섞지 마세요</b> (클래스 계약이 다릅니다).</li>
         <li><b>치수는 미검증(±25%)</b>입니다. 배치·비례는 맞지만 "몇 미터"로는
             인용하지 마세요.</li>
       </ol>
