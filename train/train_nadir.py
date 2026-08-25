@@ -45,33 +45,40 @@ def person_metrics(res):
 
 
 def main():
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--imgsz", type=int, default=640, help="입력 해상도 (960=sim 네이티브, 작은 사람 검출↑)")
+    ap.add_argument("--name", default=None, help="run 이름 (기본 yolo11s_nadir[_imgsz])")
+    args = ap.parse_args()
+    name = args.name or (NAME if args.imgsz == 640 else f"{NAME}_{args.imgsz}")
+
     on_gpu = torch.cuda.is_available()
     print("CUDA:", on_gpu,
-          torch.cuda.get_device_name(0) if on_gpu else "CPU only", flush=True)
+          torch.cuda.get_device_name(0) if on_gpu else "CPU only", "· imgsz", args.imgsz, flush=True)
 
     m = YOLO("yolo11s.pt")                                   # COCO 사전학습
     m.train(
-        data=TRAIN_YAML, epochs=100, imgsz=640,
+        data=TRAIN_YAML, epochs=100, imgsz=args.imgsz,
         batch=-1 if on_gpu else 8,
         device=0 if on_gpu else "cpu",
         patience=20, seed=42, deterministic=True,
-        project=PROJECT, name=NAME, exist_ok=True,
+        project=PROJECT, name=name, exist_ok=True,
         plots=True, verbose=True,
     )
 
-    # 도메인별 평가 — 사선 경로와 나란히 비교 가능하게 sim/real 분리.
-    sim = person_metrics(m.val(data=SIM_YAML, split="test", project=PROJECT,
-                               name=NAME + "_eval_sim", exist_ok=True))
-    real = person_metrics(m.val(data=REAL_YAML, split="test", project=PROJECT,
-                                name=NAME + "_eval_real", exist_ok=True))
+    # 도메인별 평가 — 사선 경로와 나란히 비교 가능하게 sim/real 분리. 평가도 학습 해상도로.
+    sim = person_metrics(m.val(data=SIM_YAML, split="test", imgsz=args.imgsz, project=PROJECT,
+                               name=name + "_eval_sim", exist_ok=True))
+    real = person_metrics(m.val(data=REAL_YAML, split="test", imgsz=args.imgsz, project=PROJECT,
+                                name=name + "_eval_real", exist_ok=True))
     out = {
-        "model": "yolo11s finetuned (nadir sim-v2 + real mix, person-only)",
+        "model": f"yolo11s finetuned (nadir sim-v3 + real mix, person-only, imgsz{args.imgsz})",
         "train_data": TRAIN_YAML,
         "person_sim_test": sim,
         "person_real_test": real,
         "goal": "나디르 도메인(sim+real) person recall >= 0.9 (안전이면 recall 우선)",
     }
-    p = DATA_ROOT / "training" / (NAME + "_summary.json")
+    p = DATA_ROOT / "training" / (name + "_summary.json")
     p.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
     print("\n== 도메인별 person 지표 ==")
     print(json.dumps(out, ensure_ascii=False, indent=2), flush=True)

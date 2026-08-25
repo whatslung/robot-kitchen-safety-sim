@@ -32,9 +32,12 @@ DATA_ROOT = next(
     ROOT,
 )
 
-# sim 소스: tol+연결요소 수정으로 재생성한 v2가 있으면 그쪽을 쓴다(오라벨 제거본).
-_SIM_V2 = DATA_ROOT / "dataset" / "sim-person-island-v2"
-SIM_SRC = _SIM_V2 if (_SIM_V2 / "images").is_dir() else DATA_ROOT / "dataset" / "sim-person-island"
+# sim 소스: 최신 재생성본 우선. v3(다양성: 옷·바닥 색 + 인원↑) → v2(오라벨 제거) → 원본.
+_V3 = DATA_ROOT / "dataset" / "sim-person-island-v3"
+_V2 = DATA_ROOT / "dataset" / "sim-person-island-v2"
+SIM_SRC = (_V3 if (_V3 / "images").is_dir()
+           else _V2 if (_V2 / "images").is_dir()
+           else DATA_ROOT / "dataset" / "sim-person-island")
 REAL = DATA_ROOT / "dataset" / "overhead-person-v3"
 OUT = DATA_ROOT / "dataset" / "nadir-person"       # 산출 루트
 SIM_OUT = OUT / "sim"                               # person-only 라벨 사본 + 이미지
