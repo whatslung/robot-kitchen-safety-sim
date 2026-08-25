@@ -8119,7 +8119,9 @@ async function generateDataset(n) {
       for (let f = 0; f < 4; f++) scene.render();        // 파티클·포즈 안정화
       for (const id of cams) {
         if (DATAGEN.abort) break;
-        const gt = await groundTruth(id);
+        /* imagesOnly면 깊이맵 2장을 건너뛴다 — gt/를 안 쓰는데 depth 패스가 캡처의
+           절반(약 7s→2s)을 먹기 때문. 학습(RGB+라벨)에는 영향 없다. */
+        const gt = await groundTruth(id, { noDepth: DATAGEN.imagesOnly });
         const base = id + "_" + String(i).padStart(4, "0");
         await write("images", base + ".png", gt.rgb);
         DATAGEN.saved++;                                   // 상태바 데이터셋 카운트
