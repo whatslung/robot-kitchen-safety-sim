@@ -7608,6 +7608,18 @@ async function groundTruthImpl(camId, opt) {
   const inst = await renderWith(cam, () => {
     gtOff();
     savedMatsI = new Map();
+    /* ★ 2026-08-25 — 검출 대상(person·robot·kettle)을 팔레트 앞자리(base 색)에 먼저 예약.
+       INST_PALETTE의 base 24색은 서로 MINSEP≥24, 그리고 뒤이어 생성되는 격자색도 base와
+       ≥24 떨어지도록 걸러진다. 종전엔 person이 씬 메시 순서상 equip 수십 개 뒤에 등록돼
+       **격자색(24,x,y)**을 받았고, 그 색이 이웃 equip 격자색과 붙어 classifyByNearest가
+       카트·설비 픽셀을 person으로 오분류(카트 위 팬텀 person 박스)하거나 person 픽셀을 옆
+       equip 색으로 끌어가 blob이 줄어 n<80으로 드롭(보이는 사람 미라벨)됐다. 대상 클래스를
+       먼저 등록해 base 색을 주면 equip 색과 색공간에서 확실히 분리돼 오분류가 사라진다.
+       (근본 재구성 = 3D 투영+깊이 가림판정은 별도 후속 작업.) */
+    instMat("person_0");
+    if (typeof EXTRAS !== "undefined")
+      for (let i = 0; i < EXTRAS.length; i++) instMat("person_" + (i + 1));
+    instMat("robot_0"); instMat("kettle_0");
     for (const m of scene.meshes) {
       if (!m.isEnabled() || !m.isVisible || !m.material) continue;   // 위와 같은 이유
       savedMatsI.set(m, m.material);
