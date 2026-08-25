@@ -683,6 +683,7 @@
 
 <script src="./babylon.js"></script>
 <script src="./babylonjs.loaders.min.js"></script>
+<script src="./gtboxes.js"></script><!-- GT 마스크→bbox: stray 픽셀 강건 필터(연결성분). 테스트: tests/browser/instance-box-filter.test.mjs -->
 <script>
 "use strict";
 /* ────────────────────────────────────────────────────────────────────────
@@ -7632,15 +7633,16 @@ async function groundTruthImpl(camId, opt) {
     const byColor = [...instIndex.entries()].map(([k, idx]) => [k, INST_PALETTE[idx]]);
     // 정확 일치 대신 최근접 색 — MSAA 외곽선 픽셀을 우세한 개체로 되돌린다(위 주석)
     const cls = classifyByNearest(ip, iw, ih, byColor);
-    for (let y = 0; y < ih; y++) for (let x = 0; x < iw; x++) {
-      const ki = cls[y*iw + x];
-      if (ki < 0) continue;                              // 배경
-      const k = byColor[ki][0];
-      const bx = instBoxes.get(k) || (instBoxes.set(k, {minX:x, maxX:x, minY:y, maxY:y, n:0}), instBoxes.get(k));
-      if (x < bx.minX) bx.minX = x; if (x > bx.maxX) bx.maxX = x;
-      if (y < bx.minY) bx.minY = y; if (y > bx.maxY) bx.maxY = y;
-      bx.n++;
-    }
+    /* ★ 색별 min/max 를 그대로 쓰면 **오분류된 소수 stray 픽셀이 박스를 프레임 전체로 늘린다**
+       (사선 카메라 회귀 2026-08-24: person 박스 area 최대 0.67, 대형 43%). 최근접색 판정은
+       절대 상한이 없어, 겹치는 인스턴스가 많은 사선 뷰에서 MSAA 경계·어두운 픽셀 한 줌을
+       프레임 아무 곳의 인스턴스 색으로 배정한다. 단 1~4개 stray 로도 min/max 가 터진다.
+       나디르(직교)는 겹침·전경 가림이 없어 stray 가 없었다 — 그래서 사선 전용 회귀였다.
+       → 연결성분으로 작고 고립된 stray 성분을 걷어낸 박스를 쓴다. 가림에 쪼개진 실제 사람의
+         큰 조각들은 모두 살아남는다. 유지 픽셀 기준 n≥80 도 필터 안에서 적용된다.
+       (순수 로직·회귀 테스트: gtboxes.js · tests/browser/instance-box-filter.test.mjs) */
+    const filtered = labelBoxesFiltered(cls, iw, ih, {});
+    for (const [ki, b] of filtered) instBoxes.set(byColor[ki][0], b);
   }
   const instances = [];
   for (const [k, idx] of instIndex.entries()) {
