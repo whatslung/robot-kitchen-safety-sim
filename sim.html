@@ -524,7 +524,9 @@
   <div class="section">실영상 패널 <span class="note" style="font-weight:400">검출 검증</span></div>
   <div class="hint">시뮬이 시뮬을 검출하는 그림은 설득력이 없습니다. <b>실제로 찍은 영상</b>에
     같은 모델을 돌려 우측 패널에 띄웁니다. 클립은 브라우저 밖으로 나가지 않습니다.<br>
-    <code>demo_clips/normal.mp4 · smoke.mp4 · fire.mp4</code> 가 있으면 자동으로 잡습니다.</div>
+    <code>demo_clips/</code> 에 <code>normal · smoke · fire</code> (mp4·webm·mov·m4v) 를 넣으면
+    자동으로 잡습니다. <code>best.onnx</code> 도 같이 넣으면 <b>모델까지 자동으로 붙습니다</b>.<br>
+    영상 뒷부분에 불이 나오면 <code>?vidstart=fire:38</code>, 한 토막만 틀려면 <code>?vidend=fire:46</code>.</div>
   <div class="row"><span>① 정상</span><input id="vidFileNormal" type="file" accept="video/*" style="flex:1;font-size:11px"></div>
   <div class="row"><span>② 연기</span><input id="vidFileSmoke" type="file" accept="video/*" style="flex:1;font-size:11px"></div>
   <div class="row"><span>③ 화재</span><input id="vidFileFire" type="file" accept="video/*" style="flex:1;font-size:11px"></div>
@@ -8959,6 +8961,7 @@ const ONNX = {
   labels: GT_CLASSES.map(c => c.label),
   conf: 0.25, iou: 0.45, ep: null, inName: null, outName: null, lastMs: 0,
   canvas: null, ctx: null,
+  isDummy: false,          // 더미 모델이면 true — 화면이 "검출된다"고 거짓말하지 않게 한다
 };
 async function onnxLoadRuntime() {
   if (ONNX.ort) return ONNX.ort;
@@ -8974,6 +8977,25 @@ async function onnxLoadRuntime() {
   ONNX.ort.env.wasm.numThreads = 1;                // COOP/COEP 없이도 동작하게
   return ONNX.ort;
 }
+/* **더미 모델을 진짜로 착각하는 사고를 막는다.**
+   `vendor/ort/_test_yolov8_dummy.onnx`는 배관 검증용이라 입력과 무관하게 늘 같은 값을 뱉는다.
+   그런데 이걸 `demo_clips/best.onnx`로 **이름만 바꿔 복사해 두면** 자동 로드가 붙고
+   안내문에는 "모델 best.onnx"라고 떠서 **다 준비된 것처럼 보인다**(2026-08-24 실제로 그랬다).
+   판별은 파일 안의 그래프 이름 문자열로 한다 — 이름을 바꿔도 안 지워지는 표식이다.
+   바이트로 훑는다: 12MB짜리 실모델을 통째로 문자열로 만들면 낭비다. */
+function onnxLooksDummy(buf, name) {
+  if (/dummy/i.test(name || "")) return true;
+  const mark = "dummy_yolov8";
+  const b = new Uint8Array(buf), m0 = mark.charCodeAt(0), n = b.length - mark.length;
+  for (let i = 0; i <= n; i++) {
+    if (b[i] !== m0) continue;
+    let hit = true;
+    for (let j = 1; j < mark.length; j++) if (b[i + j] !== mark.charCodeAt(j)) { hit = false; break; }
+    if (hit) return true;
+  }
+  return false;
+}
+
 async function onnxLoadModel(fileOrBuf, name) {
   const ort = await onnxLoadRuntime();
   const buf = fileOrBuf instanceof ArrayBuffer ? fileOrBuf : await fileOrBuf.arrayBuffer();
@@ -8984,6 +9006,8 @@ async function onnxLoadModel(fileOrBuf, name) {
   }
   if (!sess) throw new Error("세션 생성 실패 (WebGPU·wasm 모두)");
   ONNX.session = sess; ONNX.ep = ep; ONNX.name = name || "model.onnx";
+  ONNX.isDummy = onnxLooksDummy(buf, ONNX.name);
+  if (ONNX.isDummy) console.warn("[ONNX] ⚠ 더미 모델이다 — 박스는 입력과 무관한 고정값이다:", ONNX.name);
   ONNX.inName = sess.inputNames[0]; ONNX.outName = sess.outputNames[0];
   // 입력 해상도 자동 감지 — 메타데이터가 없거나 동적(-1)이면 640
   let dims = null;
@@ -9216,7 +9240,13 @@ overlayCv.id = "overlay";
 overlayCv.style.cssText = "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:5";
 ($("viewport") || document.body).appendChild(overlayCv);
 window.__overlayReady = true;
-const MIL_COLORS = { person:"#ff4d4f", robot:"#52e06f", kettle:"#ffab40", equipment:"#58a6ff" };
+/* 검출 박스 색 — **GT_CLASSES의 색조를 그대로 따르고 화면용으로만 누그러뜨린다.**
+   GT는 마스크에서 픽셀 색으로 클래스를 판정하느라 순색(255/0)을 쓰는데 선으로 그으면 눈이 아프다.
+   대응: person 빨강 · fire 노랑 · smoke 하늘 · robot 초록 · kettle 주황 · equipment 파랑.
+   ⚠️ fire를 "불이니까 주황"으로 두면 **kettle 주황·person 빨강과 붙어** 화재 장면에서
+   셋을 구분할 수 없다. GT가 노랑인 데는 이유가 있다 — 색조를 바꾸지 않는다. */
+const MIL_COLORS = { person:"#ff4d4f", fire:"#ffe14d", smoke:"#5ad1e0",
+                     robot:"#52e06f", kettle:"#ffab40", equipment:"#58a6ff" };
 /* CCTV HUD — 감시 화면임을 알아보게 한다.
    자유 시점과 CCTV 시점이 똑같이 렌더되니 어느 쪽을 보고 있는지 구분이 안 됐다.
    화질을 떨어뜨려 구분하는 방법도 있지만(그게 예전 기본값이었다) 완성도가 낮아 보인다.
@@ -12973,6 +13003,7 @@ function demoKettleView() {                       // 솥 — 김·불꽃이 여�
   const k = (anchors["kettle"] && anchors["kettle"].node) ? anchors["kettle"].node.position : new V3(0,0,0);
   demoFreeCam(-2.25, 1.12, 4.2, new V3(k.x, 1.00, k.z));
 }
+
 function demoWideView() {                         // 방 전체 — 연기가 차는 것을 보여준다
   DEMO.follow = null;
   demoFreeCam(-2.35, 1.20, 8.6, new V3(0.2, 1.10, 1.6));
@@ -13010,10 +13041,26 @@ function demoDetectOn() {
     if (typeof viewSel !== "undefined" && viewSel) viewSel.value = "cvN";
     applyCameras();
   }
+  /* **좌우가 같은 모델이어야 증명이 된다.**
+     `mock`은 `milMaskBoxes()`가 GT 마스크에서 박스를 뽑는다 — 주석에도 "완벽한 검출"이라
+     적혀 있는, 정답지를 보고 그리는 경로다. 그 상태로 우측(실영상, 진짜 추론)과 나란히
+     놓으면 "같은 모델이 둘 다 잡는다"가 아니라 **연출**이 된다.
+     → 실모델이 붙어 있을 때만 onnx로 바꾼다. 없거나 더미면 mock이 낫다 —
+       발표 중에 빈 화면이 뜨는 것보다는 모의라도 도는 편이 낫고, 더미로 바꿔 봐야
+       입력과 무관한 고정 박스라 정답지보다 나을 게 없다. */
+  if (ONNX.session && !ONNX.isDummy && MIL.mode === "mock") {
+    const sel = $("milMode");
+    if (sel) { sel.value = "onnx"; sel.dispatchEvent(new Event("change")); }  // 행 표시까지 핸들러가 맞춘다
+    else MIL.mode = "onnx";
+    console.warn("[DEMO] 시뮬 검출을 onnx로 전환 — 우측 실영상과 같은 모델");
+  } else if (MIL.mode === "mock") {
+    console.warn("[DEMO] 시뮬 검출이 mock이다 — GT 마스크 기반 '완벽한 검출'이지 모델이 아니다" +
+                 (ONNX.isDummy ? " (붙은 모델이 더미다)" : " (모델 없음)"));
+  }
   if (!MIL.on) $("milBtn").click();
   /* 실영상 패널도 같이 연다 — 시뮬이 시뮬을 검출하는 그림만으로는 설득이 안 된다.
      클립이 하나도 없으면 조용히 넘어간다(패널이 안 열릴 뿐 시나리오는 계속 간다). */
-  if (vidShowFor("fire") && ONNX.session && !VID.detect) $("vidDetectBtn").click();
+  if (vidShowFor(vidBestSlot()) && ONNX.session && !VID.detect) $("vidDetectBtn").click();
 }
 
 function demoCollapse() { personFall(); }
@@ -13098,12 +13145,12 @@ const DEMO_SCRIPTS = {
   /* before — 지금 현장에서 실제로 일어나는 순서. 감지가 없으면 어떻게 끝나는가. */
   before: [
     { at:0,     msg:"① 조리원이 평소대로 작업합니다",                   act: demoNormalWork },
-    /* ⚠️ 자막에서 "김"을 뺐다 (2026-08-24). 김은 켜지긴 하는데 **화면에 안 보인다** —
-       김이 제일 잘 보일 조건(해치 근접 카메라 · 김 5배)에서도 화면 기여가
-       2.96/255 = 1.16%다. 안 보이는 것을 자막으로 우기면 관객이 먼저 알아챈다.
-       김 자체를 보이게 만드는 작업은 팀의 수증기 방침 결정 뒤에 한다(별건).
-       demoSteamUp()은 그대로 둔다 — 데이터에는 남고, 보이게 되면 자막만 되돌리면 된다. */
-    { at:7000,  msg:"② 국솥이 끓습니다 — 조리가 한창입니다",             act: () => { demoSteamUp(); demoKettleView(); vidShowFor("normal"); } },
+    /* ✅ 자막에 "수증기"를 되돌렸다 (2026-08-25). 회의록 2단계가 "주방 조리 간 수증기 발생"이라
+       명시돼 있고, 다시 재 보니 **김은 보인다** — 해치 정면에서 가시픽셀 7.83%다.
+       뺐던 근거(1.16%)는 전체 화면 평균이라 국소 기둥에는 안 맞는 지표였다.
+       ⚠️ 카메라는 종전 시점(솥 근접 자유시점) 그대로다. 해치 정면으로 옮기면 김이
+       3.3배 크게 잡히지만(2.34% → 7.83%) 연출이 바뀌는 판단이라 별도 브랜치로 뺐다. */
+    { at:7000,  msg:"② 국솥에서 수증기가 오릅니다 — 조리가 한창입니다",   act: () => { demoSteamUp(); demoKettleView(); vidShowFor("normal"); } },
     { at:15000, msg:"③ 과열된 기름에 불이 붙었습니다",                  act: () => { demoIgnite(); demoKettleView(); vidShowFor("smoke"); } },
     { at:24000, msg:"④ 연기가 자욱합니다 — 카메라가 화재를 놓칩니다",   act: demoWideView },
     /* ⚠️ demoHazard는 "push"/"pinch"만 받는다. 처음에 "fall"을 넘겼더니 findHazardSpot이
@@ -13115,12 +13162,12 @@ const DEMO_SCRIPTS = {
      ③까지는 before와 **완전히 같아야 한다.** 다르면 "조건이 달랐잖아"가 된다. */
   after: [
     { at:0,     msg:"① 조리원이 평소대로 작업합니다",                   act: demoNormalWork },
-    /* ⚠️ 자막에서 "김"을 뺐다 (2026-08-24). 김은 켜지긴 하는데 **화면에 안 보인다** —
-       김이 제일 잘 보일 조건(해치 근접 카메라 · 김 5배)에서도 화면 기여가
-       2.96/255 = 1.16%다. 안 보이는 것을 자막으로 우기면 관객이 먼저 알아챈다.
-       김 자체를 보이게 만드는 작업은 팀의 수증기 방침 결정 뒤에 한다(별건).
-       demoSteamUp()은 그대로 둔다 — 데이터에는 남고, 보이게 되면 자막만 되돌리면 된다. */
-    { at:7000,  msg:"② 국솥이 끓습니다 — 조리가 한창입니다",             act: () => { demoSteamUp(); demoKettleView(); vidShowFor("normal"); } },
+    /* ✅ 자막에 "수증기"를 되돌렸다 (2026-08-25). 회의록 2단계가 "주방 조리 간 수증기 발생"이라
+       명시돼 있고, 다시 재 보니 **김은 보인다** — 해치 정면에서 가시픽셀 7.83%다.
+       뺐던 근거(1.16%)는 전체 화면 평균이라 국소 기둥에는 안 맞는 지표였다.
+       ⚠️ 카메라는 종전 시점(솥 근접 자유시점) 그대로다. 해치 정면으로 옮기면 김이
+       3.3배 크게 잡히지만(2.34% → 7.83%) 연출이 바뀌는 판단이라 별도 브랜치로 뺐다. */
+    { at:7000,  msg:"② 국솥에서 수증기가 오릅니다 — 조리가 한창입니다",   act: () => { demoSteamUp(); demoKettleView(); vidShowFor("normal"); } },
     { at:15000, msg:"③ 과열된 기름에 불이 붙었습니다",                  act: () => { demoIgnite(); demoKettleView(); vidShowFor("smoke"); } },
     { at:21000, msg:"④ 화재를 즉시 감지했습니다 — 검출 시작",           act: demoDetectOn },
     { at:30000, msg:"⑤ 조리원이 출입구로 대피합니다",                   act: demoEvacuate },
@@ -13203,6 +13250,9 @@ function demoRun(kind) {
   DEMO.saved = {
     pos: person.node.position.clone(), rotY: person.node.rotation.y,
     view: mainView,
+    /* ⚠️ 검출 모드도 뜬다. ④에서 mock→onnx로 바꾸는데, 되돌리지 않으면
+       **다음 사람이 쓸 때 모드가 바뀐 채로 남는다.** 같은 sim.html을 팀원이 쓴다. */
+    milMode: MIL.mode,
   };
   DEMO.on = true; DEMO.kind = kind; DEMO.t = 0; DEMO.beat = -1;
   demoSay("▶ " + kind + " 시나리오 시작");
@@ -13231,6 +13281,12 @@ function demoReset(quiet) {
       mainView = DEMO.saved.view;
       if (typeof viewSel !== "undefined" && viewSel) viewSel.value = mainView;
       applyCameras();
+    }
+    /* 검출 모드를 원래대로. 안 되돌리면 팀원이 mock으로 쓰던 환경이 onnx로 바뀐 채 남는다. */
+    if (DEMO.saved.milMode && DEMO.saved.milMode !== MIL.mode) {
+      const sel = $("milMode");
+      if (sel) { sel.value = DEMO.saved.milMode; sel.dispatchEvent(new Event("change")); }
+      else MIL.mode = DEMO.saved.milMode;
     }
     DEMO.saved = null;
   }
@@ -13355,15 +13411,17 @@ $("shotDwell").addEventListener("input", e => {
 const VID = {
   wrap:null, el:null, ov:null, open:false,
   clips: { normal:null, smoke:null, fire:null },
+  size:  { normal:0,    smoke:0,    fire:0    },   // 바이트 — 같은 파일을 세 칸에 걸어 둔 것을 잡는다
+  ranges:{ normal:false, smoke:false, fire:false },// 서버가 구간 요청을 받는가 (못 받으면 시킹이 죽는다)
   order: ["normal", "smoke", "fire"],
   cur: null,
   detect:false, busy:false, acc:0, hz:2.5,       // 추론은 비싸다 — 2.5Hz면 충분히 살아 보인다
   boxes:null, ms:0, err:null,
 };
 const VID_LABEL  = { normal:"① 정상 조리", smoke:"② 연기 낀 조리", fire:"③ 연기 + 화재" };
-/* fire·smoke는 MIL_COLORS에 없어서 흰색으로 떨어진다. 화재 검출이 이 패널의 요점이므로
-   여기서만 색을 얹는다(시뮬 오버레이 색은 건드리지 않는다). */
-const VID_COLORS = Object.assign({ fire:"#ff7043", smoke:"#b0bec5" }, MIL_COLORS);
+/* 색은 MIL_COLORS 하나만 쓴다. 종전에는 여기서 fire·smoke를 따로 얹었는데(패널만 색이 있고
+   시뮬 오버레이는 흰색이었다), 같은 클래스가 좌우에서 다른 색으로 나오면 같은 모델이
+   같은 것을 봤다는 그림이 깨진다. MIL_COLORS에 fire·smoke를 넣어 한 곳으로 합쳤다. */
 
 /* 패널을 3D 화면 안 오른쪽 아래에 붙인다. 위쪽은 PiP, 왼쪽 위는 상태 HUD,
    아래 가운데는 FPS 줄이 쓰므로 남는 자리가 여기다. 아래 여백을 44로 둔 것은
@@ -13408,6 +13466,13 @@ function vidBuild() {
   w.querySelector("#vidClose").addEventListener("click", () => vidOpen(false));
   // 한 클립이 끝나면 다음 클립으로 — 정상 → 연기 → 화재 순서가 곧 이야기다
   VID.el.addEventListener("ended", () => vidNext());
+  /* 지정한 끝 위치에 닿아도 같은 처리를 한다. timeupdate는 초당 4회쯤 오는데
+     비트가 6~12초라 그 정도면 충분하다 — 매 프레임 검사할 이유가 없다.
+     src를 바꾸면 currentTime이 0으로 돌아가므로 두 번 걸리지 않는다. */
+  VID.el.addEventListener("timeupdate", () => {
+    const e = vidEndOf(VID.cur);
+    if (e && VID.el.currentTime >= e) vidNext();
+  });
 }
 
 function vidOpen(show) {
@@ -13419,21 +13484,139 @@ function vidOpen(show) {
   const b = $("vidToggle"); if (b) b.textContent = VID.open ? "패널 닫기" : "패널 열기";
 }
 
-function vidSet(slot, url) {
+function vidSet(slot, url, size) {
   VID.clips[slot] = url;
+  VID.size[slot] = +size || 0;
   vidNote();
+}
+
+/* **세 칸에 같은 파일이 걸려 있는지** 본다. 실제로 그랬다 — 연기·화재 클립이 아직 없어서
+   정상 조리 영상에 심볼릭 링크만 세 개 걸어 뒀는데, 안내문은 "클립 3종"이라고 떴다.
+   그대로 발표하면 세 장면에 **똑같은 영상**이 나온다. 크기가 같으면 같은 파일로 본다
+   (심볼릭 링크는 HTTP 너머에서 구분할 방법이 없다 — Content-Length가 유일한 단서다). */
+function vidDupSlots() {
+  const by = {};
+  for (const k of VID.order) {
+    const sz = VID.size[k];
+    if (!VID.clips[k] || !sz) continue;
+    (by[sz] = by[sz] || []).push(k);
+  }
+  return Object.values(by).filter(g => g.length > 1);
 }
 
 /* 채워진 클립만 순서대로 돈다. 하나도 없으면 아무 일도 안 한다 —
    발표 중에 빈 검은 화면이 뜨는 것보다 패널이 안 열리는 편이 낫다. */
 function vidHave() { return VID.order.filter(k => VID.clips[k]); }
 
+/* ④ 감지 비트가 틀 클립. 셋 다 있으면 ③(연기+화재)이 맞지만 **화재팀 영상이 순서대로
+   오지 않는다.** fire가 없으면 smoke로 내려간다 — 없다고 ④를 통째로 건너뛰면 발표에서
+   증명해야 할 장면이 사라진다.
+   ⚠️ normal까지는 안 내려간다. "화재를 즉시 감지했습니다" 자막 밑에 **평범한 조리 영상**이
+   뜨면 자리표시자보다 나쁘다 — 관객이 먼저 알아챈다. */
+function vidBestSlot() {
+  for (const k of ["fire", "smoke"]) if (VID.clips[k]) return k;
+  return "fire";                                  // 없으면 "③ 연기+화재 클립 준비 중"
+}
+
+/* 클립별 시작 위치(초). 실사는 98초인데 발표 비트 하나가 6~8초라 **앞부분만 보인다.**
+   불이 0:40에 나오는 영상을 그대로 틀면 ④ 감지 장면에 아무 일도 안 일어나는 그림이 뜬다.
+   원본을 자르지 않고 시작점만 옮긴다 — 받은 파일을 건드리지 않는 쪽이 안전하다.
+   `?vidstart=smoke:12,fire:38` 로 주거나 __sim.VID_START.fire = 38 로 바꾼다. */
+const VID_START = { normal:0, smoke:0, fire:0 };
+
+/* 클립별 **끝 위치(초)**. 0이면 파일 끝까지. 실사·생성 영상 모두 발표에 쓸 구간은
+   전체가 아니라 한 토막이다 — 시작만 옮기면 그 뒤가 전부 흘러 비트를 넘겨 버린다.
+   끝에 닿으면 **자연 종료와 똑같이** 처리한다(다음 클립으로; 마지막이면 vidNext가
+   일부러 마지막 프레임에서 멈춘다 — 그 결정은 그대로 둔다). */
+const VID_END = { normal:0, smoke:0, fire:0 };
+
+/* 파서를 하나로 쓴다. vidstart/vidend를 따로 짜 두면 한쪽만 고쳐져 **조용히 어긋난다.** */
+function vidParseTimes(param, into) {
+  try {
+    const q = new URLSearchParams(location.search).get(param);
+    if (!q) return;
+    q.split(",").forEach(pair => {
+      const [k, v] = pair.split(":");
+      const key = (k || "").trim();
+      if (key in into && isFinite(+v)) into[key] = Math.max(0, +v);
+    });
+  } catch (e) { /* 잘못 준 값은 무시한다 — 발표 중에 예외로 멈추면 안 된다 */ }
+}
+vidParseTimes("vidstart", VID_START);
+vidParseTimes("vidend",   VID_END);
+
+/* 끝 위치가 시작보다 앞이면 **틀자마자 끝나 검은 화면**이 된다. 그런 값은 없는 셈 친다. */
+function vidEndOf(slot) {
+  const e = VID_END[slot] || 0;
+  return (e > (VID_START[slot] || 0)) ? e : 0;
+}
+
+/* ══ 시킹이 죽는 함정 — **`python -m http.server`는 구간 요청을 못 받는다** ═══════
+   실측(2026-08-25): `Range: bytes=1000000-1000100`을 보내면 **206이 아니라 200**에
+   `Content-Length: 27131197`(파일 전체)이 온다. `Accept-Ranges` 헤더도 없다.
+   그러면 `currentTime` 대입이 **조용히 무시되고 0초부터 재생된다** — 예외도, 경고도 없다.
+   `?vidstart=`가 처음부터 안 먹고 있었다는 뜻이다.
+
+   CLAUDE.md가 이 서버를 쓰라고 안내하므로 발표 자리에서도 똑같이 안 먹는다.
+   서버를 바꾸라고 하면 배포본·팀원 환경까지 전부 따라와야 하므로, **브라우저 쪽에서 끝낸다**:
+   구간을 지정한 클립만 통째로 받아 blob으로 바꾼다. 메모리에 다 있으면 시킹이 항상 된다.
+   ⚠️ 지정 안 한 클립은 건드리지 않는다 — 실사 원본이 928MB짜리도 있다. */
+const VID_BLOB_CAP = 300 * 1024 * 1024;
+async function vidMakeSeekable(slot) {
+  const url = VID.clips[slot];
+  if (!url || url.startsWith("blob:")) return false;          // 파일 선택 경로는 이미 blob이다
+  if (!VID_START[slot] && !vidEndOf(slot)) return false;       // 구간을 안 잡았으면 받을 이유가 없다
+  if (VID.ranges[slot]) return false;                          // 서버가 구간 요청을 받으면 그대로 둔다
+  if (VID.size[slot] > VID_BLOB_CAP) {
+    console.warn("[VID] " + slot + " 는 " + Math.round(VID.size[slot] / 1048576) +
+                 "MB — 통째로 받지 않는다. 구간 지정이 안 먹는다(서버가 구간 요청을 못 받음).");
+    return false;
+  }
+  try {
+    const b = await (await fetch(url)).blob();
+    VID.clips[slot] = URL.createObjectURL(b);
+    console.warn("[VID] " + slot + " 구간 지정용으로 통째로 받았다 — " +
+                 Math.round(b.size / 1048576) + "MB (서버가 구간 요청을 못 받음)");
+    return true;
+  } catch (e) { console.warn("[VID] " + slot + " 내려받기 실패 — 구간 지정이 안 먹는다", e); return false; }
+}
+
+/* currentTime은 **메타데이터가 오기 전에는 안 먹는다** — 조용히 무시되고 0에서 시작한다.
+   그래서 src를 바꾼 직후에 걸지 않고 기다린다.
+
+   ⚠️ **`loadedmetadata`로는 부족하다**(2026-08-25 실측). 그 시점은 readyState 1이라
+   데이터가 아직 없고, 시크를 걸면 `seeking`(t=10)까지는 가는데 **`seeked`가 t=0으로
+   돌아온다** — 브라우저가 조용히 되돌린다. 예외도 경고도 없어서 "시작 위치가 안 먹네"로만
+   보인다. 이벤트 순서를 찍어서야 드러났다:
+       loadstart(rs0) → loadedmetadata(rs1) → seeking(t10,rs1) → **seeked(t0,rs4)**
+   → `canplay`(rs 3 이상, 실제로 틀 수 있는 상태)까지 기다린 뒤에 건다.
+
+   그래도 한 번 더 확인한다. 되돌려졌으면 **딱 한 번** 다시 건다 — 무한 재시도는
+   발표 중에 시크 루프로 화면이 떨리는 것보다 처음부터 트는 편이 낫다.
+   길이를 넘는 값을 주면 재생이 바로 끝나 버리므로 끝에서 0.1s 안쪽으로 자른다. */
+function vidSeekStart(slot) {
+  const st = VID_START[slot] || 0;
+  if (st <= 0) { try { VID.el.currentTime = 0; } catch (e) {} return; }
+  let retried = false;
+  const apply = function () {
+    const v = VID.el, dur = v.duration;
+    const want = (dur && isFinite(dur)) ? Math.min(st, Math.max(0, dur - 0.1)) : st;
+    try { v.currentTime = want; } catch (e) { return; }   // 시킹 못 하는 형식이면 처음부터 튼다
+    if (retried) return;
+    retried = true;
+    v.addEventListener("seeked", function () {
+      if (Math.abs(v.currentTime - want) > 0.5) apply();   // 되돌려졌다 — 한 번만 다시
+    }, { once:true });
+  };
+  VID.el.addEventListener("canplay", apply, { once:true });
+}
+
 function vidPlay(slot) {
   if (!VID.clips[slot]) return false;
   vidBuild();
   VID.cur = slot;
   VID.el.src = VID.clips[slot];
-  VID.el.currentTime = 0;
+  vidSeekStart(slot);
   const p = VID.el.play();
   if (p && p.catch) p.catch(e => console.warn("[VID] 재생 실패", e));
   const c = VID.wrap.querySelector("#vidClip");
@@ -13504,7 +13687,7 @@ function vidDraw() {
   ctx.font = Math.round(12 * s) + "px ui-monospace,monospace";
   ctx.lineWidth = 2 * s; ctx.textBaseline = "alphabetic";
   for (const b of VID.boxes) {
-    const col = VID_COLORS[b.label] || "#e6edf3";
+    const col = MIL_COLORS[b.label] || "#e6edf3";
     const x = (b.cx - b.w / 2) * W, y = (b.cy - b.h / 2) * H;
     ctx.strokeStyle = col; ctx.strokeRect(x, y, b.w * W, b.h * H);
     const tag = b.label + " " + ((b.conf || 0) * 100).toFixed(0) + "%";
@@ -13518,26 +13701,77 @@ function vidStatusLine() {
   if (!st) return;
   if (VID.err) { st.textContent = "⚠ " + VID.err; return; }
   if (!VID.detect) { st.textContent = VID.cur ? (VID_LABEL[VID.cur] + " — 검출 꺼짐") : "대기"; return; }
-  st.textContent = (ONNX.name || "model") + " · " + (VID.boxes ? VID.boxes.length : 0) + "개 검출 · " +
+  st.textContent = (ONNX.isDummy ? "⚠더미 · " : "") +
+                   (ONNX.name || "model") + " · " + (VID.boxes ? VID.boxes.length : 0) + "개 검출 · " +
                    VID.ms.toFixed(0) + "ms · " + VID.hz + "Hz";
+  st.style.color = ONNX.isDummy ? "#f0a020" : "";
 }
 
 function vidNote() {
   const n = $("vidNote"); if (!n) return;
   const have = vidHave();
-  n.textContent = have.length
+  /* 모델 상태를 같이 적는다. 클립이 다 있어도 모델이 없으면 박스가 안 그려지는데,
+     종전 안내문은 클립만 말해서 **발표 직전에 뭐가 빠졌는지 알 수 없었다.** */
+  const model = !ONNX.session ? "⚠ 모델 없음"
+              : ONNX.isDummy   ? "⚠ 더미 모델 — 실제 검출이 아닙니다"
+              : "모델 " + (ONNX.name || "로드됨");
+  /* 같은 파일을 여러 칸에 건 경우를 **이름까지 찍어서** 알린다. "3종"만 보고
+     준비가 끝났다고 판단하는 것이 이 안내문의 가장 위험한 실패다. */
+  const dup = vidDupSlots();
+  const dupMsg = dup.length
+    ? "  ·  ⚠ " + dup.map(g => g.map(k => VID_LABEL[k]).join("=")).join(", ") + " 같은 파일"
+    : "";
+  n.textContent = (have.length
     ? "클립 " + have.length + "종: " + have.map(k => VID_LABEL[k]).join(" · ")
-    : "클립 없음 — 파일을 고르거나 demo_clips/ 에 넣으세요";
+    : "클립 없음 — 파일을 고르거나 demo_clips/ 에 넣으세요") + "  ·  " + model + dupMsg;
+  n.style.color = (ONNX.isDummy || dup.length) ? "#f0a020" : "";
 }
 
-/* demo_clips/ 자동 탐지. 없으면 조용히 넘어간다 — 있어야 정상인 폴더가 아니다. */
+/* demo_clips/ 자동 탐지. 없으면 조용히 넘어간다 — 있어야 정상인 폴더가 아니다.
+
+   ⚠️ 확장자를 넓혔다(2026-08-24). 연기·화재 클립은 **화재팀이 생성 모델로 뽑아서 준다**
+   (veo·seedance). 그쪽 출력이 mp4로만 나오지 않으므로, 이름만 맞춰 폴더에 떨궈 넣으면
+   붙도록 후보를 순서대로 두드리고 **처음 맞는 하나**를 쓴다. */
+const VID_EXT = ["mp4", "webm", "mov", "m4v"];
 async function vidProbe() {
   for (const k of VID.order) {
     if (VID.clips[k]) continue;
-    const url = "demo_clips/" + k + ".mp4";
-    try { const r = await fetch(url, { method:"HEAD" }); if (r.ok) VID.clips[k] = url; } catch (e) { /* 없으면 그만 */ }
+    for (const ext of VID_EXT) {
+      const url = "demo_clips/" + k + "." + ext;
+      try { const r = await fetch(url, { method:"HEAD" });
+            if (r.ok) { VID.clips[k] = url;
+                        VID.size[k]   = +r.headers.get("content-length") || 0;
+                        VID.ranges[k] = /bytes/i.test(r.headers.get("accept-ranges") || "");
+                        break; } }
+      catch (e) { /* 없으면 다음 확장자 */ }
+    }
   }
   vidNote();
+  /* 구간을 지정한 클립만 미리 받아 시킹이 되게 해 둔다. 재생 직전에 하면
+     비트가 뜨는 순간 몇 초 멈춰 보인다 — 시작할 때 끝내는 편이 낫다. */
+  for (const k of VID.order) await vidMakeSeekable(k);
+  vidProbeModel();
+}
+
+/* 모델도 같이 찾는다 — 종전에는 **클립만 자동이고 모델은 손으로 골라야 했다.**
+   발표자가 그걸 잊으면 ④ 감지 비트가 **아무 말 없이** 넘어간다: vidShowFor는 성공하는데
+   ONNX.session이 null이라 && 조건이 깨져서, 화면에는 영상만 뜨고 박스가 안 그려진다.
+   실패해도 예외를 올리지 않는다 — 없는 게 정상인 파일이다. */
+async function vidProbeModel() {
+  if (ONNX.session) return false;
+  for (const url of ["demo_clips/best.onnx", "demo_clips/model.onnx"]) {
+    let ok = false;
+    try { ok = (await fetch(url, { method:"HEAD" })).ok; } catch (e) { ok = false; }
+    if (!ok) continue;
+    try {
+      const buf  = await (await fetch(url)).arrayBuffer();
+      const info = await onnxLoadModel(buf, url.split("/").pop());
+      console.warn("[VID] 모델 자동 로드 " + url + " · " + info.ep + " · " + info.imgsz + "px");
+      vidNote(); vidStatusLine();
+      return true;
+    } catch (e) { console.warn("[VID] 모델 자동 로드 실패 " + url, e); }
+  }
+  return false;
 }
 
 $("vidToggle").addEventListener("click", () => vidOpen(!VID.open));
@@ -13553,7 +13787,7 @@ $("vidDetectBtn").addEventListener("click", () => {
   const inp = $(id); if (!inp) return;
   inp.addEventListener("change", e => {
     const f = e.target.files && e.target.files[0];
-    if (f) vidSet(slot, URL.createObjectURL(f));
+    if (f) vidSet(slot, URL.createObjectURL(f), f.size);
   });
 });
 /* 추론은 비싸다 — 매 프레임이 아니라 hz로 나눠 돌린다. 그리기·상태줄은 매 프레임.
@@ -13594,6 +13828,12 @@ window.__sim.VID = VID;
 window.__sim.vidPlaySeq = vidPlaySeq;
 window.__sim.vidOpen = vidOpen;
 window.__sim.vidShowFor = vidShowFor;
+window.__sim.VID_START = VID_START;          // 클립별 시작 위치(초) — 콘솔에서 조정
+window.__sim.VID_END   = VID_END;            // 클립별 끝 위치(초) — 0이면 파일 끝까지
+window.__sim.vidMakeSeekable = vidMakeSeekable;  // 콘솔에서 구간을 바꾼 뒤 다시 부른다
+window.__sim.vidProbe = vidProbe;            // 파일을 나중에 넣었을 때 다시 훑기
+window.__sim.vidProbeModel = vidProbeModel;
+window.__sim.vidBestSlot = vidBestSlot;
 window.__sim.PUSH_LEAN = PUSH_LEAN;     // 밀기 숙임 — max 0.25rad
 window.__sim.vidDetectOnce = vidDetectOnce;
 window.__sim.SHOTS = SHOTS;
