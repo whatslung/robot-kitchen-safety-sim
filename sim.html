@@ -7324,17 +7324,27 @@ function camIntrinsics(cam, w, h) {
    **sensorGrain 후처리가 준비 안 된 상태로 남아 2번째 캡처부터 RGB가 단색**이 됐다.
    판정만 바꾸는 이쪽이 렌더 파이프라인을 전혀 건드리지 않아 안전하다. */
 const GT_BG_C = GT_ENV;                 // 배경(환경) 색 — 최근접 후보에 포함
+/* 최근접 매칭 절대 허용치(제곱거리). 최근접 팔레트 색이 이보다 멀면 그 픽셀은
+   "어느 개체도 아님"으로 보고 배경 처리한다.
+   왜 필요한가(2026-08-25 발견): 이 함수는 원래 tol 없이 "무조건 최근접"만 했다.
+   그러면 서로 다른 두 물체(예: 장비 vs 환경) 경계의 MSAA 혼합 픽셀이 하필 그 중간에
+   놓인 제3의 개체 색에 배정돼, 그 개체의 min/max bbox가 엉뚱한 영역까지 번졌다.
+   특히 팔레트의 [128,128,128](회색)처럼 색공간 중앙에 놓인 색을 받은 개체는 온갖
+   애매한 중간톤을 빨아들여 화면 절반짜리 person 박스가 됐다(실측: 200장 중 8장에서
+   케틀·빈 바닥을 person으로 라벨 → 학습 시 오검출 유발). 재렌더 스윕으로 900(=거리 30)이
+   회색 stray를 제거하면서 실제 작은/가려진 사람은 유지하는 값으로 확인됐다
+   (400은 과해서 실제 사람을 놓쳤고, 1600은 느슨해 회색 박스가 남았다). */
+const NEAREST_TOL2 = 900;
 function nearestColorKey(r, g, b, palette) {
-  /* palette: [key, [r,g,b]] 배열. 배경보다 가까운 클래스가 없으면 null(=배경).
-     tol: 완전히 동떨어진 색(후처리 잔재 등)은 버린다. MSAA 혼합은 항상 두 원본
-     사이에 있으므로 최근접 거리가 클 수 없다. */
+  /* palette: [key, [r,g,b]] 배열. 배경보다 가까운 클래스가 없거나(=배경) 최근접
+     거리가 NEAREST_TOL2를 넘으면(=어느 개체도 아님) null을 돌려준다. */
   let bestK = null, bestD = Infinity;
   for (const [k, c] of palette) {
     const d = (r-c[0])*(r-c[0]) + (g-c[1])*(g-c[1]) + (b-c[2])*(b-c[2]);
     if (d < bestD) { bestD = d; bestK = k; }
   }
   const db = (r-GT_BG_C[0])*(r-GT_BG_C[0]) + (g-GT_BG_C[1])*(g-GT_BG_C[1]) + (b-GT_BG_C[2])*(b-GT_BG_C[2]);
-  return db <= bestD ? null : bestK;    // 배경이 더 가까우면 그 픽셀은 배경이다
+  return (bestD > NEAREST_TOL2 || db <= bestD) ? null : bestK;   // 너무 멀거나 배경이 더 가까우면 배경
 }
 /* 이미지 전체를 훑기 전에 **서로 다른 색만 모아 한 번씩** 판정한다.
    마스크는 색이 수십 가지뿐이라(MSAA 단계가 유한하다) 픽셀마다 팔레트를 도는 것보다
@@ -7625,21 +7635,41 @@ async function groundTruthImpl(camId, opt) {
   instMat("smoke_0");                                      // 팔레트 슬롯 확보
   // 보호 기준은 위에서 칠해 둔 **클래스 마스크**다 (팔레트 번호 대조는 어긋났다)
   paintSmoke(inst, INST_PALETTE[instIndex.get("smoke_0")], mask.data);
-  // 인스턴스별 bbox (가림 반영 — 마스크 픽셀 기준)
+  /* 인스턴스별 bbox — 각 개체의 **가장 큰 연결 요소**만 박스로 쓴다 (2026-08-25).
+     최근접 분류는 서로 다른 두 개체 경계의 MSAA 혼합 픽셀을 제3의 개체 색으로 오분류한다.
+     nearestColorKey의 tol만으로는 부족했다 — 예: 파란 장비↔환경 혼합색이 팔레트의
+     navy[24,24,120] 선상에 놓여 tol(거리30)을 통과, 그 개체 박스가 장비 테두리를 따라
+     화면 전체로 번졌다(실측: person 박스가 프레임의 93%). 색거리로는 근본 차단이 안 된다.
+     진짜 사람은 하나의 덩어리(연결 요소)이고 stray는 여기저기 흩어진 얇은 테두리이므로,
+     개체마다 **픽셀이 가장 많은 4-연결 요소**만 취하면 메커니즘과 무관하게 걸러진다.
+     (가림으로 사람이 두 조각 나면 큰 쪽만 잡혀 박스가 약간 작아질 수 있으나, 안전 검출에서
+      과대 오검출보다 그쪽이 낫다.) */
   const instBoxes = new Map();
   {
     const { data:ip, w:iw, h:ih } = inst;
     const byColor = [...instIndex.entries()].map(([k, idx]) => [k, INST_PALETTE[idx]]);
-    // 정확 일치 대신 최근접 색 — MSAA 외곽선 픽셀을 우세한 개체로 되돌린다(위 주석)
     const cls = classifyByNearest(ip, iw, ih, byColor);
-    for (let y = 0; y < ih; y++) for (let x = 0; x < iw; x++) {
-      const ki = cls[y*iw + x];
-      if (ki < 0) continue;                              // 배경
+    const seen = new Uint8Array(iw*ih);
+    const stack = new Int32Array(iw*ih);               // flood fill 스택(재귀 회피)
+    for (let p0 = 0; p0 < iw*ih; p0++) {
+      const ki = cls[p0];
+      if (ki < 0 || seen[p0]) continue;
+      let sp = 0; stack[sp++] = p0; seen[p0] = 1;       // 이 픽셀에서 연결 요소 하나를 훑는다
+      let n = 0, minX = iw, maxX = -1, minY = ih, maxY = -1;
+      while (sp > 0) {
+        const p = stack[--sp];
+        const x = p % iw, y = (p - x) / iw;
+        n++;
+        if (x < minX) minX = x; if (x > maxX) maxX = x;
+        if (y < minY) minY = y; if (y > maxY) maxY = y;
+        if (x > 0    && !seen[p-1]  && cls[p-1]  === ki) { seen[p-1]=1;  stack[sp++]=p-1; }
+        if (x < iw-1 && !seen[p+1]  && cls[p+1]  === ki) { seen[p+1]=1;  stack[sp++]=p+1; }
+        if (y > 0    && !seen[p-iw] && cls[p-iw] === ki) { seen[p-iw]=1; stack[sp++]=p-iw; }
+        if (y < ih-1 && !seen[p+iw] && cls[p+iw] === ki) { seen[p+iw]=1; stack[sp++]=p+iw; }
+      }
       const k = byColor[ki][0];
-      const bx = instBoxes.get(k) || (instBoxes.set(k, {minX:x, maxX:x, minY:y, maxY:y, n:0}), instBoxes.get(k));
-      if (x < bx.minX) bx.minX = x; if (x > bx.maxX) bx.maxX = x;
-      if (y < bx.minY) bx.minY = y; if (y > bx.maxY) bx.maxY = y;
-      bx.n++;
+      const prev = instBoxes.get(k);
+      if (!prev || n > prev.n) instBoxes.set(k, { minX, maxX, minY, maxY, n });  // 개체당 최대 연결요소
     }
   }
   const instances = [];
