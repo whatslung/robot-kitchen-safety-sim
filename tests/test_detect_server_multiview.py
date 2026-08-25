@@ -104,3 +104,69 @@ def test_malformed_calibration_has_stable_422_error():
 
     assert response.status_code == 422
     assert response.json() == {"error": "invalid calibration"}
+
+
+class EndpointPredictor:
+    def __init__(self):
+        self.batch_calls = 0
+
+    @staticmethod
+    def _modes(history):
+        x, z = history[-1]
+        return [
+            {
+                "path": [(x + 0.1 * step, z + offset) for step in range(1, 13)],
+                "w": probability,
+                "sigma": [0.2] * 12,
+            }
+            for probability, offset in [(0.7, 0.0), (0.2, 0.3), (0.1, -0.3)]
+        ]
+
+    def predict_batch(self, histories):
+        self.batch_calls += 1
+        return [self._modes(history) for history in histories]
+
+    def predict_modes(self, history):
+        return self._modes(history)
+
+
+def _api_history(offset=0.0):
+    return [
+        {"t": 1000 + index * 400, "x": offset + 0.1 * index, "z": 0.0}
+        for index in range(8)
+    ]
+
+
+def test_predict_batches_global_tracks_once(monkeypatch):
+    predictor = EndpointPredictor()
+    monkeypatch.setattr(server, "_get_predictor", lambda: predictor)
+
+    with TestClient(server.app) as client:
+        response = client.post(
+            "/predict",
+            json={
+                "tracks": [
+                    {"id": 9, "history": _api_history(1.0), "age_ms": 10, "stale": False},
+                    {"id": 2, "history": _api_history(), "age_ms": 20, "stale": False},
+                ],
+                "robot": {"x": -1.1, "z": 0.795, "stop_radius": 3.1, "slow_radius": 3.9},
+            },
+        )
+
+    assert response.status_code == 200
+    assert predictor.batch_calls == 1
+    assert [track["id"] for track in response.json()["tracks"]] == [2, 9]
+    assert all(track["source"] == "lstm" for track in response.json()["tracks"])
+
+
+def test_predict_keeps_legacy_single_history_response(monkeypatch):
+    predictor = EndpointPredictor()
+    monkeypatch.setattr(server, "_get_predictor", lambda: predictor)
+    history = [[0.2 * index, 0.0] for index in range(8)]
+
+    with TestClient(server.app) as client:
+        response = client.post("/predict", json={"hist": history})
+
+    assert response.status_code == 200
+    assert "modes" in response.json()
+    assert len(response.json()["modes"]) == 3

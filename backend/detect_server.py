@@ -482,17 +482,40 @@ def _get_predictor():
 
 @app.post("/predict")
 async def predict(req: Request):
-    """학습형 멀티모달 궤적 예측. 이슈 #2 5단계.
+    """단일 관측 또는 글로벌 트랙 배치의 멀티모달 궤적 예측.
 
     시뮬의 window.__customPredictor가 관측 8점(씬 AU, 0.4s 간격으로 리샘플)을 보내면
     K개 모드(각 경로+가중치+스텝별 σ)를 돌려준다. 좌표는 모델 학습 단위(AU)와 동일.
     요청: {"hist": [[x,z], … 8개]}   응답: {"modes": [{"path":[[x,z]…], "w":.., "sigma":[…]}]}
     """
-    p = _get_predictor()
-    if p is None:
-        return JSONResponse(status_code=503, content={"error": _PREDICTOR_ERR or "predictor 미로드"})
     try:
         body = await req.json()
+        if "tracks" in body:
+            try:
+                from backend.prediction_contract import predict_global_tracks, resample_history
+            except ImportError:
+                from prediction_contract import predict_global_tracks, resample_history
+            tracks = body["tracks"]
+            needs_model = any(
+                not bool(track.get("stale"))
+                and resample_history(track.get("history", [])) is not None
+                for track in tracks
+            )
+            predictor = _get_predictor() if needs_model else None
+            return {
+                "tracks": predict_global_tracks(
+                    tracks,
+                    predictor=predictor,
+                    robot=body.get("robot"),
+                )
+            }
+
+        p = _get_predictor()
+        if p is None:
+            return JSONResponse(
+                status_code=503,
+                content={"error": _PREDICTOR_ERR or "predictor 미로드"},
+            )
         hist = [(float(x), float(z)) for x, z in body["hist"]]
         modes = p.predict_modes(hist)
         return {"modes": [{"path": [[round(x, 4), round(z, 4)] for (x, z) in m["path"]],
