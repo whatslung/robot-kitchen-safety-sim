@@ -456,6 +456,10 @@ def _get_predictor():
     global _PREDICTOR, _PREDICTOR_ERR
     if _PREDICTOR is not None or _PREDICTOR_ERR is not None:
         return _PREDICTOR
+    if os.environ.get("PREDICT_DISABLE_MODEL", "").strip().lower() in {"1", "true", "yes"}:
+        _PREDICTOR_ERR = "disabled by PREDICT_DISABLE_MODEL"
+        print("[detect_server] PREDICT_DISABLE_MODEL=1 → 글로벌 예측은 Kalman fallback")
+        return None
     try:
         import sys
         sys.path.insert(0, str(_ROOT))

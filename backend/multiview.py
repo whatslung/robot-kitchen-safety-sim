@@ -57,7 +57,7 @@ def _solve_homography(image: np.ndarray, world: np.ndarray) -> np.ndarray:
     norm = float(matrix[2, 2])
     if abs(norm) < 1e-12:
         norm = float(np.linalg.norm(matrix))
-    if norm < 1e-12 or not np.isfinite(matrix).all():
+    if abs(norm) < 1e-12 or not np.isfinite(matrix).all():
         raise CalibrationError("calibration produced a singular homography")
     matrix /= norm
     if abs(float(np.linalg.det(matrix))) < 1e-12:

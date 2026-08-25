@@ -74,3 +74,16 @@ def test_multiview_prediction_is_display_only():
     assert "MV_SCHED.predictions" in body
     for forbidden in ("avoidDecide", "SAFE.factor", "state.seqT", "robot.position"):
         assert forbidden not in body
+
+
+def test_multiview_capture_skips_dataset_shader_wait_path():
+    source = _source()
+    assert re.search(r'new BABYLON\.RenderTargetTexture\(\s*"mvSensorRT"', source)
+    match = re.search(
+        r"async function mvCaptureDataURL\([^)]*\)\s*\{(.*?)\n\}\n\nfunction mvHandleGlobalResponse",
+        source,
+        re.S,
+    )
+    assert match
+    assert "renderWith(" not in match.group(1)
+    assert "mvRenderCameraFast(" in match.group(1)

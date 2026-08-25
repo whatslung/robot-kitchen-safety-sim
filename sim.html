@@ -8222,7 +8222,7 @@ const MV_SCHED = {
     { id:"mvSW", hz:4, nextAt:0 }, { id:"mvSE", hz:4, nextAt:0 },
     { id:"mvCenter", hz:6, nextAt:0 },
   ],
-  busy:false, calibrated:false, calibrating:false,
+  busy:false, calibrated:false, calibrating:false, nextCalibrationAt:0,
   seq:0, lastAppliedSeq:-1, dropped:0, responses:0, errors:0,
   predictions:{}, lastPredictionAt:0, predictionHz:2.5,
   lastCamera:null, lastLatencyMs:0, lastError:null,
@@ -8232,6 +8232,10 @@ const MV_FLOOR_ANCHORS = [
   new V3(-4.5,0,0),    new V3(0,0,0),    new V3(4.5,0,0),
   new V3(-4.5,0,3.8),  new V3(0,0,3.8),  new V3(4.5,0,3.8),
 ];
+const MV_CAPTURE_RT = new BABYLON.RenderTargetTexture(
+  "mvSensorRT", {width:640,height:360}, scene, false);
+MV_CAPTURE_RT.renderList = null;       // null = 현재 씬의 활성 메시 전체
+MV_CAPTURE_RT.renderParticles = true;
 
 function mvEndpoint(path) {
   const endpoint = new URL(MV_DETECT_URL, location.href);
@@ -8246,6 +8250,7 @@ function mvImagePoint(cam, floorPoint) {
 }
 async function mvBootstrapCalibration() {
   if (MV_SCHED.calibrated || MV_SCHED.calibrating) return;
+  if (performance.now() < MV_SCHED.nextCalibrationAt) return;
   MV_SCHED.calibrating = true; MV_SCHED.busy = true;
   try {
     const room = LAYOUT.room;
@@ -8272,16 +8277,25 @@ async function mvBootstrapCalibration() {
     console.log("[MV] 4+1 Homography 보정 완료 — single-flight 22 image/s 목표");
   } catch (error) {
     MV_SCHED.errors++; MV_SCHED.lastError = String(error && error.message || error);
+    MV_SCHED.nextCalibrationAt = performance.now() + 2000;
     console.warn("[MV] 보정 실패", error);
   } finally {
     MV_SCHED.calibrating = false; MV_SCHED.busy = false;
   }
 }
 
+async function mvRenderCameraFast(cam) {
+  // 주 화면 크기·activeCamera를 바꾸지 않는 전용 640×360 센서 렌더타깃.
+  await Promise.resolve();
+  MV_CAPTURE_RT.activeCamera = cam;
+  MV_CAPTURE_RT.render(true);
+  const data = await MV_CAPTURE_RT.readPixels();
+  return { data:new Uint8Array(data.buffer), w:640, h:360 };
+}
 async function mvCaptureDataURL(cam) {
   vizSuppressBegin();
   let rgb;
-  try { rgb = await renderWith(cam, null, null); }
+  try { rgb = await mvRenderCameraFast(cam); }
   finally { vizSuppressEnd(); }
   const source = document.createElement("canvas");
   source.width = rgb.w; source.height = rgb.h;
@@ -8388,7 +8402,7 @@ function mvSchedulerTick(now) {
   const due = MV_SCHED.cameras.filter(cameraDef => cameraDef.nextAt <= now)
     .sort((a,b) => a.nextAt - b.nextAt || a.id.localeCompare(b.id));
   if (!due.length) return;
-  if (MV_SCHED.busy) { MV_SCHED.dropped++; return; }
+  if (MV_SCHED.busy) return;
   const cameraDef = due[0], period = 1000 / cameraDef.hz;
   const missed = Math.max(0, Math.floor((now - cameraDef.nextAt) / period));
   MV_SCHED.dropped += missed;

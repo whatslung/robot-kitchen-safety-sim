@@ -24,6 +24,27 @@ def test_calibration_rejects_collinear_points():
         )
 
 
+def test_calibration_accepts_valid_camera_projection_with_negative_svd_scale():
+    image = [
+        [-0.17218452, 1.13428753], [1.68595407, 1.83888089], [6.29462695, 3.58645793],
+        [0.32296442, 0.30013605], [1.16884945, 0.44316661], [2.37089659, 0.64642056],
+        [0.48646005, 0.02470352], [1.03596224, 0.08449146], [1.72032998, 0.15895328],
+    ]
+    world = [
+        [-4.5, -3.8], [0, -3.8], [4.5, -3.8],
+        [-4.5, 0], [0, 0], [4.5, 0],
+        [-4.5, 3.8], [0, 3.8], [4.5, 3.8],
+    ]
+
+    calibration = CameraCalibration.from_points(
+        image=image,
+        world=world,
+        valid_world_polygon=[[-5.75, -5.75], [5.75, -5.75], [5.75, 5.75], [-5.75, 5.75]],
+    )
+
+    assert calibration.reprojection_rms < 1e-6
+
+
 def test_projection_outside_valid_floor_polygon_is_ignored():
     calibration = CameraCalibration.from_points(
         image=[[0, 0], [1, 0], [1, 1], [0, 1]],

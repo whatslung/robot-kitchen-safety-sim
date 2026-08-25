@@ -170,3 +170,19 @@ def test_predict_keeps_legacy_single_history_response(monkeypatch):
     assert response.status_code == 200
     assert "modes" in response.json()
     assert len(response.json()["modes"]) == 3
+
+
+def test_predictor_can_be_disabled_without_weight_download(monkeypatch):
+    import huggingface_hub
+
+    monkeypatch.setenv("PREDICT_DISABLE_MODEL", "1")
+    monkeypatch.setattr(server, "_PREDICTOR", None)
+    monkeypatch.setattr(server, "_PREDICTOR_ERR", None)
+    monkeypatch.setattr(
+        huggingface_hub,
+        "hf_hub_download",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("weight download attempted")),
+    )
+
+    assert server._get_predictor() is None
+    assert server._PREDICTOR_ERR == "disabled by PREDICT_DISABLE_MODEL"
