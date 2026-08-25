@@ -404,3 +404,33 @@ HF 모델 다운로드에 revision/checksum 고정이 없어 같은 커밋도 �
 - 발표 문구가 실제 측정 범위를 넘지 않음
 
 물리 로봇·실제 급식실에서 별도 검증하기 전까지는 “안전 보장” 대신 **“선제 안전 보조층”**으로 표현한다.
+
+---
+
+## 8. 로드맵 · 진행 상태 (갱신 2026-08-24)
+
+§5 추천 실행 순서 기준. ✅ 완료 · 🟡 부분 · ⬜ 예정.
+
+| # | 항목 | 상태 | 근거 / 남은 것 |
+|---|---|---|---|
+| 1 | 문서 오기 + `DETECT_MODEL=none` 수정 | ✅ | recall 0.270/precision 0.072/mAP50 0.048로 정정, `none`=검출 비활성. 테스트 `test_docs_metrics`·`test_detect_server_none`. PR #16 |
+| 2 | track ID별 이력 분리 + 대상 전환 오염 방지 | ✅ | `predictionUpdate(srcPos,now,srcId)` 전환 시 관측 초기화, `nearestPerson().id`. PR #16 |
+| 3 | 1.6초 라이브 조건 평가 생성 | 🟡 | `eval_traj_safety.py` horizon 파라미터 + 문서 경고 완료. **실제 1.6s 수치표는 전체 궤적 데이터셋+LSTM 가중치로 재실행 필요**(워크트리에 데이터 없음). PR #16 |
+| 4 | 전원 batch 예측 + 미래 위험 중재 (P0-5) | ✅ | `trajectory/risk.py` + `/predict` 배치 + sim `MPRED` + worst→제어. **GT 모드** 1+2단계. PR #16 |
+| 5 | 독립 test split + scene-level CI (P0-1) | ⬜ | 모든 예측 수치 신뢰도의 근본 작업. 다음 우선순위 후보 |
+| 6 | 실제 detector-track E2E 평가 (P0-2) | ⬜ | 검출 모드 관측(`MIL.tracks`)이 선결 — P0-5의 명시적 후속 |
+| 7 | API/browser CI (P0-4) | 🟡 | 브라우저 회귀 명세 `tests/browser/*` 작성됨(Playwright 미배선). CI 구성 남음 |
+| 8 | 발표 모드 + 성능 계측 (P1-3) | ⬜ | N=1/3/5/10 지연 실측 포함 |
+| 9 | 모델 artifact 고정 + 온디바이스 아키텍처 (P1-1/P1-2) | ⬜ | |
+
+### P0-5 내부 잔여 (다인원)
+- ⬜ **검출 모드 관측**: 현재 `MPRED`는 GT(peopleList) 기반이라 검출 모드에선 worst를 제어에 반영 안 함(GT 전지성 누출 방지). `MIL.tracks` 기반 관측으로 확장 → P0-2 토대.
+- ⬜ **실모델 E2E**: 브라우저 검증은 mock `/predict` 사용(백엔드 로직은 pytest). 실제 LSTM 물린 `detect_server` 배치 E2E + 지연 실측.
+- ⬜ **3단계(상호작용 모델)**: 독립 배치가 상호작용을 반복적으로 놓친다는 측정 근거 생길 때만.
+
+### 권장 다음 순서
+1. **검출 모드 관측**(P0-5 마무리) → 검출 모드에서도 다인원 제어 활성 + P0-2 토대
+2. **P0-1 test split + scene-level CI** → 모든 수치를 "val 예비값"에서 "독립 test 값"으로
+3. **P0-2 detector-track E2E** → 검출 노이즈·ID 스위치의 예측 영향 측정
+
+> 설계 상세: [specs/2026-08-24-multi-person-prediction-design.md](../specs/2026-08-24-multi-person-prediction-design.md)
