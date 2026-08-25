@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from backend.multiview import CalibrationError, CameraCalibration
+from backend.multiview import CalibrationError, CameraCalibration, MultiViewFusion
 
 
 def test_homography_restores_unseen_floor_point():
@@ -32,3 +32,84 @@ def test_projection_outside_valid_floor_polygon_is_ignored():
     )
 
     assert calibration.project((1.2, 0.5)) is None
+
+
+def _identity_calibration():
+    return CameraCalibration.from_points(
+        image=[[0, 0], [1, 0], [1, 1], [0, 1]],
+        world=[[0, 0], [1, 0], [1, 1], [0, 1]],
+        valid_world_polygon=[[-5, -5], [5, -5], [5, 5], [-5, 5]],
+    )
+
+
+def _fusion(*camera_ids, gate=0.2):
+    fusion = MultiViewFusion(gate=gate, fusion_window_ms=250, coast_ms=750, remove_ms=1500)
+    for camera_id in camera_ids:
+        fusion.calibrate(camera_id, _identity_calibration())
+    return fusion
+
+
+def _person(local_id, cx, cy=0.2, conf=0.9):
+    return {
+        "label": "person",
+        "id": local_id,
+        "conf": conf,
+        "cx": cx,
+        "cy": cy,
+        "w": 0.1,
+        "h": 0.2,
+    }
+
+
+def test_two_cameras_merge_same_person_into_one_global_id():
+    fusion = _fusion("mvNW", "mvCenter")
+
+    first = fusion.update("mvNW", [_person(2, 0.40)], 1000)
+    second = fusion.update("mvCenter", [_person(7, 0.41)], 1080)
+
+    assert first[0]["global_id"] == second[0]["global_id"]
+    assert second[0]["world"] == pytest.approx({"x": 0.41, "z": 0.3})
+    snapshot = fusion.snapshot(1080)
+    assert len(snapshot) == 1
+    assert snapshot[0]["sources"] == ["mvCenter", "mvNW"]
+
+
+def test_same_numeric_local_id_in_different_cameras_is_not_a_global_key():
+    fusion = _fusion("mvNW", "mvCenter", gate=0.15)
+
+    near_left = fusion.update("mvNW", [_person(3, 0.2)], 1000)
+    far_right = fusion.update("mvCenter", [_person(3, 0.8)], 1050)
+
+    assert near_left[0]["global_id"] != far_right[0]["global_id"]
+    assert len(fusion.snapshot(1050)) == 2
+
+
+def test_measurement_outside_gate_starts_new_global_track():
+    fusion = _fusion("mvNW", "mvCenter", gate=0.2)
+
+    first = fusion.update("mvNW", [_person(1, 0.1)], 1000)
+    distant = fusion.update("mvCenter", [_person(8, 0.7)], 1100)
+
+    assert first[0]["global_id"] != distant[0]["global_id"]
+
+
+def test_older_timestamp_does_not_rewind_global_state():
+    fusion = _fusion("mvNW")
+    fusion.update("mvNW", [_person(1, 0.2)], 1000)
+    fusion.update("mvNW", [_person(1, 0.4)], 1200)
+    before = fusion.snapshot(1200)
+
+    stale_response = fusion.update("mvNW", [_person(1, 0.05)], 1100)
+
+    assert "global_id" not in stale_response[0]
+    assert fusion.snapshot(1200) == before
+
+
+def test_reset_clears_tracks_but_preserves_calibration():
+    fusion = _fusion("mvNW")
+    fusion.update("mvNW", [_person(1, 0.2)], 1000)
+
+    fusion.reset_tracks()
+
+    assert fusion.tracks == {}
+    assert sorted(fusion.calibrations) == ["mvNW"]
