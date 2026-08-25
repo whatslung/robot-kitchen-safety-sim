@@ -9819,7 +9819,9 @@ function ghostUpdate() {
 }
 function causalUpdate() {
   if (!CAUSAL.on || !dramaActive()) { causalHide(); return; }
-  const win = Math.max(0.4, PRED.vizHorizon || 3);
+  // 회피 판정(avoidDecide)과 **같은 시간창**을 써야 인과선이 실제 결정을 부른 침범점을 가리킨다.
+  const remain = state.dur ? (state.dur - state.seqT) / 1000 : 0;
+  const win = Math.max(0.4, Math.min(remain, PRED.vizHorizon || 3));
   const mp = avoidMinPoint(win);
   if (!mp) { causalHide(); return; }
   const tcp = tipPos(), y = 0.12;
@@ -13527,7 +13529,7 @@ function corrRun(mode) {
   if (crossIdx < 0) { setStatus("이 배치엔 통로 횡단 단계가 없어 통로 회피 데모를 못 켠다"); return; }
   CORR.saved = {
     pos: person.node.position.clone(), rotY: person.node.rotation.y, view: mainView,
-    present: PRESENT.on, avoid: AVOID.on, autoLoop: state.autoLoop,
+    present: PRESENT.on, avoid: AVOID.on, autoLoop: state.autoLoop, auto: state.auto, cycles: state.cycles,
     viz: CORR_VIZ.map(id => { const el = $(id); return el ? el.checked : null; }),
     cam: { target: camera.target.clone(), alpha: camera.alpha, beta: camera.beta, radius: camera.radius },
   };
@@ -13583,6 +13585,7 @@ function corrTick(dt) {
       person.mode = "idle"; person.path = [];
       if (typeof personFall === "function") personFall();
       if (typeof triggerEstop === "function") triggerEstop("팔↔사람 접촉");
+      state.auto = false;   // 접촉 후 팔을 멈춘다 — 쓰러진 사람 위를 계속 휩쓸지 않게
       setStatus("⛔ 충돌 — 회피 없이 팔이 사람을 밀었다");
     }
   }
@@ -13600,6 +13603,9 @@ function corrReset(quiet) {
     PRESENT.on = CORR.saved.present;
     AVOID.on = CORR.saved.avoid;
     state.autoLoop = CORR.saved.autoLoop;
+    // 로봇 가동 상태도 원복 — 데모 전 로봇이 멈춰 있었으면 되돌리기 후에도 멈춰 있어야 한다.
+    if (CORR.saved.auto !== undefined) state.auto = CORR.saved.auto;
+    if (CORR.saved.cycles !== undefined) state.cycles = CORR.saved.cycles;
     person.node.position.copyFrom(CORR.saved.pos);
     person.node.rotation.y = CORR.saved.rotY;
     // 시각화 토글 원복(체크박스 경유 — 배선까지 돈다). 데모가 켠 오버레이가 남지 않게 한다.
