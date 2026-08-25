@@ -21,7 +21,7 @@ from train.paired_autoresearch_contract import (
     VARIANTS,
     select_paired_winner,
 )
-from train.paired_autoresearch_worker import state_dict_sha256
+from train.paired_autoresearch_worker import environment_fingerprint, state_dict_sha256
 from train.lock_paired_autoresearch_contract import (
     LOCK_PATH,
     verify_lock,
@@ -50,6 +50,13 @@ class ContractEvidence:
 
 class RunContractError(ValueError):
     pass
+
+
+def expected_environment() -> dict:
+    return {
+        **environment_fingerprint(),
+        "deterministic_algorithms": True,
+    }
 
 
 def build_jobs(variants, seeds, output_dir: Path) -> list[Job]:
@@ -99,8 +106,8 @@ def validate_formal_record(
         raise RunContractError(f"contract SHA-256 불일치: {job.variant} seed {job.seed}")
     if record.get("manifest_sha256") != evidence.manifest_sha256:
         raise RunContractError(f"manifest SHA-256 불일치: {job.variant} seed {job.seed}")
-    if not record.get("environment", {}).get("deterministic_algorithms"):
-        raise RunContractError(f"결정론 설정 누락: {job.variant} seed {job.seed}")
+    if record.get("environment") != expected_environment():
+        raise RunContractError(f"environment 불일치: {job.variant} seed {job.seed}")
     recorded_weights = Path(record.get("weights", ""))
     if recorded_weights.resolve() != job.weights_path.resolve():
         raise RunContractError(f"weights 경로 불일치: {job.variant} seed {job.seed}")

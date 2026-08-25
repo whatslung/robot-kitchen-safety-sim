@@ -69,15 +69,25 @@ def state_dict_sha256(state_dict) -> str:
     return digest.hexdigest()
 
 
-def run_worker(config: WorkerConfig) -> dict:
-    set_determinism(config.seed)
-    spec = VARIANTS[config.variant]
+def environment_fingerprint() -> dict:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     device_name = (
         torch.cuda.get_device_name(device)
         if device.type == "cuda"
         else platform.processor() or "cpu"
     )
+    return {
+        "python": platform.python_version(),
+        "torch": str(torch.__version__),
+        "cuda": torch.version.cuda,
+        "device": device_name,
+    }
+
+
+def run_worker(config: WorkerConfig) -> dict:
+    set_determinism(config.seed)
+    spec = VARIANTS[config.variant]
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     train_windows = development_windows("train")
     x_values, y_values = build_training_arrays(train_windows, config.seed)
     x = torch.tensor(x_values, device=device)
@@ -137,10 +147,7 @@ def run_worker(config: WorkerConfig) -> dict:
         "weights_sha256": state_dict_sha256(state_dict),
         "weights_file_sha256": sha256_file(config.weights_path),
         "environment": {
-            "python": platform.python_version(),
-            "torch": torch.__version__,
-            "cuda": torch.version.cuda,
-            "device": device_name,
+            **environment_fingerprint(),
             "deterministic_algorithms": (
                 torch.are_deterministic_algorithms_enabled()
             ),

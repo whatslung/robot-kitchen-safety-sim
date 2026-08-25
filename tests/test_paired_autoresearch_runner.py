@@ -90,7 +90,7 @@ def _formal_record(runner, job, evidence):
         "weights_sha256": state_dict_sha256(state),
         "contract_sha256": evidence.contract_sha256,
         "manifest_sha256": evidence.manifest_sha256,
-        "environment": {"deterministic_algorithms": True},
+        "environment": runner.expected_environment(),
     }
 
 
@@ -113,6 +113,17 @@ def test_formal_resume_rejects_wrong_contract_hash(tmp_path):
     record["contract_sha256"] = "old-contract"
 
     with pytest.raises(runner.RunContractError, match="contract"):
+        runner.validate_formal_record(record, job, evidence)
+
+
+def test_formal_resume_rejects_different_runtime_environment(tmp_path):
+    runner = _runner_module()
+    job = runner.build_jobs(("transformer-lr1e3",), (0,), tmp_path)[0]
+    evidence = runner.ContractEvidence("contract", "manifest")
+    record = _formal_record(runner, job, evidence)
+    record["environment"]["torch"] = "different-version"
+
+    with pytest.raises(runner.RunContractError, match="environment"):
         runner.validate_formal_record(record, job, evidence)
 
 
