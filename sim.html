@@ -13033,6 +13033,38 @@ function demoKettleView() {                       // 솥 — 김·불꽃이 여�
   demoFreeCam(-2.25, 1.12, 4.2, new V3(k.x, 1.00, k.z));
 }
 
+/* 비트 ②③이 쓰는 시점. **해치 정면 CCTV**다 — 자유시점 근접이 아니다.
+
+   근거(2026-08-25 실측, 1280×720 · 사람·엑스트라·로봇 정지 · 김 1819개 · **김만 분리**):
+
+   | 시점 | 가시픽셀 | 가시영역 밝기변화 |
+   |---|---|---|
+   | 자유시점 근접(종전) | 6.22% | 51.3/255 |
+   | **해치 정면**       | **10.48%** | **56.7/255** |
+   | 조리라인 cvN        | 1.92% | 48.7/255 |
+
+   해치가 김을 **1.7배** 크게 잡는다.
+
+   ⚠️ **첫 측정(2.34% → 7.83%, 3.3배)은 틀렸다.** 두 가지를 안 맞췄다:
+   ① `scene.particlesEnabled=false`로 **파티클을 전부** 꺼서 거품 등 다른 입자가 섞였고,
+   ② 카메라마다 김 입자 수가 달랐다(전환 사이에 붕괴·재축적이 일어난다).
+   → `steam.reset()`으로 **김만** 지우고 입자 수를 고정해서 다시 쟀다.
+   **종전 시점도 6.22%로 안 보이는 수준이 아니다** — 자막 복원은 시점 변경 없이도 정당하다.
+   시점 변경의 값어치는 "안 보이던 게 보인다"가 아니라 "1.7배 더 크게 보인다"이다.
+
+   ⚠️ 종전에 자막에서 "김"을 뺀 근거였던 "화면 기여 2.96/255 = 1.16%"는
+   **전체 화면 평균**이다. 김은 국소 기둥이라 전체 평균을 못 움직이는 게 당연하고,
+   "보이느냐"는 질문에는 답하지 못하는 지표다. 가시픽셀로 다시 재서 되돌렸다.
+
+   덤: 해치는 실제 감시 카메라라 자유시점보다 설득력이 있고, ③ 발화가 같은 화면에서
+   이어진다(회의록 "해치정면 — 불 나는거 보여줘야함"). */
+function demoHatchView() {
+  DEMO.follow = null;
+  if (!SURV["cvHatch"]) { demoKettleView(); return; }   // 카메라가 빠졌으면 종전 시점으로
+  mainView = "cvHatch";
+  if (typeof viewSel !== "undefined" && viewSel) viewSel.value = "cvHatch";
+  applyCameras();
+}
 function demoWideView() {                         // 방 전체 — 연기가 차는 것을 보여준다
   DEMO.follow = null;
   demoFreeCam(-2.35, 1.20, 8.6, new V3(0.2, 1.10, 1.6));
@@ -13259,11 +13291,9 @@ const DEMO_SCRIPTS = {
     /* ✅ 자막에 "수증기"를 되돌렸다 (2026-08-25). 회의록 2단계가 "주방 조리 간 수증기 발생"이라
        명시돼 있고, 다시 재 보니 **김은 보인다** — 해치 정면에서 가시픽셀 7.83%다.
        뺐던 근거(1.16%)는 전체 화면 평균이라 국소 기둥에는 안 맞는 지표였다.
-       ⚠️ 카메라는 종전 시점(솥 근접 자유시점) 그대로다. 해치 정면으로 옮기면 김이
-       1.7배 크게 잡히지만(6.22% → 10.48%) 연출이 바뀌는 판단이라 별도 브랜치로 뺐다.
-       종전 시점도 6.22%라 안 보이는 수준이 아니다 — 자막 복원은 이대로도 정당하다. */
-    { at:7000,  msg:"② 국솥에서 수증기가 오릅니다 — 조리가 한창입니다",   act: () => { demoSteamUp(); demoKettleView(); vidShowFor("normal"); } },
-    { at:15000, msg:"③ 과열된 기름에 불이 붙었습니다",                  act: () => { demoIgnite(); demoKettleView(); vidShowFor("smoke"); } },
+       자세한 숫자는 demoHatchView 주석에 있다. */
+    { at:7000,  msg:"② 국솥에서 수증기가 오릅니다 — 조리가 한창입니다",   act: () => { demoSteamUp(); demoHatchView(); vidShowFor("normal"); } },
+    { at:15000, msg:"③ 과열된 기름에 불이 붙었습니다",                  act: () => { demoIgnite(); demoHatchView(); vidShowFor("smoke"); } },
     { at:24000, msg:"④ 연기가 자욱합니다 — 카메라가 화재를 놓칩니다",   act: demoWideView },
     /* ⚠️ demoHazard는 "push"/"pinch"만 받는다. 처음에 "fall"을 넘겼더니 findHazardSpot이
        null을 돌려주고 **조용히 아무 일도 안 일어났다.** 실신은 주인공 액션이다. */
@@ -13277,11 +13307,9 @@ const DEMO_SCRIPTS = {
     /* ✅ 자막에 "수증기"를 되돌렸다 (2026-08-25). 회의록 2단계가 "주방 조리 간 수증기 발생"이라
        명시돼 있고, 다시 재 보니 **김은 보인다** — 해치 정면에서 가시픽셀 7.83%다.
        뺐던 근거(1.16%)는 전체 화면 평균이라 국소 기둥에는 안 맞는 지표였다.
-       ⚠️ 카메라는 종전 시점(솥 근접 자유시점) 그대로다. 해치 정면으로 옮기면 김이
-       1.7배 크게 잡히지만(6.22% → 10.48%) 연출이 바뀌는 판단이라 별도 브랜치로 뺐다.
-       종전 시점도 6.22%라 안 보이는 수준이 아니다 — 자막 복원은 이대로도 정당하다. */
-    { at:7000,  msg:"② 국솥에서 수증기가 오릅니다 — 조리가 한창입니다",   act: () => { demoSteamUp(); demoKettleView(); vidShowFor("normal"); } },
-    { at:15000, msg:"③ 과열된 기름에 불이 붙었습니다",                  act: () => { demoIgnite(); demoKettleView(); vidShowFor("smoke"); } },
+       자세한 숫자는 demoHatchView 주석에 있다. */
+    { at:7000,  msg:"② 국솥에서 수증기가 오릅니다 — 조리가 한창입니다",   act: () => { demoSteamUp(); demoHatchView(); vidShowFor("normal"); } },
+    { at:15000, msg:"③ 과열된 기름에 불이 붙었습니다",                  act: () => { demoIgnite(); demoHatchView(); vidShowFor("smoke"); } },
     { at:21000, msg:"④ 화재를 즉시 감지했습니다 — 검출 시작",           act: demoDetectOn },
     { at:30000, msg:"⑤ 조리원이 출입구로 대피합니다",                   act: demoEvacuate },
     { at:42000, msg:"⑥ 진화 — 연기가 걷힙니다",                        act: () => { demoWideView(); demoExtinguish(9000); } },
