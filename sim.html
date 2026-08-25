@@ -8057,6 +8057,45 @@ function randomizeScene() {
   }
   placeOccluder();     // EXTRAS 재배치 뒤에 호출해야 덮어쓰이지 않는다
 }
+/* ── 데이터셋 다양성 (나디르 person 검출 학습용, 2026-08-26) ────────────────
+   흰옷↔밝은 바닥의 저대비가 검출 하드미스의 주범이었다(실측: sim recall 0.67).
+   프레임마다 사람 옷·모자 색과 바닥 밝기를 흔들어 대비를 다양화한다.
+   ★ GT 라벨은 인스턴스 마스크(emissive 단색 오버라이드)에서 나오므로 이 RGB 색
+     변경에 전혀 영향받지 않는다 — 라벨은 그대로 정확하다.
+   얼굴/피부(Body_MAT)는 건드리지 않는다(Cook_Top·Hood·Pant만). 나디르는 어차피
+   정수리·어깨만 보이므로 옷·모자 색만으로 충분하다. */
+function datasetDiversify() {
+  const floor = scene.meshes.find(m => m.name === "floor" && m.material && m.material.albedoColor);
+  if (floor) {
+    const b = 0.10 + Math.random() * 0.55;                 // 바닥 밝기 0.10(어둠)~0.65
+    floor.material.albedoColor = new C3(b * 1.06, b, b * 0.9);
+  }
+  const people = [anchors.person.node, ...EXTRAS.map(e => e.root)];
+  for (const pn of people) {
+    const c = new C3(0.05 + Math.random() * 0.9, 0.05 + Math.random() * 0.9, 0.05 + Math.random() * 0.9);
+    for (const m of pn.getChildMeshes()) {
+      if (m.material && /Cook_Top|Cook_Hood|Cook_Pant/.test(m.material.name)) {
+        // 인스턴스당 1회만 clone(원본 공유 재질 훼손·매 프레임 누수 방지). 이후엔 색만 갱신.
+        if (!/_dv$/.test(m.material.name)) m.material = m.material.clone(m.material.name + "_dv");
+        m.material.albedoColor = c;
+      }
+    }
+  }
+}
+/* 캡처 순간 캐릭터 이동·포즈를 얼린다 — RGB 패스와 마스크 패스가 같은 순간을 보게 해
+   걷는 사람의 박스 어긋남을 없앤다. gtFreeze() → groundTruth() → gtUnfreeze() 로 감싼다.
+   (extrasUpdate 는 registerBeforeRender가 이름으로 호출 → 전역 바인딩 교체가 즉시 먹는다.) */
+let _gtFrozen = null;
+function gtFreeze() {
+  if (_gtFrozen) return;
+  _gtFrozen = extrasUpdate; extrasUpdate = () => {};        // 이동 정지
+  scene.animationGroups.forEach(a => a.pause());            // 포즈 정지
+}
+function gtUnfreeze() {
+  if (!_gtFrozen) return;
+  extrasUpdate = _gtFrozen; _gtFrozen = null;
+  scene.animationGroups.forEach(a => a.play(false));
+}
 function restoreAfterDataset() {
   person.freeze = false; person.crouch = 0;
   person.node.position.copyFrom(LAYOUT.person.pos); person.node.rotation.y = 0;

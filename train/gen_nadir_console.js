@@ -1,12 +1,19 @@
-/* 나디르(orthotop) person 데이터셋 — 브라우저 네이티브 생성 스니펫.
-   수정된 sim.html(tol + 연결요소 bbox)에서 실행한다. 콘솔에 통째로 붙여넣고 Enter.
-   폴더 선택 창이 뜨면 빈 폴더를 하나 고르면 images/ · labels/ 에 200장이 쓰인다.
-   (SENSOR 렌즈 왜곡을 0으로 둬 라벨-RGB 정렬을 보장한다 — 왜곡은 RGB에만 걸리고
-    마스크엔 안 걸려 라벨이 어긋나던 문제.) */
+/* 나디르(orthotop) person 데이터셋 — 브라우저 네이티브 대량 생성 스니펫 (v3 다양성).
+   수정된 sim.html(tol + 연결요소 bbox + datasetDiversify/gtFreeze)에서 실행. 콘솔에 붙여넣고 Enter.
+   폴더 선택 창이 뜨면 빈 폴더를 하나 고르면 images/ · labels/ 에 N장이 쓰인다.
+
+   v3 개선점:
+   - datasetDiversify(): 사람 옷·모자 색 + 바닥 밝기 랜덤화 → 저대비(흰옷↔밝은 바닥) 하드미스 해소.
+     GT 라벨은 인스턴스 마스크 기준이라 색 변경에 무영향(라벨 정확 유지).
+   - gtFreeze/gtUnfreeze: 캡처 순간 이동·포즈 고정 → 걷는 사람 박스 어긋남 제거.
+   - noCeil layerMask: 후드가 위에서 사람을 가리지 않게.
+   - distortion=0: 라벨-RGB 정렬. 960×720 크기 가드로 리사이즈 레이스 재시도.
+
+   ★ 생성 중 그 탭을 화면에 그대로 두세요(백그라운드로 가면 렌더가 멈춥니다). */
 (async () => {
   const s = window.__sim, B = BABYLON, scene = s.scene;
-  window.__customPredictor = null;                         // /predict 서버로 매 틱 POST(501 도배) 중단 — 생성엔 무관
-  if (!s.SURV.orthotop) {                                   // orthotop 직교 나디르 카메라 등록
+  window.__customPredictor = null;                         // /predict 501 도배 중단(생성 무관)
+  if (!s.SURV.orthotop) {                                   // orthotop 직교 나디르 카메라
     const cam = new B.UniversalCamera("cam_orthotop", new B.Vector3(1.375, 5, 1.85), scene);
     cam.setTarget(new B.Vector3(1.375, 0, 1.851));
     cam.mode = B.Camera.ORTHOGRAPHIC_CAMERA;
@@ -15,50 +22,39 @@
     s.SURV.orthotop = { cam, label: "orthotop",
       def: { pos: new B.Vector3(1.375, 5, 1.85), tgt: new B.Vector3(1.375, 0, 1.851) } };
   }
-  // noCeil — 천장·후드(CEIL_BIT=0x8000)를 빼서 위에서 사람을 가리지 않게 한다(원본 orthotop과 동일).
-  s.SURV.orthotop.cam.layerMask = 0x0FFFFFFF & ~0x8000;
-  const dir = await showDirectoryPicker({ mode: "readwrite" });   // 빈 폴더 선택
+  s.SURV.orthotop.cam.layerMask = 0x0FFFFFFF & ~0x8000;    // noCeil — 후드·천장 제외
+
+  const dir = await showDirectoryPicker({ mode: "readwrite" });
   const imgs = await dir.getDirectoryHandle("images", { create: true });
   const lbls = await dir.getDirectoryHandle("labels", { create: true });
-  const writePNG = async (name, dataURL) => {
-    const bin = atob(dataURL.split(",", 2)[1]);
-    const u8 = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
-    const fh = await imgs.getFileHandle(name, { create: true });
-    const w = await fh.createWritable(); await w.write(u8); await w.close();
-  };
-  const writeTXT = async (name, text) => {
-    const fh = await lbls.getFileHandle(name, { create: true });
-    const w = await fh.createWritable(); await w.write(text || ""); await w.close();
-  };
-  // PNG 폭·높이(IHDR)를 dataURL에서 바로 읽는다 — 리사이즈 레이스로 크기가 틀어진 프레임 걸러내기.
-  const pngSize = (durl) => {
-    const b64 = durl.slice(durl.indexOf(",") + 1, durl.indexOf(",") + 60);
-    const b = atob(b64), u = i => b.charCodeAt(i);
-    return [(u(16)<<24)|(u(17)<<16)|(u(18)<<8)|u(19), (u(20)<<24)|(u(21)<<16)|(u(22)<<8)|u(23)];
-  };
-  const plan = [[1, 50], [2, 70], [3, 50], [0, 30]];       // 사람 2·3·4·1명 (총 200)
+  const wPNG = async (n, u) => { const b = atob(u.split(",", 2)[1]); const a = new Uint8Array(b.length);
+    for (let i = 0; i < b.length; i++) a[i] = b.charCodeAt(i);
+    const f = await imgs.getFileHandle(n, { create: true }); const w = await f.createWritable(); await w.write(a); await w.close(); };
+  const wTXT = async (n, t) => { const f = await lbls.getFileHandle(n, { create: true });
+    const w = await f.createWritable(); await w.write(t || ""); await w.close(); };
+  const pngSize = (u) => { const b = atob(u.slice(u.indexOf(",") + 1, u.indexOf(",") + 60)), c = i => b.charCodeAt(i);
+    return [(c(16)<<24)|(c(17)<<16)|(c(18)<<8)|c(19), (c(20)<<24)|(c(21)<<16)|(c(22)<<8)|c(23)]; };
+
+  const prep = () => { gtUnfreeze(); s.randomizeScene(); datasetDiversify();
+    SENSOR.distortion = 0; SENSOR.chroma = 0; sensorApply();
+    for (let k = 0; k < 5; k++) scene.render(); gtFreeze(); };
+
+  const plan = [[2, 120], [3, 180], [4, 120], [1, 50], [0, 30]];   // 사람 3·4·5·2·1명 (총 500) — 밀도↑
   let idx = 0, t0 = performance.now(), bad = 0;
   for (const [cnt, num] of plan) {
     await s.setExtraCount(cnt);
     for (let j = 0; j < num; j++) {
       let gt, tries = 0;
-      do {                                                    // 960×720 정상 캡처가 나올 때까지 재시도(최대 4회)
-        s.randomizeScene();
-        SENSOR.distortion = 0; SENSOR.chroma = 0; sensorApply();  // 기하 왜곡 제거 → 라벨 정렬
-        for (let k = 0; k < 5; k++) scene.render();               // 포즈·파티클 안정화
-        gt = await s.groundTruth("orthotop", { noDepth: true });
-        const [w, h] = pngSize(gt.rgb);
-        if (w === 960 && h === 720) break;
-        bad++;
+      do { prep(); gt = await s.groundTruth("orthotop", { noDepth: true });
+        const [w, h] = pngSize(gt.rgb); if (w === 960 && h === 720) break; bad++;
       } while (++tries < 4);
       const base = "orthotop_" + String(idx).padStart(4, "0");
-      await writePNG(base + ".png", gt.rgb);
-      await writeTXT(base + ".txt", gt.labelText);
-      if (idx % 10 === 0) console.log(`[nadir] ${idx}/200  (${Math.round((performance.now()-t0)/1000)}s, 재시도 ${bad})`);
+      await wPNG(base + ".png", gt.rgb); await wTXT(base + ".txt", gt.labelText);
+      if (idx % 10 === 0) console.log(`[nadir] ${idx}/500  (${Math.round((performance.now()-t0)/1000)}s, 재시도 ${bad})`);
       idx++;
     }
   }
+  gtUnfreeze();
   if (s.restoreAfterDataset) try { s.restoreAfterDataset(); } catch (e) {}
-  console.log(`✅ 완료 — ${idx}장. 폴더의 images/ · labels/ 확인.`);
+  console.log(`✅ 완료 — ${idx}장`);
 })();
