@@ -7907,10 +7907,11 @@ function randomizeEnvironment() {
   const holders = scene.transformNodes.filter(n => /^envProp_/.test(n.name));
   // 원위치는 **이름 기준**으로 보관한다. 배열 인덱스로 잡으면 setExtraCount 등으로
   // transformNodes 구성이 바뀔 때 다른 프롭의 원위치로 되돌아갈 수 있다.
-  if (!ENV_RAND.base) {
-    ENV_RAND.base = {};
-    holders.forEach(h => { ENV_RAND.base[h.name] = { p: h.position.clone(), r: h.rotation.y }; });
-  }
+  if (!ENV_RAND.base) ENV_RAND.base = {};
+  /* 이름 기준으로 원위치를 지연 등록한다 — 첫 호출 뒤 로드된 프롭(헤드리스 등에서 GLB가
+     늦게 붙는 경우)도 여기서 잡아, 다음 호출에 b0(원위치)가 undefined로 터지지 않게 한다.
+     새로 잡히는 프롭은 아직 지터 전 기본 위치라 그 값이 곧 원위치다. */
+  holders.forEach(h => { if (!ENV_RAND.base[h.name]) ENV_RAND.base[h.name] = { p: h.position.clone(), r: h.rotation.y }; });
   const CELL = { x0:-2.6, z0:-1.3, x1:0.9, z1:2.5 };      // 로봇 작업권 + 접근 통로 (침범 금지)
   const aabb = h => { let mn=null, mx=null;
     scene.meshes.forEach(m => { if (!m.getTotalVertices || !m.getTotalVertices()) return;
