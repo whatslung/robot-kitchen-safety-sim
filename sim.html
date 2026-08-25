@@ -564,6 +564,8 @@
   </div>
 
   <div class="section">시각화 표시 <span class="note" style="font-weight:400">기본 꺼짐 — 필요할 때 켜기</span></div>
+  <label class="row" style="cursor:pointer"><input type="checkbox" id="vizNoStop" style="accent-color:#f0a020">
+    <span style="width:auto;color:#c9d1d9">로봇 동작만 보기 <span class="note" style="font-weight:400">안전정지 무시 — 확인용</span></span></label>
   <label class="row" style="cursor:pointer"><input type="checkbox" id="vizConsole" style="accent-color:#76b900">
     <span style="width:auto;color:#c9d1d9">콘솔 패널 (화면 아래 로그)</span></label>
   <label class="row" style="cursor:pointer"><input type="checkbox" id="vizRarr" style="accent-color:#76b900">
@@ -5349,6 +5351,10 @@ const PROP_MAT = (() => {
   };
 })();
 
+/* 튀김 음식 색변화 핸들 — 음식 생성(아래)에서 채우고, foodColorTick(조리 tick)에서 쓴다.
+   선언을 여기 둔 것은 생성이 tick 함수 정의보다 앞서기 때문이다(const는 호이스팅 안 됨). */
+const FOOD_COOK = { mat:null, base:null };
+
 /* ══ 튀김 바스켓 내용물 ═══════════════════════════════════════════════════
    빈 망바구니를 로봇이 건져 올리면 **무엇을 조리 중인지 알 수 없다.** 발표에서도
    "기름에서 뭘 꺼내는가"가 안 보인다. 실사 참조(로봇고_배출)에서도 바구니에는
@@ -5386,7 +5392,12 @@ function fillBasket() {
   const merged = BABYLON.Mesh.MergeMeshes(parts, true, true, undefined, false, false);
   if (!merged) return 0;
   merged.name = "basketFood";
-  merged.material = PROP_MAT.food[2].mat;               // 'fried'
+  /* ⚠️ 공유 재질을 그대로 쓰면 안 된다 — 조리 색변화로 이걸 바꾸면 선반·호텔팬의
+     같은 'fried' 재질 음식까지 다 같이 변색된다. **전용 복제본**을 쓴다. */
+  const foodMat = PROP_MAT.food[2].mat.clone("basketFood_mat");
+  merged.material = foodMat;
+  FOOD_COOK.mat = foodMat;
+  FOOD_COOK.base = foodMat.albedoColor.clone();          // 생 재료 색(되돌림 기준)
   merged.isPickable = false;
   merged.receiveShadows = true;
   if (typeof shadows !== "undefined" && shadows) shadows.addShadowCaster(merged);
@@ -5626,6 +5637,10 @@ async function loadAssets() {
      조리 중 뚜껑을 젖혀 두는 건 실제 국솥에서도 흔한 자세다. */
   lidNode.rotation.z = -1.40;
   basketNode     = await pivoted("basket.glb",         "bkNode",   ASSETS.pivots.grip);
+  /* 시작 위치 = **카트 위**(2026-08-25). 종전엔 솥 안(로드된 그 자리)이 홈이라 로봇이
+     꺼내는 것부터 시작했다. 이제 적재 사이클이 카트에서 집어 솥에 넣으므로, 홈도 카트로.
+     좌표는 후반부 카트 안착과 동일 (-0.50, 1.463, 2.35). */
+  basketNode.position = new V3(-0.50, 1.463, ISLAND ? 2.35 : 2.10);
   basketNode.__home = basketNode.position.clone();     // 파지 시퀀스 리스타트용 원위치
   fillBasket();                                        // 튀김 바스켓에 내용물을 담는다
   robotGlb.base  = await pivoted("robot_pedestal.glb", "rgBase",   ASSETS.pivots.base);
@@ -5689,6 +5704,13 @@ async function loadAssets() {
   // 원위치(-0.02,1.40)는 1.33m 필요 > 1.30m 한계. REF_013 실물도 카트가 로봇 바로 앞.
   const cartShift = new BABYLON.TransformNode("cartShift", scene);
   scene.meshes.filter(m => /^Cart|^SpareBasket/.test(m.name)).forEach(m => m.setParent(cartShift));
+  /* 여분 바스켓(카트에 얹힌 소품)을 숨긴다 (2026-08-25). 로봇이 집는 진짜 바스켓(bkNode)이
+     이제 **카트에서 출발**하므로, 그 아래 겹쳐 있던 소품 바스켓은 "카트에 바스켓이 둘"인
+     그림을 만든다 — 로봇이 하나만 가져가니 "왜 저건 안 잡느냐"가 된다. 시나리오상 카트의
+     바스켓은 항상 1개(집어가고, 조리 후 되돌려 놓는다)라 소품은 빠져야 맞다.
+     삭제가 아니라 숨김이다 — 카트 GLB의 일부라 지우면 카트 병합이 깨진다. GT 분류에서도
+     빠지도록 isVisible=false로 둔다(마스크는 보이는 것만 찍는다). */
+  scene.meshes.filter(m => /^SpareBasket/.test(m.name)).forEach(m => { m.isVisible = false; m.setEnabled(false); });
   /* 카트를 **통로 쪽으로 뺀다** — 작업 동선을 사람이 다니는 바닥 위로 옮기기 위해서다.
      예전 위치(-0.50,1.28)에서는 팔이 솥과 카트 위에서만 움직였고, 둘 다 콜라이더라
      사람이 못 들어간다. 그래서 팔이 지나는 4,266개 지점 중 **사람이 설 수 있는 바닥 위가
@@ -9501,7 +9523,24 @@ function tipPos() { return effector().getAbsolutePosition(); }
 const T = LAYOUT.targets;
 /* 튀김 문법(GLB 셀): 그립(홈) → 바스켓 인양 → 기름 털기 → 카트 이송·안착 → 복귀
    ikOff = 현재 엔드이펙터 위치 기준 상대 오프셋 IK (절대 팁 좌표를 몰라도 됨) */
+/* ══ 적재 사이클 (2026-08-25 신설) ══════════════════════════════════════════
+   종전 SEQ_FRY는 **후반부(솥→카트)만** 있었다 — 바스켓이 처음부터 솥 안에 있어서
+   로봇이 다짜고짜 꺼내는 것부터 시작했다. 그래서 "카트 바스켓을 왜 안 잡느냐"로 보였다.
+   앞에 전반부(카트→집기→솥투입→물러남)를 붙여 실제 조리 순서를 만든다:
+     ① 카트 상공 정렬 → ② 하강·집기 → ③ 솥 상공 이송 → ④ 솥 투입 → ⑤ 물러남
+   그 뒤 조리(색변화)가 진행되고, 후반부(기존)가 익은 것을 꺼내 카트로 되돌린다.
+
+   좌표: 카트 링 상단 0.873 + 노드-바닥 오프셋 0.59 = 노드 y 1.463(후반부 안착과 동일값).
+   집기 전 상공은 그 위 0.40m. 솥은 원점, 투입 노드 y 1.05(기름면 0.75 위).
+   ⚠️ cross:true 는 chanwoo 회피의 개입 조건이다 — 통로를 지나는 두 이송 스텝에 붙인다. */
 const SEQ_FRY = [
+  // ── 전반부: 카트에서 집어 솥에 넣는다 ──
+  { k:"ikOff", off:[0,0,0], at:[-0.50, 2.35], atY:1.863, ms:2260, msg:"카트로 이동 — 통로 횡단", cross:true },
+  { k:"ikOff", off:[0,0,0], at:[-0.50, 2.35], atY:1.463, ms:700,  msg:"바스켓 파지", grab:true },
+  { k:"ikOff", off:[0,0,0], at:[0, 0],        atY:1.35,  ms:2260, msg:"솥으로 이송 — 통로 횡단", cross:true },
+  { k:"ikOff", off:[0,0,0], at:[0, 0],        atY:1.05,  ms:800,  msg:"솥에 투입", oil:true },
+  { k:"ikOff", off:[0,0.30,0], at:[0, 0],     atY:1.35,  ms:700,  msg:"로봇 물러남 — 조리 시작" },
+  // ── 후반부: 익은 것을 꺼내 카트로 (기존) ──
   { k:"ikOff", off:[0, 0.46, 0],    ms:1100, msg:"바스켓 인양 — 기름 배출", grab:true, oil:false },
   { k:"shake", ms:800, n:3,         msg:"기름 털기" },
   /* 카트가 통로로 나가면서 이송 거리가 길어졌다 — 중간 경유를 통로 쪽으로 더 뺀다.
@@ -9586,8 +9625,9 @@ function startStep(i) {
   } else if (s.k === "ikOff") {
     state.from = JOINTS.map(j => j.value);
     const ep = effector().getAbsolutePosition();
-    // at: 수평 절대좌표(정렬·하강의 중심 고정), off: 현재 기준 상대 오프셋
-    const tgt = new V3(s.at ? s.at[0] : ep.x + s.off[0], ep.y + s.off[1],
+    // at: 수평 절대좌표(정렬·하강의 중심 고정), atY: 절대 높이, off: 현재 기준 상대 오프셋
+    const tgt = new V3(s.at ? s.at[0] : ep.x + s.off[0],
+                       (s.atY !== undefined) ? s.atY : ep.y + s.off[1],
                        s.at ? s.at[1] : ep.z + s.off[2]);
     // 파지 중엔 수평 손목 제약 폐형해 — 목표 추종과 수평 유지가 충돌하지 않음
     state.to = (basketNode && basketNode.parent) ? ikLevelAngles(tgt) : ikAngles(tgt).angles;
@@ -9812,6 +9852,29 @@ const SOUP_COLORS = [
   [0.50, new C3(0.62,0.42,0.20)],  // 우러나는 중
   [1.00, new C3(0.42,0.24,0.10)],  // 진한 국
 ];
+/* ══ 튀김 음식 색변화 (2026-08-25) ═══════════════════════════════════════════
+   시나리오 ④: "솥 안에서 음식이 노란색으로 익는다" · 화재판: "노란색을 넘어 검정으로
+   그라데이션". 국물색(SOUP_COLORS)은 갈색이라 튀김에 안 맞아 **전용 램프**를 둔다.
+     cook 0 → 생(옅은 반죽색) · cook 1 → 노릇한 황금색(알맞게 익음)
+     burn 0→1 → 그 위에 검정을 덧입힌다(탄화). fire면 완전 탄색.
+   기름(MAT.oil)과 **같은 state.cook/burn**을 쓰므로 둘이 함께 움직인다. */
+const FOOD_RAW    = new C3(0.86, 0.72, 0.42);   // 생 — 옅은 튀김옷
+const FOOD_GOLDEN = new C3(0.80, 0.52, 0.16);   // 알맞게 익은 황금색
+const FOOD_CHAR   = new C3(0.07, 0.05, 0.04);   // 탄 검정
+function foodColorTick() {
+  if (!FOOD_COOK.mat) return;
+  // 익음: 생 → 황금 (cook 0~1)
+  let c = C3.Lerp(FOOD_RAW, FOOD_GOLDEN, clamp(state.cook, 0, 1));
+  // 탄화: 그 위에 검정 (burn 0~1). fire면 강제로 끝까지.
+  const char = state.fire ? Math.max(state.burn, 0.85) : state.burn;
+  if (char > 0) c = C3.Lerp(c, FOOD_CHAR, clamp(char, 0, 1));
+  FOOD_COOK.mat.albedoColor = c.toLinearSpace();
+  // 탄 정도에 따라 살짝 붉게 달아오르는 자발광(발화 직전 표현)
+  FOOD_COOK.mat.emissiveColor = state.fire
+    ? new C3(0.18 + 0.10*Math.sin(performance.now()/120), 0.03, 0.0)
+    : new C3(0.03*char, 0.01*char, 0);
+}
+
 function cookColor(p) {
   for (let i=0; i<SOUP_COLORS.length-1; i++) {
     const [a,ca] = SOUP_COLORS[i], [b,cb] = SOUP_COLORS[i+1];
@@ -9871,6 +9934,7 @@ function updateCooking(dt) {
   const p = clamp(state.cook + state.burn*0.5, 0, 1);
   MAT.oil.albedoColor = cookColor(p).toLinearSpace();
   if (state.burn > 0) MAT.oil.albedoColor = C3.Lerp(MAT.oil.albedoColor, new C3(0.10,0.06,0.03), state.burn*0.7);
+  foodColorTick();                                    // 바스켓 음식도 같은 진행으로 익고 탄다
 
   $("cookbar").style.width = (state.cook*100).toFixed(0) + "%";
   $("cookbar").style.background = state.burn > 0.2
@@ -12994,7 +13058,7 @@ const DEMO = { on:false, kind:null, t:0, beat:-1, saved:null, fade:null, evac:nu
 /* 화재 진행을 4배로 감는다 — 90초 곡선을 발표용 22초로 압축한다.
    fireSeekTo로 순간이동시키지 않는 이유: **연기가 서서히 차오르는 과정 자체가**
    "카메라가 왜 화재를 놓치는가"를 보여주는 그림이다. 건너뛰면 설명이 사라진다. */
-const DEMO_FIRE_SPEED = 4;
+const DEMO_FIRE_SPEED = 8;   // 발표 시나리오 화재 진행 배수. 4→8(2026-08-25): 4배속은 ④ '자욱'·'감지' 시점에 연기가 덜 차 자막과 화면이 어긋난다. 실측 안개 4x=28% → 8x=55%. 데모 전용(demoReset이 1로 복원)이라 데이터셋·물리에 영향 없다.
 
 function demoSay(msg) {
   setStatus(msg);
@@ -13033,6 +13097,38 @@ function demoKettleView() {                       // 솥 — 김·불꽃이 여�
   demoFreeCam(-2.25, 1.12, 4.2, new V3(k.x, 1.00, k.z));
 }
 
+/* 비트 ②③이 쓰는 시점. **해치 정면 CCTV**다 — 자유시점 근접이 아니다.
+
+   근거(2026-08-25 실측, 1280×720 · 사람·엑스트라·로봇 정지 · 김 1819개 · **김만 분리**):
+
+   | 시점 | 가시픽셀 | 가시영역 밝기변화 |
+   |---|---|---|
+   | 자유시점 근접(종전) | 6.22% | 51.3/255 |
+   | **해치 정면**       | **10.48%** | **56.7/255** |
+   | 조리라인 cvN        | 1.92% | 48.7/255 |
+
+   해치가 김을 **1.7배** 크게 잡는다.
+
+   ⚠️ **첫 측정(2.34% → 7.83%, 3.3배)은 틀렸다.** 두 가지를 안 맞췄다:
+   ① `scene.particlesEnabled=false`로 **파티클을 전부** 꺼서 거품 등 다른 입자가 섞였고,
+   ② 카메라마다 김 입자 수가 달랐다(전환 사이에 붕괴·재축적이 일어난다).
+   → `steam.reset()`으로 **김만** 지우고 입자 수를 고정해서 다시 쟀다.
+   **종전 시점도 6.22%로 안 보이는 수준이 아니다** — 자막 복원은 시점 변경 없이도 정당하다.
+   시점 변경의 값어치는 "안 보이던 게 보인다"가 아니라 "1.7배 더 크게 보인다"이다.
+
+   ⚠️ 종전에 자막에서 "김"을 뺀 근거였던 "화면 기여 2.96/255 = 1.16%"는
+   **전체 화면 평균**이다. 김은 국소 기둥이라 전체 평균을 못 움직이는 게 당연하고,
+   "보이느냐"는 질문에는 답하지 못하는 지표다. 가시픽셀로 다시 재서 되돌렸다.
+
+   덤: 해치는 실제 감시 카메라라 자유시점보다 설득력이 있고, ③ 발화가 같은 화면에서
+   이어진다(회의록 "해치정면 — 불 나는거 보여줘야함"). */
+function demoHatchView() {
+  DEMO.follow = null;
+  if (!SURV["cvHatch"]) { demoKettleView(); return; }   // 카메라가 빠졌으면 종전 시점으로
+  mainView = "cvHatch";
+  if (typeof viewSel !== "undefined" && viewSel) viewSel.value = "cvHatch";
+  applyCameras();
+}
 function demoWideView() {                         // 방 전체 — 연기가 차는 것을 보여준다
   DEMO.follow = null;
   demoFreeCam(-2.35, 1.20, 8.6, new V3(0.2, 1.10, 1.6));
@@ -13259,11 +13355,9 @@ const DEMO_SCRIPTS = {
     /* ✅ 자막에 "수증기"를 되돌렸다 (2026-08-25). 회의록 2단계가 "주방 조리 간 수증기 발생"이라
        명시돼 있고, 다시 재 보니 **김은 보인다** — 해치 정면에서 가시픽셀 7.83%다.
        뺐던 근거(1.16%)는 전체 화면 평균이라 국소 기둥에는 안 맞는 지표였다.
-       ⚠️ 카메라는 종전 시점(솥 근접 자유시점) 그대로다. 해치 정면으로 옮기면 김이
-       1.7배 크게 잡히지만(6.22% → 10.48%) 연출이 바뀌는 판단이라 별도 브랜치로 뺐다.
-       종전 시점도 6.22%라 안 보이는 수준이 아니다 — 자막 복원은 이대로도 정당하다. */
-    { at:7000,  msg:"② 국솥에서 수증기가 오릅니다 — 조리가 한창입니다",   act: () => { demoSteamUp(); demoKettleView(); vidShowFor("normal"); } },
-    { at:15000, msg:"③ 과열된 기름에 불이 붙었습니다",                  act: () => { demoIgnite(); demoKettleView(); vidShowFor("smoke"); } },
+       자세한 숫자는 demoHatchView 주석에 있다. */
+    { at:7000,  msg:"② 국솥에서 수증기가 오릅니다 — 조리가 한창입니다",   act: () => { demoSteamUp(); demoHatchView(); vidShowFor("normal"); } },
+    { at:15000, msg:"③ 과열된 기름에 불이 붙었습니다",                  act: () => { demoIgnite(); demoHatchView(); vidShowFor("smoke"); } },
     { at:24000, msg:"④ 연기가 자욱합니다 — 카메라가 화재를 놓칩니다",   act: demoWideView },
     /* ⚠️ demoHazard는 "push"/"pinch"만 받는다. 처음에 "fall"을 넘겼더니 findHazardSpot이
        null을 돌려주고 **조용히 아무 일도 안 일어났다.** 실신은 주인공 액션이다. */
@@ -13277,11 +13371,9 @@ const DEMO_SCRIPTS = {
     /* ✅ 자막에 "수증기"를 되돌렸다 (2026-08-25). 회의록 2단계가 "주방 조리 간 수증기 발생"이라
        명시돼 있고, 다시 재 보니 **김은 보인다** — 해치 정면에서 가시픽셀 7.83%다.
        뺐던 근거(1.16%)는 전체 화면 평균이라 국소 기둥에는 안 맞는 지표였다.
-       ⚠️ 카메라는 종전 시점(솥 근접 자유시점) 그대로다. 해치 정면으로 옮기면 김이
-       1.7배 크게 잡히지만(6.22% → 10.48%) 연출이 바뀌는 판단이라 별도 브랜치로 뺐다.
-       종전 시점도 6.22%라 안 보이는 수준이 아니다 — 자막 복원은 이대로도 정당하다. */
-    { at:7000,  msg:"② 국솥에서 수증기가 오릅니다 — 조리가 한창입니다",   act: () => { demoSteamUp(); demoKettleView(); vidShowFor("normal"); } },
-    { at:15000, msg:"③ 과열된 기름에 불이 붙었습니다",                  act: () => { demoIgnite(); demoKettleView(); vidShowFor("smoke"); } },
+       자세한 숫자는 demoHatchView 주석에 있다. */
+    { at:7000,  msg:"② 국솥에서 수증기가 오릅니다 — 조리가 한창입니다",   act: () => { demoSteamUp(); demoHatchView(); vidShowFor("normal"); } },
+    { at:15000, msg:"③ 과열된 기름에 불이 붙었습니다",                  act: () => { demoIgnite(); demoHatchView(); vidShowFor("smoke"); } },
     { at:21000, msg:"④ 화재를 즉시 감지했습니다 — 검출 시작",           act: demoDetectOn },
     { at:30000, msg:"⑤ 조리원이 출입구로 대피합니다",                   act: demoEvacuate },
     { at:42000, msg:"⑥ 진화 — 연기가 걷힙니다",                        act: () => { demoWideView(); demoExtinguish(9000); } },
@@ -13950,6 +14042,17 @@ vidProbe();
   const apply = v => { if (cp) cp.style.display = v ? "flex" : "none"; };
   if (cb) { cb.checked = on; cb.addEventListener("change", e => apply(e.target.checked)); }
   apply(on);
+})();
+
+/* 로봇 동작만 보기 — chanwoo의 SAFE.blind를 토글할 뿐이다(안전 수치 3.10/3.90은 안 건드린다).
+   blind가 켜지면 로봇이 사람을 무시하고 작업 사이클을 끝까지 돈다. 로봇 조리 동작을
+   눈으로 확인할 때 쓴다. 발표에는 끈다 — 안전 정지가 이 연구의 핵심이므로. */
+(() => {
+  const cb = $("vizNoStop");
+  if (cb) cb.addEventListener("change", e => {
+    if (typeof SAFE !== "undefined") SAFE.blind = e.target.checked;
+    setStatus(e.target.checked ? "로봇 동작만 보기 — 안전 정지 무시 (확인용)" : "안전 정지 복구");
+  });
 })();
 
 $("demoBefore").addEventListener("click", () => demoRun("before"));
