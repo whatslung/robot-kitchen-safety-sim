@@ -11,6 +11,7 @@
   test gate
 - 자동실험은 v2 `train`으로 학습하고 `val`로만 순위를 정한다.
 - 잠긴 `test`는 탐색, 후보 선택, 실패 분석에 사용하지 않는다.
+- 현재 개발 로더는 요청한 train 또는 validation 파일만 해시·파싱하고 test 파일은 열지 않는다.
 - 한 시도의 학습 시간은 warmup 10 step을 제외하고 300초다.
 - child 전체 제한 시간은 600초다.
 - 빠른 탐색은 후보 20개 또는 2시간 중 먼저 도달한 시점에 끝낸다.
@@ -48,3 +49,5 @@ uv run --group serve python train/run_autoresearch_experiment.py --trial-id tria
 
 결과는 시뮬레이터 v2 validation 궤적에 한정된다. 이 실험의 향상은 실제 급식실 안전 성능을
 뜻하지 않는다.
+
+> 이 문서의 기존 300초 결과는 엄격한 파일 격리 수정 전에 생성됐다. 당시 test JSON을 파싱하거나 평가하지는 않았지만 manifest 전체 무결성 검사에서 test 파일의 SHA-256을 읽었다.

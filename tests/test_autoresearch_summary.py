@@ -1,4 +1,4 @@
-from train.summarize_autoresearch import summarize
+from train.summarize_autoresearch import render_markdown, summarize
 
 
 def test_summary_counts_failures_and_omits_test_metrics():
@@ -14,3 +14,5 @@ def test_summary_counts_failures_and_omits_test_metrics():
         "keep": 1,
     }
     assert "test" not in output
+    assert not output["strict_filesystem_isolation"]
+    assert "test JSON을 파싱하거나 평가하지는 않았지만" in render_markdown(output)

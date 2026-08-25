@@ -111,6 +111,7 @@ def summarize(rows, winner, baselines=None):
         ),
         "rerun_groups": _rerun_groups(rows),
         "winner": _portable_record(winner),
+        "strict_filesystem_isolation": False,
         "boundary": BOUNDARY,
     }
 
@@ -123,12 +124,18 @@ def render_markdown(summary: dict) -> str:
     lines = [
         "# Transformer 자동실험 validation 결과",
         "",
-        "> 이 결과는 v2 validation에서 고른 시뮬레이터 궤적 예측 성능이다.  ",
+        "> 이 결과는 v2 validation에서 고른 시뮬레이터 궤적 예측 성능이다.",
         "> locked test는 아직 실행하지 않았고 실제 급식실 안전 성능을 뜻하지 않는다.",
         "",
-        "## 실행 요약",
-        "",
     ]
+    if not summary.get("strict_filesystem_isolation", False):
+        lines.extend(
+            [
+                "> 주의: 이 수치는 엄격한 파일 격리 수정 전에 생성됐다. test JSON을 파싱하거나 평가하지는 않았지만 manifest 무결성 검사에서 test 파일의 SHA-256을 읽었다.",
+                "",
+            ]
+        )
+    lines.extend(["## 실행 요약", ""])
     counts = summary["counts"]
     lines.extend(
         [

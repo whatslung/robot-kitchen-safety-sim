@@ -1560,6 +1560,7 @@
     }
   ],
   "schema": 1,
+  "strict_filesystem_isolation": false,
   "winner": {
     "baseline_median": {
       "cpu_p95_ms": 0.26521,

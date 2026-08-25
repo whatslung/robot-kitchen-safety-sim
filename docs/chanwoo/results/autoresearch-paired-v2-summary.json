@@ -2,6 +2,7 @@
   "boundary": "validation-only simulator trajectory result; locked test not run; not real-world safety performance",
   "run_count": 18,
   "schema": 1,
+  "strict_filesystem_isolation": false,
   "training_steps": 70000,
   "variants": [
     {

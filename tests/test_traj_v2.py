@@ -5,6 +5,7 @@ import sys
 
 import pytest
 
+import trajectory.traj_v2 as traj_v2
 from trajectory.traj_v2 import build_manifest, validate_manifest, DatasetAuditError
 
 
@@ -109,6 +110,28 @@ def test_manifest_detects_changed_file(tmp_path):
 
     with pytest.raises(DatasetAuditError, match="SHA-256"):
         validate_manifest(data, manifest)
+
+
+def test_development_split_validation_never_hashes_locked_test_files(
+    tmp_path, monkeypatch
+):
+    data = tmp_path / "v2"
+    _full_dataset(data)
+    manifest = build_manifest(data, code_commit="abc123")
+    original_sha256 = traj_v2.sha256_file
+    hashed = []
+
+    def guarded_sha256(path):
+        if path.name in manifest["test"]:
+            raise AssertionError(f"locked test file opened: {path.name}")
+        hashed.append(path.name)
+        return original_sha256(path)
+
+    monkeypatch.setattr(traj_v2, "sha256_file", guarded_sha256)
+
+    traj_v2.validate_manifest_splits(data, manifest, ("train", "val"))
+
+    assert set(hashed) == set(manifest["train"] + manifest["val"])
 
 
 def test_manifest_rejects_missing_layout(tmp_path):

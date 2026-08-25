@@ -205,8 +205,16 @@ def build_manifest(
     return manifest
 
 
-def validate_manifest(dataset_dir: Path, manifest: dict) -> None:
+def validate_manifest_splits(
+    dataset_dir: Path,
+    manifest: dict,
+    splits,
+) -> None:
     dataset_dir = Path(dataset_dir)
+    splits = tuple(splits)
+    unknown = set(splits) - set(SPLIT_SEEDS)
+    if unknown:
+        raise DatasetAuditError(f"알 수 없는 split: {sorted(unknown)}")
     current = {path.name for path in dataset_dir.glob("*.json")}
     recorded = set(manifest["files"])
     if current != recorded:
@@ -216,8 +224,10 @@ def validate_manifest(dataset_dir: Path, manifest: dict) -> None:
         )
     changed = [
         name
-        for name, row in manifest["files"].items()
-        if sha256_file(dataset_dir / name) != row["sha256"]
+        for split in splits
+        for name in manifest[split]
+        if sha256_file(dataset_dir / name)
+        != manifest["files"][name]["sha256"]
     ]
     if changed:
         raise DatasetAuditError("SHA-256 불일치: " + ", ".join(changed))
@@ -237,3 +247,7 @@ def validate_manifest(dataset_dir: Path, manifest: dict) -> None:
         "test": 30,
     }:
         raise DatasetAuditError("split count 불일치")
+
+
+def validate_manifest(dataset_dir: Path, manifest: dict) -> None:
+    validate_manifest_splits(dataset_dir, manifest, SPLIT_SEEDS)

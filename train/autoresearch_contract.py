@@ -14,7 +14,7 @@ from trajectory.bootstrap import scene_bootstrap_ci
 from trajectory.evaluator import enters_radius, entry_confusion
 from trajectory.risk import track_risk
 from trajectory.sim_traj import load_windows
-from trajectory.traj_v2 import validate_manifest
+from trajectory.traj_v2 import validate_manifest_splits
 
 
 RECALL_DROP_MAX = 0.01
@@ -102,7 +102,7 @@ def development_windows(
     dataset_dir = Path(dataset_dir)
     manifest_path = Path(manifest_path)
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    validate_manifest(dataset_dir, manifest)
+    validate_manifest_splits(dataset_dir, manifest, (split,))
     return load_windows(
         split,
         traj_dir=dataset_dir,

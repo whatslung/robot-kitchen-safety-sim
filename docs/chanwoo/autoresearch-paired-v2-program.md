@@ -4,7 +4,7 @@
 
 - 대상 데이터는 `trajectories_v2` 150개 scene의 기존 고정 분할이다.
 - 학습은 train 90개, 모델 선택은 validation 30개만 사용한다.
-- 잠긴 test 30개는 이 실험에서 읽지 않는다.
+- 개발 로더는 요청한 train 또는 validation 파일만 해시·파싱하며 잠긴 test 30개 파일은 열지 않는다.
 - 결과는 시뮬레이터 궤적 validation 결과이며 실제 급식실 안전 성능이 아니다.
 
 ## 이전 실험에서 바꾼 점
@@ -45,7 +45,13 @@
 - 재현성은 PyTorch 저장 파일 바이트가 아니라 텐서 이름·자료형·형태·값의 SHA-256으로 확인한다. 저장 파일 안에는 임시 파일명이 들어가므로 파일 전체 해시는 같은 가중치에도 달라질 수 있다.
 - 각 실행 제한 시간은 900초다. 손실이 유한하지 않거나 child process가 실패하면 본실험을 중단한다.
 - 완료된 `(variant, seed)`는 결과 로그를 기준으로 건너뛰어 중단 후 이어서 실행할 수 있다.
+- 정식 실행은 시작 전에 contract lock을 검증한다. 각 record의 70,000 step, 등록된 모델 설정, contract·manifest SHA-256, 결정론 설정, 가중치 텐서 SHA-256이 모두 현재 계약과 같을 때만 완료된 실행으로 인정한다.
+- smoke 결과는 정식 `training/autoresearch-paired-v2` 디렉터리에 쓸 수 없다.
 
 ## Test 사용 금지
 
 validation 승자가 정해져도 test는 자동 실행하지 않는다. 최소 개선 조건을 만족한 뒤 별도 확인을 받아 한 번만 평가한다.
+
+## 기존 18개 결과의 경계
+
+현재 추적된 paired validation 보고서는 엄격한 파일 격리 수정 전에 생성됐다. 당시 test JSON을 파싱하거나 모델 평가에 사용하지 않았지만 manifest 전체 무결성 검사에서 test 파일 바이트의 SHA-256을 읽었다. 이 결과는 통계적 validation 비교로만 보존하며, 새 정식 runner는 provenance 필드가 없는 이 record를 공식 재개 결과로 인정하지 않는다.

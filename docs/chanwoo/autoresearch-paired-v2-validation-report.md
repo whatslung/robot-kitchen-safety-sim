@@ -3,6 +3,8 @@
 > v2 validation 30개에서 모델을 비교한 시뮬레이터 궤적 결과다.
 > locked test는 실행하지 않았다. 실제 급식실 안전 성능을 뜻하지 않는다.
 
+> 주의: 이 수치는 엄격한 파일 격리 수정 전에 생성됐다. test JSON을 파싱하거나 평가하지는 않았지만 manifest 무결성 검사에서 test 파일의 SHA-256을 읽었다.
+
 ## 실행 조건
 
 - train 90개, validation 30개, locked test 30개

@@ -91,3 +91,16 @@ def test_registered_variants_change_only_model_family_or_learning_rate():
     }
     assert contract.VARIANTS["cvae-lr6e4"].learning_rate == pytest.approx(6e-4)
     assert contract.VARIANTS["lstm-lr1e3"].model == "lstm"
+
+
+def test_selection_revalidates_every_input_record_when_validator_is_given():
+    contract = _contract_module()
+    rows = [
+        _row("transformer-lr1e3", seed, 0.70)
+        for seed in (0, 1, 2)
+    ]
+    seen = []
+
+    contract.select_paired_winner(rows, record_validator=lambda row: seen.append(row))
+
+    assert seen == rows

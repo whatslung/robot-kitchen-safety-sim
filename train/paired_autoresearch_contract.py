@@ -103,7 +103,10 @@ def _paired_summary(
     }
 
 
-def select_paired_winner(rows: list[dict]) -> dict:
+def select_paired_winner(rows: list[dict], record_validator=None) -> dict:
+    if record_validator is not None:
+        for row in rows:
+            record_validator(row)
     baseline_by_seed = _index_complete(rows, BASELINE_VARIANT)
     if baseline_by_seed is None:
         raise PairedSelectionError("Transformer baseline은 seed 0, 1, 2가 모두 필요")
