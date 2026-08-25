@@ -9923,7 +9923,10 @@ function updateCooking(dt) {
     if (state.cook < 1) state.cook = clamp(state.cook + dt/1000 * 0.055 * rate, 0, 1);
     // 고온 + 교반 없음 → 눌음 / 교반 중 → 회복
     if (state.stirring && bladeIn) state.burn = clamp(state.burn - dt/1000 * 0.10, 0, 1);
-    else if (state.temp > 172 && state.cook > 0.25) state.burn = clamp(state.burn + dt/1000 * 0.028 * rate, 0, 1);
+    /* 눌음은 **다 익은 뒤에** 시작한다 — cook>0.9 (2026-08-25). 종전 0.25는 익는 도중부터
+       타서, 알맞게 익은 황금색을 충분히 못 보고 갈색으로 넘어갔다. 시나리오는
+       "노랗게 익음 → (방치) → 탐"이라 익음이 끝난 뒤에 탄화가 붙어야 순서가 맞다. */
+    else if (state.temp > 172 && state.cook >= 0.9) state.burn = clamp(state.burn + dt/1000 * 0.028 * rate, 0, 1);
     autoIgniteTick();                              // 과열 자동 발화 — burn 갱신 직후에 판정
     bubbles.emitRate = 260 * rate;
     /* C-2: 김 기본 ×2 (66~110 → 132~220) + 표본 배율 k + 퍼프 ×3. 산수는 steam 정의부에 */
