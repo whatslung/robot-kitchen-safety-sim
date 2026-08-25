@@ -73,14 +73,17 @@ def _resolve_model_path(path: str) -> str:
     return got
 
 
-try:
-    from ultralytics import YOLO          # pip install ultralytics
-    _MODEL_PATH = _resolve_model_path(_MODEL_PATH)
-    MODEL = YOLO(_MODEL_PATH)
-    MODE = "yolo"
-    print(f"[detect_server] 모델 로드: {_MODEL_PATH} · 클래스 {list(MODEL.names.values())}")
-except Exception as e:                    # noqa: BLE001
-    print(f"[detect_server] 모델 로드 실패 → 검출 DUMMY ({_MODEL_PATH}: {e})")
+if os.environ.get("DETECT_DISABLE_MODEL", "").strip().lower() in {"1", "true", "yes"}:
+    print("[detect_server] DETECT_DISABLE_MODEL=1 → 검출 DUMMY")
+else:
+    try:
+        from ultralytics import YOLO          # pip install ultralytics
+        _MODEL_PATH = _resolve_model_path(_MODEL_PATH)
+        MODEL = YOLO(_MODEL_PATH)
+        MODE = "yolo"
+        print(f"[detect_server] 모델 로드: {_MODEL_PATH} · 클래스 {list(MODEL.names.values())}")
+    except Exception as e:                    # noqa: BLE001
+        print(f"[detect_server] 모델 로드 실패 → 검출 DUMMY ({_MODEL_PATH}: {e})")
 
 try:
     import supervision as sv              # pip install supervision
@@ -145,6 +148,19 @@ class CamState:
 
 
 CAMS = {}
+_CAMERA_UPDATED_AT = {}
+
+try:
+    from backend.multiview import CalibrationError, CameraCalibration, MultiViewFusion
+except ImportError:  # backend/detect_server.py를 스크립트로 직접 실행할 때
+    from multiview import CalibrationError, CameraCalibration, MultiViewFusion
+
+FUSION = MultiViewFusion(
+    gate=0.8,
+    fusion_window_ms=250,
+    coast_ms=750,
+    remove_ms=1500,
+)
 
 
 # ByteTrack 활성 임계값. 라이브러리 기본값은 0.7인데, 우리 시뮬 모델의 라이브 confidence는
@@ -274,7 +290,7 @@ app = FastAPI(title="detect_server", version="2.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],                  # 로컬 시뮬(다른 포트)에서 POST 하므로 허용
-    allow_methods=["POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type"],
 )
 
@@ -287,7 +303,49 @@ def _decode_image(data_url):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "mode": MODE, "cameras": list(CAMS.keys())}
+    now = time.monotonic()
+    return {
+        "status": "ok",
+        "mode": MODE,
+        "cameras": sorted(CAMS),
+        "calibrated_cameras": sorted(FUSION.calibrations),
+        "camera_update_age_ms": {
+            camera: max(0, int(round((now - updated_at) * 1000)))
+            for camera, updated_at in sorted(_CAMERA_UPDATED_AT.items())
+        },
+        "global_track_count": len(FUSION.tracks),
+    }
+
+
+@app.post("/calibrate")
+async def calibrate(req: Request):
+    try:
+        body = await req.json()
+        camera_id = str(body["camera"]).strip()
+        points = body["points"]
+        image = [point["image"] for point in points]
+        world = [point["world"] for point in points]
+        calibration = CameraCalibration.from_points(
+            image=image,
+            world=world,
+            valid_world_polygon=body["valid_world_polygon"],
+        )
+        FUSION.calibrate(camera_id, calibration)
+        return {
+            "camera": camera_id,
+            "reprojection_rms": calibration.reprojection_rms,
+            "point_count": len(points),
+        }
+    except (KeyError, TypeError, ValueError, CalibrationError):
+        return JSONResponse(status_code=422, content={"error": "invalid calibration"})
+
+
+@app.post("/tracks/reset")
+async def tracks_reset():
+    FUSION.reset_tracks()
+    CAMS.clear()
+    _CAMERA_UPDATED_AT.clear()
+    return {"ok": True, "calibrated_cameras": sorted(FUSION.calibrations)}
 
 
 @app.post("/detect")
@@ -296,6 +354,7 @@ async def detect(req: Request):
         body = await req.json()
         camera_id = body.get("camera", "?")
         t_ms = body.get("t")
+        fusion_t_ms = int(t_ms) if t_ms is not None else int(round(time.monotonic() * 1000))
         if MODE.startswith("yolo"):
             img = _decode_image(body["image"])
             img_w, img_h = img.size
@@ -303,7 +362,15 @@ async def detect(req: Request):
             img, img_w, img_h = None, 1280, 720
         dets = run_detect(img)
         boxes = track_and_measure(dets, img_w, img_h, camera_id, t_ms)
-        return {"boxes": boxes, "mode": MODE, "camera": camera_id}
+        boxes = FUSION.update(camera_id, boxes, fusion_t_ms)
+        _CAMERA_UPDATED_AT[camera_id] = time.monotonic()
+        return {
+            "boxes": boxes,
+            "mode": MODE,
+            "camera": camera_id,
+            "seq": body.get("seq"),
+            "global_tracks": FUSION.snapshot(fusion_t_ms),
+        }
     except Exception as e:                # noqa: BLE001
         return JSONResponse(status_code=500, content={"error": str(e)})
 
