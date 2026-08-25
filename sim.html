@@ -2566,6 +2566,17 @@ if (ISLAND) (function () {
               (LENS_FOV*180/Math.PI).toFixed(1) + "° · 가로 " +
               (2*Math.atan(Math.tan(LENS_FOV/2)*(4/3))*180/Math.PI).toFixed(1) + "° (4:3 기준)");
 })();
+/* ══ 4+1 다중 뷰 BEV 추적 — 승인된 준나디르 배치 ═════════════════════════════
+   네 카메라는 각 사분면의 사람 크기를 확보하고, 중앙 보조 카메라는 로봇 작업영역과
+   사분면 경계의 중첩을 보강한다. 이 다섯 대는 기존 데이터셋 카메라를 대체하지 않으며
+   ?multiview=1 일 때만 백그라운드 HTTP 스케줄러가 사용한다. */
+CAM_DEFS.push(
+  { id:"mvNW", label:"MV 북서 준나디르", pos:new V3(-2.75,2.65,-2.75), tgt:new V3(-3.15,0,-1.14), fov:1.326450, noCeil:true },
+  { id:"mvNE", label:"MV 북동 준나디르", pos:new V3(2.75,2.65,-2.75), tgt:new V3(4.37,0,-2.43), fov:1.326450, noCeil:true },
+  { id:"mvSW", label:"MV 남서 준나디르", pos:new V3(-2.75,2.65,2.75), tgt:new V3(-2.23,0,4.32), fov:1.326450, noCeil:true },
+  { id:"mvSE", label:"MV 남동 준나디르", pos:new V3(2.75,2.65,2.75), tgt:new V3(2.31,0,1.15), fov:1.326450, noCeil:true },
+  { id:"mvCenter", label:"MV 중앙 로봇영역 보조", pos:new V3(-1.10,2.65,3.80), tgt:new V3(-1.10,0.80,0.80), fov:1.221730, noCeil:true }
+);
 const SURV = {};
 /* 붙박이 카메라는 **항상 같은 비트**를 쓴다. 풀에서 뽑게 두면 저장/복원을 한 번 할 때마다
    반납 순서에 따라 비트가 뒤바뀌어(실측: overhead가 0x1000→0x20000) 로그를 못 믿게 된다. */
@@ -2583,6 +2594,8 @@ if (ISLAND) {
   RING_IDS.forEach(id => { FIXED_BITS[id] = 0x800000; });   // 링 전체가 비트 하나를 공유
   FIXED_BITS.fireSE = FIXED_BITS.fireNW = 0x1000000;   // 불꽃 2대도 같은 이유로 비트 공유
 }
+// 4+1 센서 하우징은 데이터셋/센서 역할이 같으므로 하나의 제외 레이어를 공유한다.
+for (const id of ["mvNW","mvNE","mvSW","mvSE","mvCenter"]) FIXED_BITS[id] = 0x2000000;
 const PROP_BITS = Object.assign({}, FIXED_BITS);
 /* 공장 초기값 스냅샷 — "공장 초기화"가 되돌릴 기준. pos/tgt는 Vector3라 깊은 복사가 필요하다. */
 const CAM_FACTORY = CAM_DEFS.map(d => Object.assign({}, d, { pos:d.pos.clone(), tgt:d.tgt.clone() }));
@@ -8194,6 +8207,194 @@ function milAssocTracks(boxes, camId) {
     if (now - MIL.tracks[id].t > 5000) delete MIL.tracks[id];
   return true;
 }
+
+/* ══ 4+1 HTTP 다중 뷰 — 로컬 ByteTrack → Homography BEV → 글로벌 ID ════════
+   이 경로는 SIM 인물 노드와 매칭하지 않는다. 서버가 돌려준 global_tracks의 BEV 좌표만
+   소비하며, 예측 결과는 레이더 패널에만 그린다. 기존 milCapture와 회피 제어는 그대로다. */
+const MV_QUERY = new URLSearchParams(location.search);
+const MV_DETECT_URL = MV_QUERY.get("detect") ||
+  ((location.protocol === "http:" || location.protocol === "https:")
+    ? new URL("/detect", location.href).href : MIL.url);
+const MV_SCHED = {
+  on: ["1","true","yes"].includes((MV_QUERY.get("multiview") || "").toLowerCase()),
+  cameras: [
+    { id:"mvNW", hz:4, nextAt:0 }, { id:"mvNE", hz:4, nextAt:0 },
+    { id:"mvSW", hz:4, nextAt:0 }, { id:"mvSE", hz:4, nextAt:0 },
+    { id:"mvCenter", hz:6, nextAt:0 },
+  ],
+  busy:false, calibrated:false, calibrating:false,
+  seq:0, lastAppliedSeq:-1, dropped:0, responses:0, errors:0,
+  predictions:{}, lastPredictionAt:0, predictionHz:2.5,
+  lastCamera:null, lastLatencyMs:0, lastError:null,
+};
+const MV_FLOOR_ANCHORS = [
+  new V3(-4.5,0,-3.8), new V3(0,0,-3.8), new V3(4.5,0,-3.8),
+  new V3(-4.5,0,0),    new V3(0,0,0),    new V3(4.5,0,0),
+  new V3(-4.5,0,3.8),  new V3(0,0,3.8),  new V3(4.5,0,3.8),
+];
+
+function mvEndpoint(path) {
+  const endpoint = new URL(MV_DETECT_URL, location.href);
+  endpoint.pathname = path; endpoint.search = ""; endpoint.hash = "";
+  return endpoint.href;
+}
+function mvImagePoint(cam, floorPoint) {
+  const transform = cam.getViewMatrix(true).multiply(cam.getProjectionMatrix(true));
+  const projected = BABYLON.Vector3.Project(
+    floorPoint, BABYLON.Matrix.Identity(), transform, new BABYLON.Viewport(0,0,1,1));
+  return [+projected.x.toFixed(8), +projected.y.toFixed(8)];
+}
+async function mvBootstrapCalibration() {
+  if (MV_SCHED.calibrated || MV_SCHED.calibrating) return;
+  MV_SCHED.calibrating = true; MV_SCHED.busy = true;
+  try {
+    const room = LAYOUT.room;
+    const valid_world_polygon = [
+      [room.x0, room.z0], [room.x1, room.z0], [room.x1, room.z1], [room.x0, room.z1],
+    ];
+    for (const cameraDef of MV_SCHED.cameras) {
+      const sensor = SURV[cameraDef.id];
+      if (!sensor || !sensor.cam) throw new Error("다중 뷰 카메라 없음: " + cameraDef.id);
+      const points = MV_FLOOR_ANCHORS.map(anchor => ({
+        image:mvImagePoint(sensor.cam, anchor), world:[anchor.x, anchor.z],
+      }));
+      const response = await fetch(mvEndpoint("/calibrate"), {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({ camera:cameraDef.id, points, valid_world_polygon }),
+      });
+      if (!response.ok) throw new Error("보정 실패 " + cameraDef.id + " (HTTP " + response.status + ")");
+    }
+    const now = performance.now();
+    MV_SCHED.cameras.forEach((cameraDef, index) => {
+      cameraDef.nextAt = now + index * 12;
+    });
+    MV_SCHED.calibrated = true; MV_SCHED.lastError = null;
+    console.log("[MV] 4+1 Homography 보정 완료 — single-flight 22 image/s 목표");
+  } catch (error) {
+    MV_SCHED.errors++; MV_SCHED.lastError = String(error && error.message || error);
+    console.warn("[MV] 보정 실패", error);
+  } finally {
+    MV_SCHED.calibrating = false; MV_SCHED.busy = false;
+  }
+}
+
+async function mvCaptureDataURL(cam) {
+  vizSuppressBegin();
+  let rgb;
+  try { rgb = await renderWith(cam, null, null); }
+  finally { vizSuppressEnd(); }
+  const source = document.createElement("canvas");
+  source.width = rgb.w; source.height = rgb.h;
+  const sourceContext = source.getContext("2d");
+  const image = sourceContext.createImageData(rgb.w, rgb.h);
+  for (let y = 0; y < rgb.h; y++) {
+    const start = (rgb.h - 1 - y) * rgb.w * 4;
+    image.data.set(rgb.data.subarray(start, start + rgb.w * 4), y * rgb.w * 4);
+  }
+  sourceContext.putImageData(image, 0, 0);
+  const width = Math.min(640, rgb.w), height = Math.max(1, Math.round(rgb.h * width / rgb.w));
+  const output = document.createElement("canvas"); output.width = width; output.height = height;
+  output.getContext("2d").drawImage(source, 0, 0, width, height);
+  return output.toDataURL("image/jpeg", 0.86);
+}
+
+function mvHandleGlobalResponse(payload, cameraId, capturedAt) {
+  const receivedAt = performance.now();
+  const nextTracks = {};
+  for (const track of (Array.isArray(payload.global_tracks) ? payload.global_tracks : [])) {
+    const id = Number(track.id);
+    if (!Number.isFinite(id) || !Number.isFinite(track.x) || !Number.isFinite(track.z)) continue;
+    nextTracks[id] = {
+      pos:new V3(track.x, 0, track.z), t:receivedAt - Math.max(0, track.age_ms || 0),
+      hist:Array.isArray(track.history) ? track.history.map(row => ({t:row.t,x:row.x,z:row.z})) : [],
+      vWorld:{x:track.vx || 0,z:track.vz || 0}, sources:track.sources || [],
+      stale:!!track.stale, age_ms:Math.max(0, track.age_ms || 0),
+    };
+  }
+  MIL.tracks = nextTracks;
+  MIL.lastBoxes = { camId:cameraId, boxes:payload.boxes || [], capturedAt };
+  MIL.lastAge = receivedAt - capturedAt;
+  MV_SCHED.lastCamera = cameraId; MV_SCHED.lastLatencyMs = MIL.lastAge;
+  MV_SCHED.responses++;
+}
+
+function mvStorePredictions(results) {
+  const nextPredictions = {};
+  for (const result of (Array.isArray(results) ? results : [])) {
+    nextPredictions[result.id] = {
+      source:result.source, stale:!!result.stale, risk:result.risk || {},
+      modes:(result.modes || []).map(mode => ({
+        prob:mode.prob, sigma:mode.sigma || [],
+        path:(mode.path || []).map(row => [row[0], SCALE.au(row[1]), SCALE.au(row[2])]),
+      })),
+    };
+  }
+  MV_SCHED.predictions = nextPredictions;
+}
+async function mvMaybePredict(globalTracks) {
+  const now = performance.now();
+  if (now - MV_SCHED.lastPredictionAt < 1000 / MV_SCHED.predictionHz) return;
+  MV_SCHED.lastPredictionAt = now;
+  const tracks = (globalTracks || []).map(track => ({
+    id:track.id, age_ms:track.age_ms, stale:track.stale,
+    history:(track.history || []).map(row => ({t:row.t,x:SCALE.m(row.x),z:SCALE.m(row.z)})),
+  }));
+  if (!tracks.length) { MV_SCHED.predictions = {}; return; }
+  const response = await fetch(mvEndpoint("/predict"), {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({ tracks, robot:{
+      x:SCALE.m(LAYOUT.robot.base.x), z:SCALE.m(LAYOUT.robot.base.z),
+      stop_radius:SAFE.stopR, slow_radius:SAFE.slowR,
+    }}),
+  });
+  if (!response.ok) throw new Error("예측 실패 (HTTP " + response.status + ")");
+  const payload = await response.json();
+  mvStorePredictions(payload.tracks);
+}
+
+async function mvCaptureCamera(cameraDef) {
+  if (MV_SCHED.busy) return;
+  MV_SCHED.busy = true;
+  const capturedAt = performance.now();
+  try {
+    const sensor = SURV[cameraDef.id];
+    if (!sensor || !sensor.cam) throw new Error("다중 뷰 카메라 없음: " + cameraDef.id);
+    const image = await mvCaptureDataURL(sensor.cam);
+    const request = { camera:cameraDef.id, image, t:Math.round(capturedAt), seq:++MV_SCHED.seq };
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    let response;
+    try {
+      response = await fetch(MV_DETECT_URL, {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body:JSON.stringify(request), signal:controller.signal,
+      });
+    } finally { clearTimeout(timeout); }
+    if (!response.ok) throw new Error("검출 실패 (HTTP " + response.status + ")");
+    const payload = await response.json();
+    if (payload.seq <= MV_SCHED.lastAppliedSeq) { MV_SCHED.dropped++; return; }
+    MV_SCHED.lastAppliedSeq = payload.seq;
+    mvHandleGlobalResponse(payload, cameraDef.id, capturedAt);
+    await mvMaybePredict(payload.global_tracks);
+    MV_SCHED.lastError = null;
+  } catch (error) {
+    MV_SCHED.errors++; MV_SCHED.lastError = String(error && error.message || error);
+  } finally { MV_SCHED.busy = false; }
+}
+
+function mvSchedulerTick(now) {
+  if (!MV_SCHED.on || !ENV_READY) return;
+  if (!MV_SCHED.calibrated) { if (!MV_SCHED.busy) mvBootstrapCalibration(); return; }
+  const due = MV_SCHED.cameras.filter(cameraDef => cameraDef.nextAt <= now)
+    .sort((a,b) => a.nextAt - b.nextAt || a.id.localeCompare(b.id));
+  if (!due.length) return;
+  if (MV_SCHED.busy) { MV_SCHED.dropped++; return; }
+  const cameraDef = due[0], period = 1000 / cameraDef.hz;
+  const missed = Math.max(0, Math.floor((now - cameraDef.nextAt) / period));
+  MV_SCHED.dropped += missed;
+  cameraDef.nextAt += (missed + 1) * period;
+  mvCaptureCamera(cameraDef);
+}
 /* 로봇에 가장 위협적인(가장 가까운) 신선한 트랙을 안전 판정 소스로 고른다.
    트랙이 없으면 null → safetyUpdate가 종전 lastPersonSeen으로 폴백한다. */
 function milThreatSrc() {
@@ -8337,7 +8538,7 @@ function drawBirdseye(ctx, W, H) {
   ctx.fillText(BE.viewR.toFixed(1)+"m", x0+4, y0+4);
   const LVL = ["#2ea043","#e3b341","#f85149"];
   // 추적 사람 점 (MIL 켜짐이면 트랙, 아니면 GT 사람)
-  if (MIL.on && MIL.tracks && Object.keys(MIL.tracks).length) {
+  if ((MIL.on || MV_SCHED.on) && MIL.tracks && Object.keys(MIL.tracks).length) {
     for (const id in MIL.tracks) {
       const p = MIL.tracks[id].pos; if (!p) continue;
       const [px, py] = beMap(p.x, p.z, cx, cy, half);
@@ -8350,6 +8551,34 @@ function drawBirdseye(ctx, W, H) {
     const p = person.node.position;
     const [px, py] = beMap(p.x, p.z, cx, cy, half);
     ctx.fillStyle = "#e6edf3"; ctx.beginPath(); ctx.arc(px, py, 4, 0, 7); ctx.fill();
+  }
+  // 4+1 서버 예측은 표시 전용이다. 여기서는 경로·σ만 그리며 안전/로봇 상태를 쓰지 않는다.
+  if (MV_SCHED.on && MV_SCHED.predictions) {
+    let labelRow = 0;
+    for (const id of Object.keys(MV_SCHED.predictions).sort((a,b) => (+a)-(+b))) {
+      const prediction = MV_SCHED.predictions[id];
+      if (!prediction || prediction.stale || !prediction.modes.length) continue;
+      const color = BE_IDCOL[(+id) % BE_IDCOL.length] || "#58a6ff";
+      prediction.modes.forEach((mode, modeIndex) => {
+        const points = mode.path.map(row => beMap(row[1], row[2], cx, cy, half));
+        if (points.length < 2) return;
+        ctx.save(); ctx.globalAlpha = Math.max(0.22, Math.min(0.95, mode.prob || 0));
+        ctx.strokeStyle = color; ctx.lineWidth = modeIndex === 0 ? 2.2 : 1.2;
+        ctx.beginPath(); ctx.moveTo(points[0][0], points[0][1]);
+        for (const point of points) ctx.lineTo(point[0], point[1]);
+        ctx.stroke();
+        for (let index = 2; index < points.length; index += 3) {
+          const sigmaPx = Math.max(1, (mode.sigma[index] || 0) * pxPerM);
+          ctx.globalAlpha = Math.max(0.05, 0.12 * (mode.prob || 0));
+          ctx.fillStyle = color; ctx.beginPath();
+          ctx.arc(points[index][0], points[index][1], sigmaPx, 0, Math.PI*2); ctx.fill();
+        }
+        ctx.restore();
+      });
+      ctx.fillStyle = color; ctx.font = "9px ui-monospace,monospace"; ctx.textBaseline = "bottom";
+      ctx.fillText("#"+id+" "+String(prediction.source || "").toUpperCase(), x0+5, y0+sz-5-labelRow*11);
+      labelRow++;
+    }
   }
   // 위협 트랙 예측 경로 + σ 음영 (이동 중일 때만)
   if (PRED.moving && PRED.pathPts && PRED.pathPts.length > 1) {
@@ -10205,6 +10434,7 @@ scene.registerBeforeRender(() => {
     MIL.acc += dt;
     if (MIL.acc >= 1000/MIL.hz) { MIL.acc = 0; milCapture(); }
   }
+  mvSchedulerTick(now);          // ?multiview=1 — 4+1 single-flight 백그라운드 추론
   fireLight.intensity = state.fire
     ? 1.15 + Math.sin(now/43)*0.3 + Math.sin(now/113)*0.22
     : Math.max(0, fireLight.intensity - dt/400);
@@ -10400,7 +10630,9 @@ window.__sim = {
   // 물리 · 안전
   PHYS, ROBOT_GUARD, buildRobotGuard, resetBasket, ONNX, onnxLoadModel, onnxInfer, PRED, ENV_RAND, randomizeEnvironment, placeOccluder, setExtraCount, spawnDebris, triggerEstop, clearEstop,
   // 모델 검증
-  MIL, milCapture, milMaskBoxes, drawOverlay, effector, BE, drawBirdseye, DENS, AVOID, avoidMinDist, avoidDecide, SEQ, RARR, robotArrowsUpdate, PMODE, GRAPH,
+  MIL, milCapture, milMaskBoxes, drawOverlay, effector, BE, drawBirdseye,
+  MV_SCHED, mvBootstrapCalibration, mvSchedulerTick,
+  DENS, AVOID, avoidMinDist, avoidDecide, SEQ, RARR, robotArrowsUpdate, PMODE, GRAPH,
 };
 
 /* ══ Isaac풍 도킹 UI — 콘솔 · 스테이지 트리 · 메뉴바 ═════════════════════ */
