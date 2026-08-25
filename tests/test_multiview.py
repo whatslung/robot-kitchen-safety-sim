@@ -24,6 +24,15 @@ def test_calibration_rejects_collinear_points():
         )
 
 
+def test_calibration_rejects_degenerate_valid_polygon():
+    with pytest.raises(CalibrationError):
+        CameraCalibration.from_points(
+            image=[[0, 0], [1, 0], [1, 1], [0, 1]],
+            world=[[0, 0], [1, 0], [1, 1], [0, 1]],
+            valid_world_polygon=[[0, 0], [1, 0], [2, 0]],
+        )
+
+
 def test_calibration_accepts_valid_camera_projection_with_negative_svd_scale():
     image = [
         [-0.17218452, 1.13428753], [1.68595407, 1.83888089], [6.29462695, 3.58645793],
@@ -112,6 +121,26 @@ def test_measurement_outside_gate_starts_new_global_track():
     distant = fusion.update("mvCenter", [_person(8, 0.7)], 1100)
 
     assert first[0]["global_id"] != distant[0]["global_id"]
+
+
+def test_unassigned_local_ids_are_ephemeral_and_do_not_collapse_people():
+    fusion = _fusion("mvNW", gate=0.2)
+
+    first = fusion.update("mvNW", [_person(-1, 0.2), _person(-1, 0.8)], 1000)
+    second = fusion.update("mvNW", [_person(-1, 0.22), _person(-1, 0.78)], 1100)
+
+    assert [box["global_id"] for box in first] == [1, 2]
+    assert [box["global_id"] for box in second] == [1, 2]
+    assert ("mvNW", -1) not in fusion._local_bindings
+
+
+def test_cross_camera_unbound_measurement_outside_fusion_window_starts_new_track():
+    fusion = _fusion("mvNW", "mvCenter", gate=0.2)
+
+    first = fusion.update("mvNW", [_person(1, 0.4)], 1000)
+    late = fusion.update("mvCenter", [_person(7, 0.41)], 1400)
+
+    assert first[0]["global_id"] != late[0]["global_id"]
 
 
 def test_older_timestamp_does_not_rewind_global_state():

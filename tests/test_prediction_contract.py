@@ -98,6 +98,31 @@ def test_two_observations_use_finite_constant_velocity_fallback():
     assert_finite(results)
 
 
+def test_fallback_prefers_filtered_global_kalman_state():
+    results = predict_global_tracks(
+        [
+            {
+                "id": 5,
+                "x": 1.0,
+                "z": 2.0,
+                "vx": 0.5,
+                "vz": -0.25,
+                "history": [
+                    {"t": 1000, "x": 0.0, "z": 0.0},
+                    {"t": 1400, "x": 0.0, "z": 0.0},
+                ],
+                "age_ms": 30,
+                "stale": False,
+            }
+        ],
+        predictor=None,
+        robot={"x": 0, "z": 0, "stop_radius": 1, "slow_radius": 2},
+    )
+
+    assert results[0]["source"] == "kalman"
+    assert results[0]["modes"][0]["path"][0] == [0.4, 1.2, 1.9]
+
+
 def test_stale_track_is_returned_without_active_prediction():
     results = predict_global_tracks(
         [{"id": 6, "history": _long_history(), "age_ms": 900, "stale": True}],

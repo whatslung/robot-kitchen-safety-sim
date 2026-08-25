@@ -86,6 +86,15 @@ def _inside_polygon(point: tuple[float, float], polygon: Sequence[Sequence[float
     return inside
 
 
+def _validate_polygon(polygon: np.ndarray) -> None:
+    shifted = np.roll(polygon, -1, axis=0)
+    signed_double_area = float(
+        np.sum(polygon[:, 0] * shifted[:, 1] - shifted[:, 0] * polygon[:, 1])
+    )
+    if abs(signed_double_area) < 1e-10:
+        raise CalibrationError("valid_world_polygon has zero area")
+
+
 @dataclass(frozen=True)
 class CameraCalibration:
     matrix: np.ndarray
@@ -104,6 +113,7 @@ class CameraCalibration:
         if len(image_points) != len(world_points):
             raise CalibrationError("image and world point counts differ")
         polygon = _as_points("valid_world_polygon", valid_world_polygon, 3)
+        _validate_polygon(polygon)
         matrix = _solve_homography(image_points, world_points)
         homogeneous = np.column_stack((image_points, np.ones(len(image_points))))
         projected = (matrix @ homogeneous.T).T
@@ -134,7 +144,7 @@ class CameraCalibration:
 @dataclass(frozen=True)
 class Measurement:
     camera_id: str
-    local_id: int | str
+    local_id: int | str | None
     x: float
     z: float
     confidence: float
@@ -142,7 +152,9 @@ class Measurement:
     box_index: int
 
     @property
-    def local_key(self) -> tuple[str, int | str]:
+    def local_key(self) -> tuple[str, int | str] | None:
+        if self.local_id is None:
+            return None
         return (self.camera_id, self.local_id)
 
 
@@ -290,16 +302,27 @@ class MultiViewFusion:
         )
         cutoff = measurement.timestamp_ms - 4000
         track.history = [row for row in track.history if int(row["t"]) >= cutoff]
-        self._local_bindings[measurement.local_key] = track.id
+        if measurement.local_key is not None:
+            self._local_bindings[measurement.local_key] = track.id
+
+    def _association_allowed(self, track: GlobalTrack, measurement: Measurement) -> bool:
+        if measurement.camera_id in track.sources:
+            return True
+        return measurement.timestamp_ms - track.last_update_ms <= self.fusion_window_ms
 
     def _assign(self, measurements: list[Measurement]) -> dict[int, int]:
         assignments: dict[int, int] = {}
         used_track_ids: set[int] = set()
 
         for measurement_index, measurement in enumerate(measurements):
-            bound_id = self._local_bindings.get(measurement.local_key)
+            key = measurement.local_key
+            bound_id = self._local_bindings.get(key) if key is not None else None
             bound = self.tracks.get(bound_id) if bound_id is not None else None
-            if bound is not None and self._distance(bound, measurement) <= self.gate:
+            if (
+                bound is not None
+                and bound.id not in used_track_ids
+                and self._distance(bound, measurement) <= self.gate
+            ):
                 assignments[measurement_index] = bound.id
                 used_track_ids.add(bound.id)
 
@@ -319,7 +342,11 @@ class MultiViewFusion:
         )
         for row, measurement_index in enumerate(remaining_measurements):
             for column, track_id in enumerate(remaining_tracks):
-                distance = self._distance(self.tracks[track_id], measurements[measurement_index])
+                track = self.tracks[track_id]
+                measurement = measurements[measurement_index]
+                if not self._association_allowed(track, measurement):
+                    continue
+                distance = self._distance(track, measurement)
                 if distance <= self.gate:
                     costs[row, column] = distance
 
@@ -364,7 +391,7 @@ class MultiViewFusion:
 
         measurements: list[Measurement] = []
         for box_index, detection in enumerate(enriched):
-            if detection.get("label") != "person" or detection.get("id") is None:
+            if detection.get("label") != "person":
                 continue
             try:
                 footpoint = (
@@ -377,10 +404,17 @@ class MultiViewFusion:
                 continue
             if world is None or not np.isfinite(confidence):
                 continue
+            raw_local_id = detection.get("id")
+            local_id: int | str | None = raw_local_id
+            try:
+                if raw_local_id is None or int(raw_local_id) < 0:
+                    local_id = None
+            except (TypeError, ValueError, OverflowError):
+                pass
             measurements.append(
                 Measurement(
                     camera_id=camera_id,
-                    local_id=detection["id"],
+                    local_id=local_id,
                     x=world[0],
                     z=world[1],
                     confidence=min(1.0, max(0.0, confidence)),

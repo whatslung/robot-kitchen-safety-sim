@@ -116,18 +116,28 @@ def _format_lstm_modes(raw_modes: Sequence[dict[str, Any]]) -> list[dict[str, An
 
 def _constant_velocity_mode(track: dict[str, Any]) -> list[dict[str, Any]]:
     rows = _history_rows(track.get("history", []))
-    if rows:
+    state_x = _finite_float(track.get("x"), math.nan)
+    state_z = _finite_float(track.get("z"), math.nan)
+    if math.isfinite(state_x) and math.isfinite(state_z):
+        x, z = state_x, state_z
+    elif rows:
         _, x, z = rows[-1]
     else:
         x = _finite_float(track.get("x"))
         z = _finite_float(track.get("z"))
-    vx = vz = 0.0
-    if len(rows) >= 2:
+    state_vx = _finite_float(track.get("vx"), math.nan)
+    state_vz = _finite_float(track.get("vz"), math.nan)
+    if math.isfinite(state_vx) and math.isfinite(state_vz):
+        vx, vz = state_vx, state_vz
+    elif len(rows) >= 2:
         previous, latest = rows[-2], rows[-1]
         dt = (latest[0] - previous[0]) / 1000.0
+        vx = vz = 0.0
         if dt > 1e-3:
             vx = (latest[1] - previous[1]) / dt
             vz = (latest[2] - previous[2]) / dt
+    else:
+        vx = vz = 0.0
     speed = math.hypot(vx, vz)
     if not math.isfinite(speed):
         vx = vz = 0.0

@@ -2746,6 +2746,7 @@ if (ISLAND) (function () {
    네 카메라는 각 사분면의 사람 크기를 확보하고, 중앙 보조 카메라는 로봇 작업영역과
    사분면 경계의 중첩을 보강한다. 이 다섯 대는 기존 데이터셋 카메라를 대체하지 않으며
    ?multiview=1 일 때만 백그라운드 HTTP 스케줄러가 사용한다. */
+const MV_CAMERA_IDS = ["mvNW","mvNE","mvSW","mvSE","mvCenter"];
 CAM_DEFS.push(
   { id:"mvNW", label:"MV 북서 준나디르", pos:new V3(-2.75,2.65,-2.75), tgt:new V3(-3.15,0,-1.14), fov:1.326450, noCeil:true },
   { id:"mvNE", label:"MV 북동 준나디르", pos:new V3(2.75,2.65,-2.75), tgt:new V3(4.37,0,-2.43), fov:1.326450, noCeil:true },
@@ -2771,7 +2772,7 @@ if (ISLAND) {
   FIXED_BITS.fireSE = FIXED_BITS.fireNW = 0x1000000;   // 불꽃 2대도 같은 이유로 비트 공유
 }
 // 4+1 센서 하우징은 데이터셋/센서 역할이 같으므로 하나의 제외 레이어를 공유한다.
-for (const id of ["mvNW","mvNE","mvSW","mvSE","mvCenter"]) FIXED_BITS[id] = 0x2000000;
+for (const id of MV_CAMERA_IDS) FIXED_BITS[id] = 0x2000000;
 const PROP_BITS = Object.assign({}, FIXED_BITS);
 /* 공장 초기값 스냅샷 — "공장 초기화"가 되돌릴 기준. pos/tgt는 Vector3라 깊은 복사가 필요하다. */
 /* ══ 복도형: 상부 진리값 뷰 높이를 **방에서 유도한다** (F, 2026-08-22) ═══════
@@ -7901,10 +7902,13 @@ function randomizeEnvironment() {
   const holders = scene.transformNodes.filter(n => /^envProp_/.test(n.name));
   // 원위치는 **이름 기준**으로 보관한다. 배열 인덱스로 잡으면 setExtraCount 등으로
   // transformNodes 구성이 바뀔 때 다른 프롭의 원위치로 되돌아갈 수 있다.
-  if (!ENV_RAND.base) {
-    ENV_RAND.base = {};
-    holders.forEach(h => { ENV_RAND.base[h.name] = { p: h.position.clone(), r: h.rotation.y }; });
-  }
+  ENV_RAND.base = ENV_RAND.base || {};
+  holders.forEach(h => {
+    // 환경 GLB는 __simReady 뒤에도 비동기로 도착할 수 있다. 첫 랜덤화 뒤에 추가된
+    // 프롭도 발견 시점의 위치를 원점으로 등록해야 아래 지터/복원이 undefined를 읽지 않는다.
+    if (!ENV_RAND.base[h.name])
+      ENV_RAND.base[h.name] = { p: h.position.clone(), r: h.rotation.y };
+  });
   const CELL = { x0:-2.6, z0:-1.3, x1:0.9, z1:2.5 };      // 로봇 작업권 + 접근 통로 (침범 금지)
   const aabb = h => { let mn=null, mx=null;
     scene.meshes.forEach(m => { if (!m.getTotalVertices || !m.getTotalVertices()) return;
@@ -9271,6 +9275,8 @@ const MV_QUERY = new URLSearchParams(location.search);
 const MV_DETECT_URL = MV_QUERY.get("detect") ||
   ((location.protocol === "http:" || location.protocol === "https:")
     ? new URL("/detect", location.href).href : MIL.url);
+const MV_MAX_RESPONSE_AGE_MS = 1500;
+const MV_COAST_MS = 750;
 const MV_SCHED = {
   on: ["1","true","yes"].includes((MV_QUERY.get("multiview") || "").toLowerCase()),
   cameras: [
@@ -9279,6 +9285,7 @@ const MV_SCHED = {
     { id:"mvCenter", hz:6, nextAt:0 },
   ],
   busy:false, calibrated:false, calibrating:false, nextCalibrationAt:0,
+  calibrationSignature:null, resetPending:false, nextResetAt:0,
   seq:0, lastAppliedSeq:-1, dropped:0, responses:0, errors:0,
   predictions:{}, lastPredictionAt:0, predictionHz:2.5,
   lastCamera:null, lastLatencyMs:0, lastError:null,
@@ -9304,6 +9311,21 @@ function mvImagePoint(cam, floorPoint) {
     floorPoint, BABYLON.Matrix.Identity(), transform, new BABYLON.Viewport(0,0,1,1));
   return [+projected.x.toFixed(8), +projected.y.toFixed(8)];
 }
+function mvCalibrationSignature() {
+  return MV_CAMERA_IDS.map(id => {
+    const sensor = SURV[id];
+    if (!sensor || !sensor.def) return id + ":missing";
+    const d = sensor.def, values = [
+      d.pos.x,d.pos.y,d.pos.z,d.tgt.x,d.tgt.y,d.tgt.z,d.fov,
+    ];
+    return id + ":" + values.map(value => Number(value).toFixed(6)).join(",");
+  }).join("|");
+}
+async function mvPostTrackReset() {
+  const response = await fetch(mvEndpoint("/tracks/reset"), { method:"POST" });
+  if (!response.ok) throw new Error("트랙 리셋 실패 (HTTP " + response.status + ")");
+  return response.json();
+}
 async function mvBootstrapCalibration() {
   if (MV_SCHED.calibrated || MV_SCHED.calibrating) return;
   if (performance.now() < MV_SCHED.nextCalibrationAt) return;
@@ -9325,10 +9347,13 @@ async function mvBootstrapCalibration() {
       });
       if (!response.ok) throw new Error("보정 실패 " + cameraDef.id + " (HTTP " + response.status + ")");
     }
+    await mvPostTrackReset();
     const now = performance.now();
     MV_SCHED.cameras.forEach((cameraDef, index) => {
       cameraDef.nextAt = now + index * 12;
     });
+    MIL.tracks = {}; MV_SCHED.predictions = {};
+    MV_SCHED.calibrationSignature = mvCalibrationSignature();
     MV_SCHED.calibrated = true; MV_SCHED.lastError = null;
     console.log("[MV] 4+1 Homography 보정 완료 — single-flight 22 image/s 목표");
   } catch (error) {
@@ -9370,22 +9395,27 @@ async function mvCaptureDataURL(cam) {
 
 function mvHandleGlobalResponse(payload, cameraId, capturedAt) {
   const receivedAt = performance.now();
-  const nextTracks = {};
+  const transitAge = Math.max(0, receivedAt - capturedAt);
+  const nextTracks = {}, adjustedTracks = [];
   for (const track of (Array.isArray(payload.global_tracks) ? payload.global_tracks : [])) {
     const id = Number(track.id);
     if (!Number.isFinite(id) || !Number.isFinite(track.x) || !Number.isFinite(track.z)) continue;
+    const age_ms = Math.max(0, Number(track.age_ms || 0) + transitAge);
+    const stale = !!track.stale || age_ms > MV_COAST_MS;
     nextTracks[id] = {
-      pos:new V3(track.x, 0, track.z), t:receivedAt - Math.max(0, track.age_ms || 0),
+      pos:new V3(track.x, 0, track.z), t:receivedAt - age_ms,
       hist:Array.isArray(track.history) ? track.history.map(row => ({t:row.t,x:row.x,z:row.z})) : [],
       vWorld:{x:track.vx || 0,z:track.vz || 0}, sources:track.sources || [],
-      stale:!!track.stale, age_ms:Math.max(0, track.age_ms || 0),
+      stale, age_ms,
     };
+    adjustedTracks.push(Object.assign({}, track, { age_ms, stale }));
   }
   MIL.tracks = nextTracks;
   MIL.lastBoxes = { camId:cameraId, boxes:payload.boxes || [], capturedAt };
   MIL.lastAge = receivedAt - capturedAt;
   MV_SCHED.lastCamera = cameraId; MV_SCHED.lastLatencyMs = MIL.lastAge;
   MV_SCHED.responses++;
+  return adjustedTracks;
 }
 
 function mvStorePredictions(results) {
@@ -9395,7 +9425,7 @@ function mvStorePredictions(results) {
       source:result.source, stale:!!result.stale, risk:result.risk || {},
       modes:(result.modes || []).map(mode => ({
         prob:mode.prob, sigma:mode.sigma || [],
-        path:(mode.path || []).map(row => [row[0], SCALE.au(row[1]), SCALE.au(row[2])]),
+        path:(mode.path || []).map(row => [row[0], row[1], row[2]]),
       })),
     };
   }
@@ -9406,15 +9436,16 @@ async function mvMaybePredict(globalTracks) {
   if (now - MV_SCHED.lastPredictionAt < 1000 / MV_SCHED.predictionHz) return;
   MV_SCHED.lastPredictionAt = now;
   const tracks = (globalTracks || []).map(track => ({
-    id:track.id, age_ms:track.age_ms, stale:track.stale,
-    history:(track.history || []).map(row => ({t:row.t,x:SCALE.m(row.x),z:SCALE.m(row.z)})),
+    id:track.id, x:track.x, z:track.z, vx:track.vx, vz:track.vz,
+    age_ms:track.age_ms, stale:track.stale,
+    history:(track.history || []).map(row => ({t:row.t,x:row.x,z:row.z})),
   }));
   if (!tracks.length) { MV_SCHED.predictions = {}; return; }
   const response = await fetch(mvEndpoint("/predict"), {
     method:"POST", headers:{"Content-Type":"application/json"},
     body:JSON.stringify({ tracks, robot:{
-      x:SCALE.m(LAYOUT.robot.base.x), z:SCALE.m(LAYOUT.robot.base.z),
-      stop_radius:SAFE.stopR, slow_radius:SAFE.slowR,
+      x:LAYOUT.robot.base.x, z:LAYOUT.robot.base.z,
+      stop_radius:SCALE.au(SAFE.stopR), slow_radius:SCALE.au(SAFE.slowR),
     }}),
   });
   if (!response.ok) throw new Error("예측 실패 (HTTP " + response.status + ")");
@@ -9442,18 +9473,49 @@ async function mvCaptureCamera(cameraDef) {
     } finally { clearTimeout(timeout); }
     if (!response.ok) throw new Error("검출 실패 (HTTP " + response.status + ")");
     const payload = await response.json();
+    const receivedAt = performance.now();
+    if (receivedAt - capturedAt > MV_MAX_RESPONSE_AGE_MS) { MV_SCHED.dropped++; return; }
+    if (MV_SCHED.resetPending) { MV_SCHED.dropped++; return; }
     if (payload.seq <= MV_SCHED.lastAppliedSeq) { MV_SCHED.dropped++; return; }
     MV_SCHED.lastAppliedSeq = payload.seq;
-    mvHandleGlobalResponse(payload, cameraDef.id, capturedAt);
-    await mvMaybePredict(payload.global_tracks);
+    const adjustedTracks = mvHandleGlobalResponse(payload, cameraDef.id, capturedAt);
+    await mvMaybePredict(adjustedTracks);
     MV_SCHED.lastError = null;
   } catch (error) {
     MV_SCHED.errors++; MV_SCHED.lastError = String(error && error.message || error);
+  } finally {
+    MV_SCHED.busy = false;
+    if (MV_SCHED.resetPending) mvFlushTrackReset();
+  }
+}
+
+function mvRequestTrackReset() {
+  if (!MV_SCHED.on) return;
+  MIL.tracks = {}; MV_SCHED.predictions = {};
+  MV_SCHED.resetPending = true;
+  MV_SCHED.lastAppliedSeq = MV_SCHED.seq;
+  if (!MV_SCHED.busy) mvFlushTrackReset();
+}
+async function mvFlushTrackReset() {
+  if (!MV_SCHED.on || !MV_SCHED.resetPending || MV_SCHED.busy) return;
+  if (performance.now() < MV_SCHED.nextResetAt) return;
+  MV_SCHED.busy = true;
+  try {
+    await mvPostTrackReset();
+    MV_SCHED.resetPending = false; MV_SCHED.lastError = null;
+  } catch (error) {
+    MV_SCHED.errors++; MV_SCHED.lastError = String(error && error.message || error);
+    MV_SCHED.nextResetAt = performance.now() + 1000;
   } finally { MV_SCHED.busy = false; }
 }
 
 function mvSchedulerTick(now) {
   if (!MV_SCHED.on || !ENV_READY) return;
+  if (MV_SCHED.resetPending) { if (!MV_SCHED.busy) mvFlushTrackReset(); return; }
+  const calibrationSignature = mvCalibrationSignature();
+  if (MV_SCHED.calibrated && calibrationSignature !== MV_SCHED.calibrationSignature) {
+    MV_SCHED.calibrated = false; MIL.tracks = {}; MV_SCHED.predictions = {};
+  }
   if (!MV_SCHED.calibrated) { if (!MV_SCHED.busy) mvBootstrapCalibration(); return; }
   const due = MV_SCHED.cameras.filter(cameraDef => cameraDef.nextAt <= now)
     .sort((a,b) => a.nextAt - b.nextAt || a.id.localeCompare(b.id));
@@ -10433,6 +10495,7 @@ $("resetBtn").addEventListener("click", () => {
   person.node.position.copyFrom(LAYOUT.person.pos);
   if (typeof personIdle === "function") personIdle();
   if (typeof OVERLAP === "object") { OVERLAP.cool = 0; OVERLAP.events = 0; }
+  mvRequestTrackReset();
   setStatus("리셋 완료 — 바스켓·사람·안전 상태 원위치 (인원 " + EXTRAS.length + "명)");
 });
 $("tempSlider").addEventListener("input", e => {
@@ -10952,7 +11015,7 @@ function camUIapply(write = true) {
    저장된 값이 그대로 복원돼 새 배치가 안 보이는 일을 막는다 — 버전을 올리면 새 기본값으로 시작. */
 // v4: 방 남쪽 +3m 확장에 맞춰 CAM7~10 증설. 버전을 안 올리면 v3 저장값이 복원되면서
 //     새로 단 4대가 통째로 사라진다(camStoreLoad가 CAM_DEFS를 저장분으로 교체하므로).
-const CAM_STORE = "hkr.sim.cams.v6";   // v6: CAM11 프레임을 섬 배치 활동범위로 재조정
+const CAM_STORE = "hkr.sim.cams.v7";   // v7: 필수 4+1 BEV 카메라를 저장 구성에 포함
 function camStoreSave() {
   try {
     localStorage.setItem(CAM_STORE, JSON.stringify(CAM_DEFS.map(d => {
@@ -10985,6 +11048,13 @@ function camStoreLoad() {
     defs.push(d);
   }
   if (!defs.length) return false;
+  for (const id of MV_CAMERA_IDS) {
+    if (defs.some(d => d.id === id)) continue;
+    const factory = CAM_FACTORY.find(d => d.id === id);
+    if (factory) defs.push(Object.assign({}, factory, {
+      pos:factory.pos.clone(), tgt:factory.tgt.clone(),
+    }));
+  }
   CAM_DEFS.slice().forEach(d => disposeSurvCam(d.id));
   camAddN = 0;
   for (const d of defs) {
