@@ -17,7 +17,10 @@
   .sub{color:#7d8590;font-size:11px;margin:0 0 10px}
   .section{margin:12px 0 6px;padding-top:9px;border-top:1px solid #21262d;color:#7d8590;
     font-size:10px;letter-spacing:.09em;text-transform:uppercase;font-weight:600}
-  .btnrow{display:flex;gap:6px;margin-bottom:6px}
+  /* wrap 필수 — 없으면 버튼이 많은 줄(사람 시나리오 11개)에서 폭이 20px까지 눌려
+     글자가 세로로 한 자씩 쌓인다(실측 2026-08-22). min-width로 하한도 준다. */
+  .btnrow{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
+  .btnrow>button{min-width:84px}
   /* 좁은 창에서 3D 화면이 찌그러지지 않도록 — 패널을 줄이고 스테이지 트리를 접는다 */
   #viewport{min-width:0}
   @media (max-width:1180px){ #panel{width:264px;flex-basis:264px} #stagePanel{display:none} }
@@ -193,7 +196,10 @@
   .snode.cam{padding-left:18px}
   .snode .camname{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   #viewport{flex:1;position:relative;min-width:0;background:#000}
-  #consolePanel{flex:0 0 108px;background:#1c1c1e;border-top:1px solid #0a0a0a;
+  /* 발표에서 화면 아래 콘솔이 보이면 완성도가 떨어진다 — 실측 959×108px로 화면 높이의
+     14%를 먹고 있었다. **기본 숨김**으로 바꾸고 ⚙ 고급의 체크박스나 ?console=1 로 켠다. */
+  #consolePanel{display:none;flex:0 0 108px;background:#1c1c1e;border-top:1px solid #0a0a0a;
+  
     display:flex;flex-direction:column;min-height:0}
   #consoleLog{flex:1;overflow-y:auto;padding:4px 10px;font:10.5px/1.55 ui-monospace,monospace;color:#9da7b0}
   #consoleLog .t{color:#5b6570;margin-right:8px}
@@ -398,6 +404,17 @@
   <div class="row"><span>저해상</span><input id="snLow" type="range" min="0" max="2" step="1"><b id="snLowV">0</b></div>
   <div class="hint">라벨(마스크·깊이)에는 적용되지 않습니다 — 학습 입력만 실제 CCTV처럼 열화시킵니다.</div>
 
+  <div class="section">샷 리스트 <span class="note" style="font-weight:400">발표 11컷</span></div>
+  <div class="hint">발표에서 보여줄 11개 시점을 순서대로 자동 전환합니다. 화재가 필요한 컷은
+    <b>진행 단계까지 맞춰</b> 보여줍니다 — 불꽃은 초반(연기에 안 가림), 저상 연기 뷰는 후반.<br>
+    정지하면 원래 시점·화재 상태로 되돌립니다.</div>
+  <div class="row"><span>컷당 시간</span><input id="shotDwell" type="range" min="2" max="8" step="0.5" value="4"><b id="shotDwellV">4.0s</b></div>
+  <div class="btnrow">
+    <button id="shotRun" class="primary">▶ 샷 리스트 재생</button>
+    <button id="shotStop">■ 정지</button>
+  </div>
+  <div class="note" id="shotNote">11컷 · 약 44초</div>
+
   <div class="section">감시 카메라 관리 <span class="note" style="font-weight:400">추가 · 이동 · 삭제</span></div>
   <div class="btnrow">
     <button id="camAdd">＋ 지금 자유 시점으로 새 카메라</button>
@@ -441,6 +458,7 @@
     <button id="scRoleFar">＋ A 원거리 작업자 (로봇 접근 안 함)</button>
     <button id="scRoleCaution">＋ B 주의구역 작업자 (감속까지만)</button>
     <button id="scRoleDanger">＋ C 위험 접근자 (정지 반경 진입)</button>
+    <button id="scRoleClear">－ 인원 전원 제거</button>
     <button id="scWander">🎲 랜덤 움직임 시작/중지</button>
     <button id="scWorkflow">🧭 직무 전이 모드 시작/중지</button>
     <button id="scWork">🔁 작업 동선 (선반↔조리대)</button>
@@ -480,11 +498,21 @@
   <div class="btnrow">
     <button id="hzPush">충돌 — 팔에 맞고 밀림</button>
     <button id="hzPinch">끼임 — 설비 사이에 낌</button>
+    <button id="hzFall">실신 — 조리원 쓰러짐</button>
     <button id="hzClear">해제</button>
   </div>
   <div class="hint">안전 정지가 정상 동작하면 접촉은 <b>일어나지 않습니다</b>(그게 맞는 동작입니다).
-    두 버튼은 <b>모델이 사람을 못 본 상태</b>를 강제해 로봇을 멈추지 않게 합니다 — 이 연구가 겨냥하는 실패 모드입니다.<br>
+    충돌·끼임은 <b>모델이 사람을 못 본 상태</b>를 강제해 로봇을 멈추지 않게 합니다(예측 회피 포함). 실신은 조리원(WASD 캐릭터)이 그 자리에 쓰러집니다 — 연기 질식·낙상 장면용, 다시 누르면 일어납니다 — 이 연구가 겨냥하는 실패 모드입니다.<br>
     자리는 런타임에 찾습니다: 사방이 트인 바닥이면 <b>밀림</b>, 솥·카트 사이처럼 막힌 슬롯이면 <b>끼임</b>이 됩니다.</div>
+
+  <div class="section">발표 시나리오 <span class="note" style="font-weight:400">before / after</span></div>
+  <div class="btnrow">
+    <button id="demoBefore" class="danger">▶ before</button>
+    <button id="demoAfter" class="primary">▶ after</button>
+    <button id="demoStop">↩ 되돌리기</button>
+  </div>
+  <div class="note" id="demoNote">정상 조리 → 김 → 화재 →
+    <b>before</b>: 못 보고 쓰러짐 · <b>after</b>: 감지 → 대피 → 진화</div>
 
   <div class="section">사고 시나리오 (연쇄)</div>
   <div class="btnrow">
@@ -492,6 +520,23 @@
     <button id="accReset">↩ 되돌리기</button>
   </div>
   <div class="note" id="accNote">캐스터 미잠금 → 기름 방울 → 미끄러짐 → 카트 충돌 → 바스켓 기울임 → 누운 사람 미검출</div>
+
+  <div class="section">실영상 패널 <span class="note" style="font-weight:400">검출 검증</span></div>
+  <div class="hint">시뮬이 시뮬을 검출하는 그림은 설득력이 없습니다. <b>실제로 찍은 영상</b>에
+    같은 모델을 돌려 우측 패널에 띄웁니다. 클립은 브라우저 밖으로 나가지 않습니다.<br>
+    <code>demo_clips/</code> 에 <code>normal · smoke · fire</code> (mp4·webm·mov·m4v) 를 넣으면
+    자동으로 잡습니다. <code>best.onnx</code> 도 같이 넣으면 <b>모델까지 자동으로 붙습니다</b>.<br>
+    영상 뒷부분에 불이 나오면 <code>?vidstart=fire:38</code>, 한 토막만 틀려면 <code>?vidend=fire:46</code>.<br>
+    모델 클래스가 우리 6종과 다르면 <code>?labels=fire,smoke</code> 처럼 모델 순서대로 적어 주세요.</div>
+  <div class="row"><span>① 정상</span><input id="vidFileNormal" type="file" accept="video/*" style="flex:1;font-size:11px"></div>
+  <div class="row"><span>② 연기</span><input id="vidFileSmoke" type="file" accept="video/*" style="flex:1;font-size:11px"></div>
+  <div class="row"><span>③ 화재</span><input id="vidFileFire" type="file" accept="video/*" style="flex:1;font-size:11px"></div>
+  <div class="btnrow">
+    <button id="vidToggle">패널 열기</button>
+    <button id="vidPlayBtn">▶ 순서대로 재생</button>
+    <button id="vidDetectBtn" class="primary">검출 시작</button>
+  </div>
+  <div class="note" id="vidNote">클립 없음 — 파일을 고르거나 demo_clips/ 에 넣으세요</div>
 
   <div class="section">데이터셋 · Ground Truth</div>
   <div class="row"><span>샘플 수</span><input id="gtCount" type="range" min="1" max="200" step="1" value="20"><b id="gtCountV">20</b></div>
@@ -519,6 +564,8 @@
   </div>
 
   <div class="section">시각화 표시 <span class="note" style="font-weight:400">기본 꺼짐 — 필요할 때 켜기</span></div>
+  <label class="row" style="cursor:pointer"><input type="checkbox" id="vizConsole" style="accent-color:#76b900">
+    <span style="width:auto;color:#c9d1d9">콘솔 패널 (화면 아래 로그)</span></label>
   <label class="row" style="cursor:pointer"><input type="checkbox" id="vizRarr" style="accent-color:#76b900">
     <span style="width:auto;color:#c9d1d9">로봇 기동 화살표</span></label>
   <label class="row" style="cursor:pointer"><input type="checkbox" id="vizPmode" style="accent-color:#76b900">
@@ -689,13 +736,38 @@ const ENV_V1 = new URLSearchParams(location.search).get("env") === "v1";
    launch 스크립트가 그 주소를 쓰고 있어서, 깨뜨리면 안 된다(이제 아무 효과 없는 값이 된다).
    `?env=v1`(옛 9×9 환경)은 옛 배치를 명시적으로 요구하는 플래그이므로 legacy로 친다 —
    안 그러면 ISLAND가 먼저 걸려 env=v1이 조용히 무시된다. */
+/* ══ F: 복도형 배치 — sim.html?layout=corridor (2026-08-22) ═══════════════════
+   **왜 두 번째 배치가 필요한가** — 팀원2 실측: 배치를 바꾸면 예측 정확도가 31% 떨어진다.
+   모델이 "사람이 어떻게 움직이는가"가 아니라 "**이 주방에서** 어떻게 움직이는가"를 외웠다는
+   뜻이고, 여러 급식실에 파는 물건이므로 치명적이다. 배치가 하나뿐이면 이걸 고칠 수 없다.
+
+   **왜 하필 복도형인가** — 섬 배치와 **위상이 달라야** 의미가 있다. 설비만 섞으면 자유공간
+   모양이 그대로라 모델이 배우는 분포도 그대로다. 두 배치의 차이는 이렇다:
+     · 섬(11.5×11.5) — 조리섬이 한가운데, 사방이 뚫려 **360° 어디서나 로봇에 접근**한다.
+       사람 동선이 섬을 도는 고리 모양이 된다.
+     · 복도(13×7)    — 설비가 남·북 두 줄, 그 사이가 통로다. 로봇 접근이 **동/서 두 방향**뿐이고
+       동선이 선형이다. 시선이 길어져 카메라가 사람을 멀리서 잡는다.
+   실제 급식실에도 둘 다 있다(참조프레임: 벽 한 줄 라인형 · 섬형 둘 다 확인).
+
+   **좌표 계약은 지킨다** — 솥은 월드 원점 고정이라 못 옮긴다. 그래서 배치 변경은 늘
+   "벽을 옮긴다"로 구현된다. 중앙 조리섬(솥·로봇·후드·옆 국솥)은 손대지 않는다.
+
+   ISLAND를 true로 유지하는 이유: 링 카메라 8대·후드·카트/키오스크 시프트가 전부
+   `if (ISLAND)`에 걸려 있고 그 기하는 복도에서도 그대로 맞다(CCTV는 벽 좌표에서
+   자동 유도되므로 방이 직사각형이 돼도 벽을 따라간다). 방·설비·작업자리만 갈아끼운다. */
+const CORRIDOR = new URLSearchParams(location.search).get("layout") === "corridor";
 const ISLAND = (() => {
   const q = new URLSearchParams(location.search);
   const L = q.get("layout");
+  if (L === "corridor") return true;                // 복도형 — 섬 머신러리를 재사용한다
   if (L === "legacy" || L === "v1") return false;   // 옛 배치를 명시적으로 요구
   if (L === "island") return true;                  // 종전 주소 호환 — 이제 기본값과 같다
   return q.get("env") !== "v1";                     // 플래그 없음 → 섬 배치 (단 env=v1이면 옛 배치)
 })();
+/* 복도형 방 — 조리 라인(후드 x −1.60~4.05)이 긴 축에 들어가야 하므로 x가 길다.
+   13×7m = 91㎡. 섬 배치(132㎡)보다 작지만 실제 급식실 범위 안이고, 좁은 축(7m)이
+   "복도"를 만든다: 남·북 설비 줄(깊이 ~0.8m) 사이로 통로 2.1m씩 남는다. */
+const CORRIDOR_ROOM = { hx: 6.5, hz: 3.5 };
 /* 섬을 방 정중앙이 아니라 **북동쪽으로 치우치게** 둔다.
    정중앙이면 사방 6m가 다 뚫려 있어 **끼임이 성립하지 않는다** — 끼임은 로봇 반경과
    고정 장애물 사이의 좁은 틈에서만 생기는데, 그 틈이 없기 때문이다(실측: 팔 반경 안
@@ -859,7 +931,10 @@ const LAYOUT = {
      4%p 높지만 실제 급식실(2.7~3.5m)에서 너무 멀어져 3.9m로 잡는다.
      후드 상단(2.58m)과의 여유도 0.57 → 1.17m로 두 배가 된다 — 예전에 카메라를 2.8m에
      뒀다가 시선이 후드를 스쳐 최소 중첩이 3대→0대로 무너진 적이 있다. */
-  room:   ISLAND ? { x0:ISLAND_OFF.x - ISLAND_HALF, x1:ISLAND_OFF.x + ISLAND_HALF,
+  room:   CORRIDOR ? { x0:-CORRIDOR_ROOM.hx, x1:CORRIDOR_ROOM.hx,
+                       z0:-CORRIDOR_ROOM.hz, z1:CORRIDOR_ROOM.hz, h:3.90,
+                       tileSplit:1.35, splash:{ y0:0.80, y1:1.65 }, trenchW:0.30 }
+        : ISLAND ? { x0:ISLAND_OFF.x - ISLAND_HALF, x1:ISLAND_OFF.x + ISLAND_HALF,
                      z0:ISLAND_OFF.z - ISLAND_HALF, z1:ISLAND_OFF.z + ISLAND_HALF, h:3.90,
                      tileSplit:1.35, splash:{ y0:0.80, y1:1.65 }, trenchW:0.30 }
         : ENV_V1 ? { x0:-4.5, x1:4.5, z0:-4.5, z1:4.5, h:3.3, tileSplit:1.35,
@@ -868,7 +943,12 @@ const LAYOUT = {
             tileSplit:1.35,            // 하단 검정 대형타일 ↔ 상단 흰 타일 경계 (복수 참조 현장)
             splash:{ y0:0.80, y1:1.65 },  // 기기 뒤 스테인리스 백스플래시 밴드 (복수 참조 현장)
             trenchW:0.30 },            // 배수 트렌치 폭 — 참조 현장 CCTV 그레이팅 실측 비례
-  person: { pos:new V3(0.60,0,3.10) },    // 초기 위치는 감속 구역(로봇 베이스 기준 2.0m) 밖 — 새 배치 기준 재산정
+  /* 주인공 초기 위치 — **감속 반경(3.90m) 밖**이라야 한다.
+     종전 (0.60,3.10)은 주석이 "2.0m 밖"이라 적혀 있었는데 그건 옛 반경 기준이고,
+     지금 정지 반경이 3.10m라 **2.85m = 정지 반경 안에서 태어났다**(실측 2026-08-22).
+     자동 운행을 켜자마자 주인공이 서 있기만 해도 로봇이 100% 정지했다.
+     (0.60,4.60) = 4.15m · 통행 가능 · 조리 라인을 정면으로 보는 자리. */
+  person: { pos:new V3(0.60,0,4.60) },
   // 로봇이 실제로 도달해야 하는 지점들 — Phase 1 도달성 검증 대상
   targets:{}
 };
@@ -925,6 +1005,16 @@ if (REACH.k !== 1) {
 
 /* ══ 엔진 / 씬 ═══════════════════════════════════════════════════════════ */
 const canvas = $("c");
+/* ══ 진단 로그 — sim.html?debug=1 일 때만 콘솔에 찍는다 ═══════════════════════
+   평소 콘솔이 35줄씩 차서 **정작 봐야 할 경고가 묻혔다**(2026-08-24 사용자 지시).
+   그렇다고 지우면 안 된다 — [REACH]·[NAV]·[COLL]·[GLB] 같은 값은 배치·리깅이
+   틀어졌을 때 원인을 찾는 유일한 단서고, 이 프로젝트가 실제로 그걸로 여러 번 잡았다.
+   그래서 **console.log만** 막고 **console.warn/error는 그대로 둔다** — 경고는
+   "지금 뭔가 잘못됐다"는 신호라 조용해지면 안 된다.
+   켜는 법: sim.html?debug=1  (배포본·데이터셋 생성에는 영향 없다) */
+const DEBUG_LOG = new URLSearchParams(location.search).get("debug") === "1";
+if (!DEBUG_LOG) console.log = function () {};
+
 const engine = new BABYLON.Engine(canvas, true, { preserveDrawingBuffer:true, stencil:true }, true);
 const scene  = new BABYLON.Scene(engine);
 scene.clearColor = new C4(0.80,0.83,0.87,1);            // 밝은 주방 톤
@@ -2029,11 +2119,70 @@ const bubbles = makeParticles("bubbles", new V3(F.pos.x, F.oilY, F.pos.z), {
 });
 const steam = makeParticles("steam", new V3(F.pos.x, F.oilY+0.06, F.pos.z), {
   box: new V3(F.w*0.3, 0.01, F.d*0.3),
-  c1: new C4(0.85,0.85,0.9,0.16), c2: new C4(0.7,0.72,0.8,0.09),
-  size:[0.09,0.24], life:[1.1,2.4], gravity:new V3(0,0.35,0),
-  dir:[new V3(-0.1,0.7,-0.1), new V3(0.1,1.3,0.1)], power:[0.15,0.5]
+  /* C-2 1단계 (2026-08-22): α .16/.09→.38/.20 · size .09~.24→.20~.42 · cap 400→2000.
+     C-1 실측 — 종전 값은 김이 화면의 0.06%(thr>8)뿐이라 "김 vs 연기" 난제가
+     데이터에 존재하지 않았다. 크기 상한은 연기(0.46~1.30)의 절반 이하로 유지해
+     규모 차를 보존한다. cap 산수: 최대 rate 440(k=2.0)×평균수명 1.75age ≈ 770,
+     퍼프 ×3 순간 ≈2300 — 순간 클립 허용. 파티클 비용은 공짜(실측: 0개 26fps · 3546개 26fps). */
+  /* 색은 순백 쪽 — 0.85로는 톤매핑 뒤 밝은 타일(휘도 ~203)보다 어두워져 ΔL이
+     음수가 됐다(실측 −6.9). 김은 배경을 밝히거나 중립이어야 연기(−21)와 부호로 갈린다. */
+  c1: new C4(0.97,0.97,1.0,0.38), c2: new C4(0.88,0.90,0.95,0.20),
+  /* size 상한 0.42→0.55 — 가시픽셀 병목은 농도가 아니라 면적이었다(실측: rate 67%
+     증가에 픽셀 0.97→1.15%뿐, 같은 기둥 안 겹침). 0.55도 연기 상한 1.30의 42%라
+     규모 차는 유지된다. */
+  size:[0.24,0.55], life:[1.1,2.4], gravity:new V3(0,0.35,0),
+  /* dir 수평 성분 ±0.10→±0.15 — 기둥이 오르며 벌어진다(실제 김의 billowing이자
+     C-2 P2의 수평 확산 목표). 상단 면적이 늘어 가시픽셀에도 기여한다. */
+  dir:[new V3(-0.15,0.7,-0.15), new V3(0.15,1.3,0.15)], power:[0.15,0.5],
+  cap: 2000
 });
 steam.blendMode = BABYLON.ParticleSystem.BLENDMODE_STANDARD;
+/* ── C-2 1단계: 김 세기·퍼프·후드 배기 ─────────────────────────────────────
+   k = 표본별 배율(randomizeScene이 U(0.2~2.0)로 뽑는다 — 실사 김은 조리 종류에
+   따라 0~대량까지 변한다). puff = 투입·배출 순간의 대량 방출(rate ×3, 2~4s). */
+const STEAM = { k: 1, puff: 0, puffT: 0, nextPuff: 12000 };
+function steamPuffTick(dt) {
+  /* 데이터셋 중에는 표본이 자기 k를 정하므로 라이브 퍼프는 개입하지 않는다 */
+  if (DATAGEN.running || GT_BUSY) return;
+  if (STEAM.puffT > 0) {
+    STEAM.puffT -= dt;
+    if (STEAM.puffT <= 0) { STEAM.puff = 0; STEAM.nextPuff = 12000 + Math.random() * 18000; }
+    return;
+  }
+  STEAM.nextPuff -= dt;
+  if (STEAM.nextPuff <= 0 && state.temp >= 150) { STEAM.puff = 1; STEAM.puffT = 2000 + Math.random() * 2000; }
+}
+/* 후드 배기 — 후드 발자국 안에서 하단(y 2.20)에 닿은 김은 빨려 사라진다.
+   ⚠️ 연기처럼 옆으로 밀지 않는다(C-2 결정) — 그 순간 김이 연기와 같은 거동이 돼
+   구분 특징을 스스로 지운다. 김은 국소 기둥으로 살다 후드에서 끝나야 한다.
+   즉시 지우면 하단 경계에서 뚝 끊겨 보이므로 남은 수명을 0.11age(≈0.15s)로 눌러
+   페이드로 죽인다. 캐노피 깊숙이(+0.25m) 오른 것만 즉시 재활용.
+   GT 캡처 중에는 손대지 않는다 — updateSpeed 0이어도 animate가 재활용을 실행해
+   패스 사이에 입자 수가 달라진다(패스 간 좌표 어긋남과 같은 계열의 함정). */
+function steamVentTick() {
+  if (GT_BUSY) return;
+  const H = HOOD_BOX, parts = steam.particles;
+  if (!H || !parts.length) return;
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i], pos = p.position;
+    if (pos.y < H.y || pos.x < H.x0 || pos.x > H.x1 || pos.z < H.z0 || pos.z > H.z1) continue;
+    if (pos.y >= H.y + 0.25) { p.age = p.lifeTime + 1; continue; }   // 캐노피 깊숙이 — 즉시
+    if (p.lifeTime - p.age > 0.11) p.age = p.lifeTime - 0.11;        // 흡입 페이드
+  }
+}
+/* 표본 배율을 바꾼 뒤 정상 상태 개수까지 빨리감기 — fireSeekTo와 같은 이유.
+   데이터셋의 4프레임 렌더로는 rate 변경이 개수에 반영되지 않아(수명 1.5~3.3s)
+   직전 표본의 김이 그대로 찍힌다. 목표 = rate × 평균수명(age) — C-1의 실측 법칙. */
+function steamSettle(maxFrames) {
+  scene.render();                    // updateCooking이 새 k로 emitRate를 먼저 확정하게
+  const target = steam.emitRate * (steam.minLifeTime + steam.maxLifeTime) / 2;
+  const sv = steam.updateSpeed;
+  steam.updateSpeed = sv * 10;
+  let g = 0;
+  while (Math.abs(steam.particles.length - target) > Math.max(20, target * 0.15) && g++ < (maxFrames || 30))
+    scene.render();
+  steam.updateSpeed = sv;
+}
 
 /* ══ 천장 설비 가림 처리 ═════════════════════════════════════════════════
    후드 캐노피(y 2.20~2.58)는 조리 라인 전체를 덮는다. 수직 부감 시점에서는 이게
@@ -2529,11 +2678,29 @@ if (ISLAND) (function () {
   /* corner(광역 남서 2.4m)도 뺐다 — 구역 담당 8대가 그 범위를 덮으면서 역할이 겹친다.
      lowFloor(저상 1.6m)는 남긴다: 8대가 전부 36~44°로 내려다보므로 **넘어져 누운 사람의
      옆모습**은 저상 시점에서만 잡힌다. 각도가 겹치지 않는 유일한 보조 카메라다. */
+  /* ── 회의 결정(2026-08-24) — 발표에서 쓸 10대만 남긴다 ─────────────────────
+     남기는 것: 저상 · 불꽃 · 불꽃2 · 북서 · 조리라인 · 북동 · 입구 · 로봇 남 ·
+                배식구 · 해치정면    (저상은 맑음/연기 두 컷을 같은 카메라로 쓴다)
+     빠지는 것: cvE(동벽 통로) · cvW(서벽 로봇 서) · cvTop(탑뷰) ·
+                orthotop(직교 상부) · cv45(45° 기준) · cvPole(뚜껑 뒤 판)
+
+     ⚠️ 기록해 둘 것 — 이 삭제로 잃는 것이 둘 있다. 회의 결정이므로 그대로 반영하되
+        나중에 필요해지면 여기를 되돌리면 된다(정의는 위에 그대로 있고 이 목록에서만 뺀다).
+       · `orthotop` — 팀원2의 검출 모델을 **이 카메라로 학습**했다
+         (docs/chanwoo/detection-eval.md "sim 200장(직교 나디르 orthotop)",
+          산출물 yolo11s_orthotop/weights/best.pt). 빠지면 그 회차를 재현할 수 없다.
+       · `cvTop`·`cv45` — 개요서의 "탑뷰에서 테스트, 이후 45도 뷰에서 테스트" 짝이다.
+       · 벽 8대 → 6대가 되므로 MODEL_HANDOFF의 "정지링 진입로 93% 커버"는 다시 재야 한다. */
   ["overhead", "eye", "top", "front", "seCorner", "wideAll",
-   "deg45", "southTop", "corner"].forEach(id => {
+   "deg45", "southTop", "corner",
+   "cvE", "cvW", "cvTop", "orthotop", "cv45", "cvPole"].forEach(id => {
     const i = CAM_DEFS.findIndex(d => d.id === id);
     if (i >= 0) CAM_DEFS.splice(i, 1);
   });
+  /* RING_IDS도 같이 줄인다 — CAM_DEFS에 없는 id가 남으면 ORDER·FIXED_BITS가
+     유령 카메라를 들고 있게 된다(다음 사람이 링 대수를 셀 때 헷갈린다). */
+  for (let i = RING_IDS.length - 1; i >= 0; i--)
+    if (!CAM_DEFS.some(d => d.id === RING_IDS[i])) RING_IDS.splice(i, 1);
   /* ── 이름·번호 정리 ────────────────────────────────────────────────────────
      종전 라벨은 **옛 비대칭 방 기준이라 지금과 안 맞았다**(실측 방위):
        "코너 월마운트"  → 실제 남서 132°     "45° 벽마운트" → 실제 서 173°
@@ -2546,12 +2713,21 @@ if (ISLAND) (function () {
   /* 나머지 4대도 **하는 일**로 적는다 — '광역 남서 2.4m'는 설치 정보지 역할이 아니다.
      이 4대는 서로 목적이 달라서(넓게 · 낮게 · 솥 안) 한마디로 구분이 된다. */
   const NAME = Object.assign({}, RING_NAME,
-               { lowFloor:"저상 · 쓰러진 사람용",
+               { orthotop:"직교 상부(나디르 GT)",
+                 lowFloor:"저상 · 쓰러진 사람용",
                  fireSE:"솥 안 · 불꽃", fireNW:"솥 안 · 불꽃(반대편)" });
   // 좌측 목록용 짧은 이름 — 긴 이름은 드롭다운과 마우스 툴팁에서 그대로 볼 수 있다
   Object.assign(CAM_SHORT_ISLAND,
                { lowFloor:"저상", fireSE:"불꽃", fireNW:"불꽃 2" });
-  const ORDER = RING_IDS.concat(["lowFloor","fireSE","fireNW"]);
+  /* orthotop을 **명시적으로** 끼운다. 종전에는 ORDER에 없어서 indexOf가 −1을 돌려주고
+     정렬에서 맨 앞으로 갔다 — 그 바람에 GT 전용 카메라가 "CAM1"을 차지했고, NAME에도
+     없어서 라벨이 **"CAM1 orthotop"**(한글 이름 없이 id 그대로)으로 나왔다.
+     같은 위에서 내려다보는 탑뷰(cvTop) 옆에 둔다. 번호는 표시용이고 데이터셋 파일명은
+     id를 쓰므로 순서를 바꿔도 기존 데이터와 어긋나지 않는다. */
+  const ORDER = RING_IDS.slice();
+  const iTop = ORDER.indexOf("cvTop");
+  ORDER.splice(iTop >= 0 ? iTop + 1 : ORDER.length, 0, "orthotop");
+  ORDER.push("lowFloor", "fireSE", "fireNW");
   CAM_DEFS.sort((a, b) => ORDER.indexOf(a.id) - ORDER.indexOf(b.id));
   CAM_DEFS.forEach((d, i) => {
     d.label = "CAM" + (i + 1) + " " + (NAME[d.id] || d.id);
@@ -2598,6 +2774,26 @@ if (ISLAND) {
 for (const id of ["mvNW","mvNE","mvSW","mvSE","mvCenter"]) FIXED_BITS[id] = 0x2000000;
 const PROP_BITS = Object.assign({}, FIXED_BITS);
 /* 공장 초기값 스냅샷 — "공장 초기화"가 되돌릴 기준. pos/tgt는 Vector3라 깊은 복사가 필요하다. */
+/* ══ 복도형: 상부 진리값 뷰 높이를 **방에서 유도한다** (F, 2026-08-22) ═══════
+   탑뷰 계열은 높이가 숫자로 박혀 있고 그 값은 11.5m 정사각(섬 배치)에서 나왔다.
+   13×7 복도에서 그대로 쓰면 **긴 축이 잘려 방의 절반만 찍힌다**(실측: 동·서 끝 설비가
+   프레임 밖). 진리값 뷰가 방을 못 담으면 GT로서 무의미하다.
+   데이터셋은 4:3(960×720)이고 Babylon fov는 **세로 고정**이라 가로가 4/3배다:
+     필요 높이 = max( 폭 / (2·tan(fov/2)·4/3),  깊이 / (2·tan(fov/2)) ) · 여유 8%
+   천장 밖 가상 시점이므로(CAM4 주석) 높이 상한은 없다.
+   ⚠️ CAM_DEFS가 **전부 채워진 뒤**에 돌아야 한다 — 섬 카메라 블록 안에 뒀다가
+   cvTop이 아직 push되기 전이라 조용히 건너뛰었다(실측: y가 6.20 그대로였다). */
+if (CORRIDOR) (function () {
+  const R = LAYOUT.room;
+  for (const id of ["cvTop", "top", "orthotop", "cvHatch"]) {
+    const d = CAM_DEFS.find(c => c.id === id);
+    if (!d) continue;
+    const t = 2 * Math.tan((d.fov || 0.905) / 2);
+    const h = 1.08 * Math.max((R.x1 - R.x0) / (t * 4 / 3), (R.z1 - R.z0) / t);
+    d.pos = new V3(0, +h.toFixed(2), 0);
+    d.tgt = new V3(0, 0, 0.001);
+  }
+})();
 const CAM_FACTORY = CAM_DEFS.map(d => Object.assign({}, d, { pos:d.pos.clone(), tgt:d.tgt.clone() }));
 
 /* 하우징 비트 풀 — 고정 카메라가 2^12~2^17을 쓰고 그 사이 2^15는 CEIL_BIT다.
@@ -2904,6 +3100,16 @@ async function capture(id, opt) {
   }
 }
 
+/* ══ E-2: 연기 수직 농도 — sim.html?smokev2=1 (기본 꺼짐) ═══════════════════
+   현재 연무는 EXP 안개라 거리에만 반응해 방이 **균일하게** 뿌옇다. 실제 화재는
+   천장부터 짙다. 켜면: 안개 절반(0.22→0.12) + 연기 입자 배출 상향(700→950,
+   cap 12000→16000) — 가림의 주역을 안개에서 **천장에 쌓이는 입자 층**으로 옮긴다
+   (입자는 최성기에 66%가 후드 위 높이에 있음을 실측했다 — 층은 이미 위에 있다).
+   ⚠️ 안개 셰이더는 건드리지 않는다 — 안개는 GT 깊이맵의 부품이다(검정 선형 0~6m).
+   ⚠️ 기본 꺼짐인 이유: 연기 look이 바뀌면 smoke mAP 0.936을 낸 학습 모델과 어긋난다.
+   켜는 시점은 팀의 다음 재학습 라운드(배치 추가 F와 묶으면 재학습 1회). ?reach= 패턴. */
+const SMOKE_V2 = new URLSearchParams(location.search).get("smokev2") === "1";
+
 /* ══ 화재/연기 씬 — 실화재 불가로 웹3D에서 시연 ═════════════════════════ */
 const firePS = makeParticles("fire", new V3(F.pos.x, F.oilY + 0.02, F.pos.z), {
   box: new V3(F.w*0.3, 0.01, F.d*0.3),
@@ -2938,9 +3144,13 @@ const fsmoke = makeParticles("fsmoke", new V3(F.pos.x, F.oilY + 0.28, F.pos.z), 
      당시 문제는 연기가 후드·천장을 관통하는 것이었고, 해법으로 **빨리 죽였다**.
      그건 증상만 가린 것이다. 화재 연기는 공간에 퍼져야 맞고, 짧은 수명으로는
      퍼질 시간 자체가 없다. 수명을 되돌리고 관통 문제는 따로 잡는다. */
+  /* life는 **진행에 따라 fireFogTick이 늘린다**(여기 값은 초기 단계 기준).
+     수명이 짧으면 연기가 화원에서 2~3m밖에 못 가 방이 안 찬다 — 실측 중앙칸 91%.
+     cap도 같이 올려야 한다. 수명만 늘리면 정상 상태 개수(rate×life)가 상한을 넘어
+     오래된 입자가 자리를 다 먹고 화원 근처가 오히려 옅어진다. */
   size:[0.45,1.30], life:[3.0,7.0], gravity:new V3(0,0.2,0),
   dir:[new V3(-1.1,0.5,-1.1), new V3(1.1,1.3,1.1)], power:[0.2,0.7],
-  cap: 4000
+  cap: SMOKE_V2 ? 16000 : 12000   // E-2: 950×평균수명 14age ≈ 13,300 — 여유 포함
 });
 fsmoke.blendMode = BABYLON.ParticleSystem.BLENDMODE_STANDARD;
 /* ══ 불꽃을 연기보다 **나중에** 그린다 — fire 라벨이 통째로 사라지던 원인 ═══════
@@ -2993,7 +3203,7 @@ let GT_PS_SAVED = null;
    그래서 연기를 따로(keepAlpha) 찍어 농도를 재고, 짙은 곳만 smoke로 덮는다. */
 /* ══ 캡처 동안 파티클을 얼린다 ═══════════════════════════════════════════
    GT 한 장은 패스를 여러 번 나눠 찍는다(클래스 마스크 · 인스턴스 마스크 · 연기 농도 · 깊이).
-   패스마다 renderWith가 whenReadyAsync + 예열 렌더 3회를 돌리고, 패스와 패스 사이의
+   패스마다 renderWith가 예열 렌더 3회를 돌리고, 패스와 패스 사이의
    await 경계에서는 메인 rAF 렌더 루프가 돈다. 그동안 **입자가 계속 움직이고 태어난다.**
 
    그래서 패스끼리 좌표가 어긋난다 — 실측(2026-08-21):
@@ -3098,6 +3308,10 @@ const FIRE_FOG = {
   smokeFull:20000,                   // 이 시간(ms)에 최대 배출 — 20초면 데모 호흡에 맞는다
   saved:null
 };
+if (SMOKE_V2) {            // E-2 — 안개↓ 입자층↑. 근거는 SMOKE_V2 정의부 주석
+  FIRE_FOG.max = 0.12;
+  FIRE_FOG.smokeMax = 950;
+}
 function fireFogStart() {
   if (FIRE_FOG.saved) return;        // 중복 진입 방지 — 원본 안개 설정을 덮어쓰면 복원이 깨진다
   FIRE_FOG.saved = { mode:scene.fogMode, color:scene.fogColor.clone(),
@@ -3129,6 +3343,28 @@ function fireFogTick(dt) {
      불 → 연기 → 가림. GT_BUSY 중에는 위에서 이미 return 했으므로 캡처는 안전하다. */
   const ks = Math.min(1, FIRE_FOG.t / FIRE_FOG.smokeFull);
   fsmoke.emitRate = FIRE_FOG.smokeMin + (FIRE_FOG.smokeMax - FIRE_FOG.smokeMin) * ks;
+  /* ── 연기가 **나오는 범위**를 진행에 따라 넓힌다 ─────────────────────────────
+     밀어내는 힘만으로는 방이 안 찬다. 입자 수명이 3~7초인데 수평 속도가 ~0.5m/s라
+     화원에서 2~3m밖에 못 간다. 실측(85초 시점, 방 11.5×11.5m을 3×3으로): 미는 힘을
+     넣기 전 중앙 칸 91% · 넣은 뒤 87%. 거의 그대로였다.
+     수명을 늘리면 상한(4000)이 오래된 입자로 차서 화원 근처가 오히려 옅어진다.
+
+     그래서 배출 상자를 넓힌다. 물리적으로도 이쪽이 맞다 — 배출 상자는 "지금 연기가
+     있는 영역"을 뜻하고, 화재가 진행되면 그 영역이 실제로 방 전체로 커진다.
+     화원의 기둥은 유지되므로(중심이 그대로) 불 위 기둥과 방 전체 연무가 같이 보인다. */
+  const kb = Math.min(1, FIRE_FOG.t / FIRE_FOG.full);
+  const halfW = F.w * 0.28 + kb * SMOKE_LAYER.emitGrow;
+  const halfD = F.d * 0.28 + kb * SMOKE_LAYER.emitGrow;
+  fsmoke.minEmitBox.set(-halfW, -0.02 - kb * 0.55, -halfD);
+  fsmoke.maxEmitBox.set( halfW,  0.02 + kb * 0.55,  halfD);
+  /* ── 수명을 진행에 따라 늘린다 — 연기가 방을 채우게 하는 진짜 손잡이 ──────────
+     배출 상자를 넓히는 방식은 실패했다(사람 허리 높이에 연기가 생겨 person 라벨이 무너짐).
+     맞는 방식은 **천장층에 쌓인 연기를 오래 살려 두는 것**이다. 오래 살면 그만큼 멀리
+     흘러가고(위의 spread), 층이 두꺼워지며, 실제 화재에서 연기가 사라지지 않는 것과도 맞다.
+     수명만 늘리면 상한이 오래된 입자로 차서 화원 근처가 옅어지므로 cap을 12000으로 같이 올렸다. */
+  const L0 = SMOKE_LAYER.life0, L1 = SMOKE_LAYER.life1;
+  fsmoke.minLifeTime = L0[0] + (L1[0] - L0[0]) * kb;
+  fsmoke.maxLifeTime = L0[1] + (L1[1] - L0[1]) * kb;
 }
 
 /* ══ 연기 가두기 — 후드·천장을 뚫고 나가지 못하게 ═══════════════════════════
@@ -3153,17 +3389,51 @@ function fireFogTick(dt) {
    (실측 3525개 전부 1.15m) 얇은 판이 됐다. 실제 연기층은 아래로 내려오면서도
    **그 위 부피를 채운 채로** 내려온다. 그래서 천장은 물리 그대로 두고,
    진행에 따라 **아래로 미는 힘**만 준다 — 부력과 겨루면서 부피를 채운다. */
-const SMOKE_LAYER = { floorY:1.05, sink:0.0055 };
+/* spread — 화원에서 바깥으로 밀어내는 힘. 진행에 비례한다.
+   이게 없으면 연기가 **솥 주변에만 뭉친다**: 실측(2026-08-21, 85초 시점, 방 11.5×11.5m을
+   3×3으로 나눔) 중앙 칸에 3,267개(91%)·나머지 8칸 합쳐 329개(9%).
+   그래서 자유시점에서 "방이 꽉 찬" 것은 **전부 안개**였고 연기가 아니었다.
+   안개는 거리에 비례하므로 가까이 보는 CCTV는 안개도 약하고 사이에 연기도 없어
+   **끝까지 선명**했다(cvPole 1.8m 30% vs 자유시점 12.8m 94%).
+   실제 화재는 연기가 천장을 타고 벽까지 퍼진 뒤 내려온다. 그 거동을 만든다. */
+/* emitGrow — 진행에 따라 **배출 상자**를 넓히는 값. 기본 0(끔).
+   ⚠️ 3.8로 켜 봤다가 껐다. 연기 분포는 의도대로 퍼졌지만(85초 중앙칸 91%→22%)
+   **라벨이 무너졌다**: cvN에서 45초에 person 0 · robot 0, 85초엔 두 카메라 모두 person 0.
+   원인은 배출 상자가 emitter의 높이(유면 위 ~1.05m)에 있다는 것이다. 상자를 넓히면
+   **사람 허리 높이에 방 전체로 연기가 생긴다.** 실제 연기는 천장부터 차 내려오므로 반대다.
+   제대로 하려면 천장층에 쌓인 연기가 **오래 살아남아** 옆으로 퍼져야 하고,
+   그건 수명 상향 + 상한 증설이 필요한 별도 작업이다. 지금은 끄고 남겨 둔다.
+   켜 보려면 __sim.SMOKE_LAYER.emitGrow = 1.5 정도부터. */
+const SMOKE_LAYER = {
+  floorY:1.05, sink:0.0055,
+  spread:0.012, spreadMax:5.5,   // 수명이 길어졌으니 미는 힘도 의미가 생긴다(0.007→0.012)
+  emitGrow:0,
+  life0:[3.0, 7.0],              // 초기 단계 수명 — 화원 위 기둥
+  /* 최대 진행 수명. [14,26]도 해 봤는데 85초에서 **완전 백아웃**이 됐다
+     (person 0 · robot 0). 물리적으로는 맞지만 그 구간 표본이 학습에 쓸모가 없다.
+     [10,18]이면 사람이 기준선의 23%로 **가려지되 남는다** — 연기 낀 검출 표본이 된다. */
+  life1:[10.0, 18.0]
+};
 function smokeConfineTick() {
   const parts = fsmoke.particles;
   if (!parts.length) return;
   const H = HOOD_BOX, ceilY = LAYOUT.room.h - 0.12;
   const prog = FIRE_FOG.on ? Math.min(1, FIRE_FOG.t / FIRE_FOG.full) : 0;
   const sink = SMOKE_LAYER.sink * prog, fy = SMOKE_LAYER.floorY;
+  const spread = SMOKE_LAYER.spread * prog;
   for (let i = 0; i < parts.length; i++) {
     const p = parts[i], pos = p.position;
     // ① 화재가 진행될수록 연기가 아래로 내려온다 (연기층 하강)
     if (sink > 0 && pos.y > fy) p.direction.y -= sink;
+    /* ①-b 바깥으로 퍼진다 — 화원(원점)에서 멀어지는 방향. 진행에 비례.
+       spreadMax를 넘으면 그만 민다. 안 그러면 벽을 뚫고 계속 나가 방 밖에 연기가 생긴다. */
+    if (spread > 0 && pos.y > fy) {
+      const rx = pos.x, rz = pos.z, r = Math.hypot(rx, rz);
+      if (r > 0.25 && r < SMOKE_LAYER.spreadMax) {
+        p.direction.x += (rx / r) * spread;
+        p.direction.z += (rz / r) * spread;
+      }
+    }
     // ② 바닥층에 닿으면 더 안 내려가고 옆으로 깔린다
     if (pos.y < fy) { pos.y = fy; if (p.direction.y < 0) p.direction.y = 0; }
     // ③ 후드·천장은 뚫지 못한다. 막히면 상승분을 수평으로 돌린다(천장 제트)
@@ -3179,6 +3449,75 @@ function smokeConfineTick() {
     p.direction.x += (dx / len) * push;
     p.direction.z += (dz / len) * push;
   }
+}
+
+/* ══ 화재를 특정 진행 시점으로 즉시 맞춘다 (데이터셋 생성용) ═══════════════
+   왜 필요한가 — generateDataset은 `randomizeScene(); 4프레임 렌더; 촬영`이다.
+   연기는 정상 상태까지 수 초가 걸리므로 4프레임으로는 자라지 못한다. 게다가
+   setFire(true)는 이미 화재 중이면 fireFogStart()에서 조기 return 하여 진행 시계가
+   리셋되지 않는다 → **화재 표본의 모습이 "직전 샘플이 무엇이었냐"에 끌려다닌다.**
+
+   실측(2026-08-21, 같은 '화재 샘플'인데):
+     직전에 화재 없었음 → 경과 4.9s · 연기 25개 · 연무 0.003 · 방이 말끔
+     직전에도 화재였음  → 경과 603s · 연기 3548개 · 연무 0.22 · 자욱
+   그리고 화재 아닌 샘플이 하나만 끼면 시계가 0으로 돌아가, **연기가 옅게 낀 중간 구간**이
+   거의 안 나온다. 이 프로젝트가 증명하려는 게 정확히 그 구간인데도.
+
+   그래서 진행 시점을 **샘플마다 명시적으로 뽑아** 여기서 그 상태를 만들어 준다.
+   상세: analysis/fire_dataset_capture_gap.md */
+function fireSeekTo(sec) {
+  if (!state.fire) return;
+  const t = Math.max(0, sec) * 1000;
+  /* 입자를 먼저 비운다. 직전 샘플이 최성기였다면 3500개가 남아 있어, 초기 발화를
+     만들려 해도 그 덩어리가 그대로 찍힌다. reset()은 내부 재고 풀을 지키는 정식 API다
+     (particles.length=0 으로 비우면 풀이 깨져 배출이 멈춘다 — 실측). */
+  fsmoke.reset(); firePS.reset();
+  FIRE_FOG.t = t;
+  /* 입자를 목표 개수까지 채운다 — updateSpeed를 올려 시간을 빨리 감는다.
+     고정 프레임 수로 돌렸더니 초기 단계(10초)에서도 상한 4000까지 차 버려서,
+     단계가 달라도 연기 양이 똑같아졌다. 목표치를 정하고 **닿으면 멈춘다.**
+     목표 = emitRate × 5 — 최대 배출 700에서 정상 상태가 3500이었던 실측 비례. */
+  fireFogTick(0);                                    // 이 시점의 배출량·수명부터 확정
+  /* 정상 상태 개수 ≈ 배출량 × 평균수명. (실측 근거: 배출 700·평균수명 5s에서 3500개였다.)
+     수명이 진행에 따라 바뀌므로 상수 5를 쓰면 안 된다 — 후반부를 한참 덜 채우게 된다. */
+  const avgLife = (fsmoke.minLifeTime + fsmoke.maxLifeTime) / 2;
+  const target = Math.min(fsmoke.getCapacity() * 0.9, fsmoke.emitRate * avgLife);
+  const sv = [firePS, fsmoke, steam, bubbles].map(P => ({ P, s: P.updateSpeed }));
+  sv.forEach(x => { x.P.updateSpeed = x.s * 10; });
+  /* ⚠️ **여기는 아직 완전히 해결되지 않았다** (2026-08-24).
+     가드가 90이었을 때 후반 단계가 목표의 절반도 안 찼다:
+       10s 목표 2,472 → 2,474 (달성) · 40s 6,304 → 4,537 · 80s 9,104 → 4,541
+     그대로 두면 fire_progress는 0.9인데 연기는 절반인 표본이 데이터셋에 들어간다.
+     (새로 넣은 meta.scene.smoke_particles가 이 어긋남을 드러냈다.)
+
+     상한을 400으로 올려 개선했다 — 빠른 환경에서는 80s가 9,105/9,100으로 **100%** 찬다.
+     다만 **느린 환경에서는 400프레임으로도 부족하다**: 렌더가 40ms대인 검증용
+     브라우저에서 12s 표본이 1,838/2,902(63%)에 그쳤다.
+
+     근본 원인은 프레임 수가 아니라 **프레임당 붙는 입자 수**다. Babylon은
+     emitRate × updateSpeed × getAnimationRatio() 만큼 배출하는데, 이런 강제 루프에서는
+     animationRatio가 0.06까지 떨어진다(인계문서의 그 함정). 그래서 프레임을 더 줘도
+     선형으로만 는다.
+
+     제대로 고치려면 **빨리감기 배수(아래 ×10)를 올려야 한다.** 다만 배수를 올리면 한
+     스텝의 이동거리가 커져 smokeConfineTick의 천장·후드 가두기를 넘어설 수 있으므로,
+     정상 속도 머신에서 **연기 분포(평균 높이·반경)를 켜기 전후로 비교**한 뒤 정해야 한다.
+     ⚠️ 조기 탈출("더 이상 안 늘면 그만")도 넣어 봤다가 뺐다 — 한 프레임에 붙는 입자가
+     워낙 적어 **안 느는 프레임이 정상적으로 섞이는데** 그걸 평형으로 오인해 끊었다. */
+  let guard = 0;
+  while (fsmoke.particles.length < target && guard++ < 400) scene.render();
+  sv.forEach(x => { x.P.updateSpeed = x.s; });
+  FIRE_FOG.t = t;                 // 빨리감기 동안 틱이 밀어 놓은 값을 목표로 되돌린다
+  fireFogTick(0);                 // 연무 농도·배출량을 그 시점 값으로 확정
+}
+/* 데이터셋 표본용 무작위 진행 시점(초). 0 = 막 붙은 불, full = 완전히 자욱.
+   **앞구간을 촘촘히** 본다 — 지수 1.5로 0쪽에 몰리게 한다.
+   (처음에 Math.sqrt를 썼는데 그건 반대로 뒤쪽에 몰린다: √0.5=0.71. 실측에서 6표본 중
+    화재 3개가 전부 55~79초로 나와 초기 구간이 비었다.)
+   왜 앞을 촘촘히 — 연기가 옅게 낀 구간이 **검출이 가능하면서도 어려운** 지점이라 표본이
+   더 필요하다. 완전히 자욱한 프레임은 사실 사람도 못 보고, 배우기도 쉽다. */
+function fireRandomStage() {
+  return Math.pow(Math.random(), 1.5) * (FIRE_FOG.full / 1000);
 }
 
 function setFire(on) {
@@ -3292,7 +3631,36 @@ const STATION = (() => {
    벽 라인을 세워도 **갈 이유가 없으면 배경일 뿐**이다. 확장 때 이미 겪었다(넓히자마자
    커버리지 38%→17%). 목적지를 걸어야 사람이 북쪽까지 돈다. 좌표가 어긋나면
    buildNavGrid의 재배치가 가장 가까운 통행 칸으로 당긴다. */
-if (ISLAND) (function () {
+if (CORRIDOR) (function () {
+  /* 복도형 작업 자리 — 설비 정면으로 물러난 통로 위. **JOB이 참조하는 키를 전부 덮어야
+     한다** — 하나라도 섬 배치 좌표로 남으면 그 사람은 벽이나 설비 안으로 걸어간다.
+     남·북 라인 앞 통로는 z ±2.0~2.4, 짧은 벽 앞은 x ±5.3. 좌표가 조금 어긋나면
+     buildNavGrid가 가장 가까운 통행 칸으로 당긴다(섬 배치와 같은 안전망).
+     kettle·prep·panel·shelf·robotside·cartPick은 **중앙 조리섬 기준이라 그대로 쓴다**. */
+  const R = LAYOUT.room, NZ = R.z0 + 1.50, SZ = R.z1 - 1.50;   // 북/남 라인 앞 통로
+  Object.assign(STATION, {
+    // 북측 라인
+    nkettle:{ pos:new V3( 3.11, 0, NZ),  act:["interact"],          dwell:3000, label:"북측 국솥 앞" },
+    ntable :{ pos:new V3(-0.21, 0, NZ),  act:["pickup","interact"], dwell:2600, label:"북측 배출대" },
+    nrack  :{ pos:new V3(-2.14, 0, NZ),  act:["pickup","kneel"],    dwell:2400, label:"북측 선반 앞" },
+    fridge :{ pos:new V3(-4.66, 0, NZ),  act:["interact","pickup"], dwell:2000, label:"냉장고 앞" },
+    // 남측 라인
+    serve  :{ pos:new V3(-5.10, 0, SZ),  act:["pickup","interact"], dwell:2800, label:"배식구 앞" },
+    etable :{ pos:new V3(-2.00, 0, SZ),  act:["pickup","interact"], dwell:2600, label:"배선 작업대" },
+    store  :{ pos:new V3( 1.46, 0, SZ),  act:["pickup","kneel"],    dwell:2200, label:"건조 선반 앞" },
+    // 짧은 벽 — 복도 양끝
+    sink   :{ pos:new V3( 5.10, 0, -1.00), act:["interact"],        dwell:3400, label:"세척대 앞" },
+    island :{ pos:new V3(-5.10, 0, -1.00), act:["pickup","interact"], dwell:3000, label:"전처리대" },
+    wrack  :{ pos:new V3(-5.20, 0,  1.20), act:["pickup","kneel"],  dwell:2400, label:"재료 선반 앞" },
+    door   :{ pos:new V3( 5.20, 0,  1.20), act:["idle","idleTalk"], dwell:1200, label:"입구" },
+    // 통로 대기·배회 — 복도 가운데. 긴 축으로 흩어 놓아야 동선이 선형으로 뻗는다
+    aisle  :{ pos:new V3( 2.60, 0,  1.90), act:["idleTalk","idle"], dwell:1600, label:"통로 대기" },
+    isle1  :{ pos:new V3(-3.20, 0, -1.90), act:["pickup","interact"], dwell:2600, label:"북측 통로" },
+    isle2  :{ pos:new V3( 4.60, 0, -1.90), act:["pickup","kneel"],    dwell:2400, label:"북동 통로" },
+    isle3  :{ pos:new V3(-1.60, 0,  2.10), act:["interact","pickup"], dwell:2600, label:"남측 통로" },
+  });
+})();
+else if (ISLAND) (function () {
   const R = LAYOUT.room, cxm = (R.x0 + R.x1) / 2, fz = R.z0 + 1.45;   // 북벽 라인 앞 통로
   // x는 ISLAND_NLINE에서 받는다 — 설비 좌표와 따로 적으면 라인을 옮길 때 어긋난다
   const L = ISLAND_NLINE;
@@ -3468,12 +3836,44 @@ function jobRole(jobKey) {
      가는데도 route 기준으로는 1.49m라 danger가 붙었다. 라벨은 동선을 따라가야 한다. */
   const plan = WF.on && wfPlan(jobKey);
   const keys = plan ? plan.set : J.route;
-  let min = Infinity;
+  /* ── **평균** 거리로 판정한다. 종전에는 min(가장 가까운 한 지점)이었는데 축퇴했다 ──
+     min은 극단값이라 동선에 가까운 지점이 **하나만 있어도** 그 직무 전체가 danger가 된다.
+     실측(2026-08-21): 5개 직무가 **전부 danger**였다.
+       cook 0.73 · wash 1.49 · lead 1.69 · prep 2.42 · carry 2.65   (정지 반경 3.10)
+     특히 세정(wash)은 sink 6.61 · store 5.78 · isle2 6.16 · nrack 6.59로 **대부분 6m 밖**인데
+     선반(wrack 1.49)에 한 번 들르는 것 때문에 위험으로 분류됐다.
+     라벨이 전부 같으면 구별할 게 없어 학습에서 아무것도 못 배운다 —
+     팀원2가 "danger 라벨 축퇴, 실제 학습에 쓸 때 정리"로 남겨 둔 항목이 이것이다.
+
+     평균은 "그 직무가 **평소** 로봇에서 얼마나 떨어져 일하는가"를 나타낸다.
+     가끔 가까이 가는 것은 동선 자체(사람 위치 시계열)에 이미 들어 있으므로,
+     직무 라벨까지 그걸 볼 필요는 없다. */
+  let sum = 0, n = 0;
   for (const k of keys) {
     const st = STATION[k];
-    if (st) min = Math.min(min, Math.hypot(st.pos.x - B.x, st.pos.z - B.z));
+    if (st) { sum += Math.hypot(st.pos.x - B.x, st.pos.z - B.z); n++; }
   }
-  return min < SAFE.NOM_STOP ? "danger" : min < SAFE.NOM_SLOW ? "caution" : "far";
+  const avg = n ? sum / n : Infinity;
+  return avg < SAFE.NOM_STOP ? "danger" : avg < SAFE.NOM_SLOW ? "caution" : "far";
+}
+/* 버킷(far/caution/danger)만 주면 배치가 바뀔 때마다 경계가 흔들린다.
+   지금 배치에서도 carry 3.91 · prep 3.98이 감속 반경 3.90을 간발로 넘어 caution이 비어 있다.
+   **원시 거리를 같이 내보내** 쓰는 쪽에서 다시 나눌 수 있게 한다.
+   { avg: 동선 평균, min: 최근접, n: 스테이션 수 } — 라벨은 avg 기준이다. */
+function jobDistance(jobKey) {
+  const J = JOB[jobKey];
+  if (!J) return null;
+  const B = LAYOUT.robot.base;
+  const plan = WF.on && wfPlan(jobKey);
+  const keys = plan ? plan.set : J.route;
+  let sum = 0, n = 0, min = Infinity;
+  for (const k of keys) {
+    const st = STATION[k];
+    if (!st) continue;
+    const d = Math.hypot(st.pos.x - B.x, st.pos.z - B.z);
+    sum += d; n++; if (d < min) min = d;
+  }
+  return n ? { avg:+(sum/n).toFixed(3), min:+min.toFixed(3), n } : null;
 }
 /* 근무 시나리오 — 몇 명이 어떤 직무를 맡는가. 이게 '통제 가능한 한 회차'의 단위다.
 
@@ -3491,6 +3891,11 @@ const SCENARIO = {
 };
 /* 경로 = 스테이션 이름의 나열. 회의가 지목한 "선반-조리대-로봇 반경"이 work·toKettle이다. */
 const ROUTE = {
+  /* 정리 동선 (2026-08-24) — 발표 ①번 "평소대로 작업"에 쓴다.
+     종전 work는 선반↔조리대 2곳 왕복이라 같은 자리를 오갔다. 조리 전용 클립이 없으므로
+     **집고(pickup)·쭈그리고(kneel)·다루는(interact)** 동작이 붙은 스테이션을 넓게 돌아
+     "주변을 정리하는 중"으로 읽히게 한다. 솥 앞은 뺐다 — 조리 동작이 없어 어색하다. */
+  tidy : ["shelf", "store", "wrack", "etable", "prep", "shelf"],
   work    : ["shelf","prep","shelf","prep"],                        // 정상 조리 왕복
   toKettle: ["aisle","shelf","kettle"],                             // 솥 접근 — 감속·정지 트리거
   full    : ["door","aisle","shelf","prep","kettle","panel","aisle","door"],
@@ -3502,8 +3907,9 @@ function personRoute(name, opts) {
   const keys = ROUTE[name];
   if (!keys) { console.warn("[ROUTE] 없는 경로:", name); return null; }
   const st = keys.map(k => STATION[k]).filter(Boolean);
-  person.stations = st;
+  /* ⚠️ 순서 — personGo가 목록을 비우므로 **반드시 그 뒤에** 건다. */
   personGo(st.map(s => s.pos.clone()), { loop: !!opts.loop, speed: opts.speed || 0.62 });
+  person.stations = st;
   setStatus("동선 " + name + " — " + st.map(s => s.label).join(" → "));
   return st;
 }
@@ -3587,8 +3993,10 @@ function wanderStep() {
     t = workflowTarget(WANDER.job, { key:WANDER.last, step:WANDER.step },
                        person.node.position, RNG);
   WANDER.count++;
-  if (!t) { t = wanderTarget(); person.stations = [t];
-            personGo([t.pos], { speed: RNG.range(0.42, 0.88) }); return; }
+  if (!t) { t = wanderTarget();
+            personGo([t.pos], { speed: RNG.range(0.42, 0.88) });
+            person.stations = [t];            // personGo가 비운 뒤에 건다
+            return; }
   WANDER.last = t.key; WANDER.step = t.step;
   /* 직무 전이는 방 반대편이 아니라 **작업 구역 안**을 오간다. 직선으로 가면 설비 측면을
      긁는다(기존 균등 랜덤은 거리가 멀어 통로를 지나는 경우가 많았다). 추가 인원과 같은
@@ -3599,8 +4007,8 @@ function wanderStep() {
      일을 시작하는 그림이 된다(extrasUpdate가 "경유점 소진이 먼저다"로 막는 것과 같은 함정). */
   let route = navPath(person.node.position, t.pos);
   if (!route || !route.length) route = [t.pos];
-  person.stations = route.map((_, i) => i === route.length - 1 ? t : null);
   personGo(route, { speed: RNG.range(0.42, 0.88) });
+  person.stations = route.map((_, i) => i === route.length - 1 ? t : null);   // personGo 뒤에
 }
 /* ══ 인원 역할 ═══════════════════════════════════════════════════════════
    회의 요구: 여러 명이 **각기 다른 위험 수준**으로 움직여야 한다.
@@ -3731,6 +4139,16 @@ function personGo(points, opts) {
   person.path = points; person.pi = 0;
   person.loop = !!opts.loop; person.speed = opts.speed || 0.55;
   person.mode = "walk";
+  /* ⚠️ **스테이션 목록을 반드시 비운다** (2026-08-24).
+     personRoute가 남겨 둔 `person.stations`가 그대로 있으면, 그 뒤에 personGo로 준
+     **전혀 다른 경로**의 도착점에서도 그 목록을 스테이션으로 착각한다.
+     실측: 발표 ①번이 켠 순회 6곳이 남아 있어서, ⑤번 대피 때 조리원이 **문 앞에서
+     "선반 앞" 작업으로 인식해 무릎을 꿇고 2.2초 머물렀다.**
+     체류 시간과 진행 중인 액션도 같이 끊는다 — 걸어가라고 시켰는데 포즈가 화면을
+     잡고 있으면 보행 애니메이션이 한 프레임도 안 나온다(locoPlay가 acting을 존중한다). */
+  person.stations = null;
+  person.dwellT = 0;
+  if (typeof PERSON !== "undefined" && PERSON) PERSON.acting = null;
 }
 /* 사람 원기둥(r≈0.26) vs 설비 AABB — 최소 침투축으로 밀어내 통과 방지.
    GT용 FOOTPRINTS(여유 패딩)와 달리 실제 설비 치수의 타이트 박스를 쓴다 —
@@ -3848,6 +4266,24 @@ function buildPersonColliders() {
                     (b.minimumWorld.z + b.maximumWorld.z) / 2,
                     w / 2, d / 2]);
   }
+  /* ── 완전히 포함된 박스 제거 ─────────────────────────────────────────────
+     resolvePersonCollision은 박스를 하나씩 독립으로 밀어내므로, 박스가 서로 겹치면
+     A에서 밀어낸 것이 B로 다시 밀어넣어 **진동한다**(실측 2026-08-22: 8방향 강제
+     압입 296건 중 5건이 5~9cm 파고든 채 남았고, 패스를 4회까지 늘려도 3건이 남았다).
+     원인은 전부 **중복 등록**이었다 — 솥이 수동(1.02×0.68)과 자동(0.64×0.64)으로
+     두 번, 국솥이 부모·자식 메시로 두 번. 큰 박스 안에 완전히 든 작은 박스는
+     막는 역할이 0이면서 진동만 만들므로 버린다. (십자로 교차하는 바닥 덕트처럼
+     '포함'이 아닌 진짜 겹침은 남는다 — 오목한 구석이라 5cm는 감수한다.) */
+  const inside = (a, b) =>                       // a가 b 안에 완전히 들어가는가
+    Math.abs(a[0]-b[0]) + a[2] <= b[2] + 1e-6 &&
+    Math.abs(a[1]-b[1]) + a[3] <= b[3] + 1e-6;
+  const all = COLL_FOOTPRINTS.concat(COLL_AUTO);
+  let dropped = 0;
+  for (let i = COLL_AUTO.length - 1; i >= 0; i--) {
+    const a = COLL_AUTO[i];
+    if (all.some(b => b !== a && inside(a, b))) { COLL_AUTO.splice(i, 1); dropped++; }
+  }
+  if (dropped) console.log("[COLL] 중복(포함) 박스", dropped, "개 제거");
   console.log("[COLL] 사람 충돌 박스 — 수동", COLL_FOOTPRINTS.length, "+ 자동", COLL_AUTO.length +
               (PUSH.active ? " + 밀 수 있음 " + COLL_PUSH.length + "(길찾기 전용)" : ""));
   return COLL_AUTO.length;
@@ -4265,6 +4701,16 @@ const WALK_REF = 0.979, RUN_REF = 2.717, RUN_AT = 1.9;
 
    PUSH_REF는 위 WALK_REF 표와 **같은 방법으로 직접 잰 값**이다(0.349㎧).
    걷기의 0.357배로, 카트에 몸을 실어 미는 만큼 걸음이 짧고 느리다. */
+/* ⚠️ 걷기와 섞어 밀기 강도를 낮추려다 **되돌렸다** (2026-08-24).
+   `Push_Loop`이 무거운 물건을 미는 동작이라 카트에 과해 보인다는 피드백이 맞고,
+   가중치 블렌딩(setWeightForAllAnimatables)도 동작은 한다. 그런데 **손이 카트에서
+   떨어진다** — 걷기는 팔을 흔드는 동작이라 조금만 섞어도 자세가 그쪽으로 무너진다.
+   손 중심 ↔ 카트 중심 거리 실측(카트 반폭 0.40m):
+       blend 1.0 → 0.18m (카트 위) · 0.9 → 0.60m · 0.75 → 0.97m · 0.45 → 0.98m
+   0.9에서도 이미 카트 밖이다. **점진적으로 약해지는 게 아니라 걷기로 무너진다** —
+   쓸 수 있는 중간값이 없다. 카트만 저절로 굴러가는 그림이 되므로 원래대로 되돌린다.
+   제대로 고치려면 **가벼운 밀기 클립을 따로 받아야 한다**(리그가 mixamorig 67본이라
+   Mixamo에서 retarget 가능). 지금 할 수 있는 완화는 카트 선택과 숙임 각도까지다. */
 const PUSH_REF = 0.349;                            // 실측 — 위 표 참조
 const PUSH_ANIM_HOLD = 220;                        // 접촉이 끊겨도 이만큼은 밀기 자세 유지(ms)
 function locoPlay(P, moving, speed) {
@@ -4682,6 +5128,56 @@ const ENV_PROPS = [
        국솥 1.18×1.15 · 선반 1.16×0.56 · 작업대 1.50×0.75 · 싱크/배식대 1.80×0.76
        냉장고 1.24×0.85 · 팬카트 0.79×0.63 · 바스켓카트 0.72×0.60 · 쓰레기통 0.51×0.51
      좌표는 **벽에서 재서** 잡으므로 ?half= 로 방을 바꿔도 벽을 따라간다. */
+  /* ══ 복도형 배치표 ═════════════════════════════════════════════════════════
+     설비를 남·북 두 줄로 세우고 그 사이를 통로로 비운다. 좌표는 **벽에서 재서** 잡는다.
+     라인 안 간격 규칙은 섬 배치와 같다 — 같은 종류 0.20m, 종류가 바뀌는 경계 0.60m
+     (사람이 실제로 드나드는 자리). 실측 발자국(폭×깊이):
+       국솥 1.18×1.15 · 선반 1.16×0.56 · 작업대 1.50×0.75 · 싱크/배식대 1.80×0.76
+       냉장고 1.24×0.85 · 팬카트 0.79×0.63 · 바스켓카트 0.72×0.60 · 쓰레기통 0.51×0.51
+     북벽 라인 폭 12.0m(방 13m) · 남벽 라인 9.8m — 양끝에 통로가 남는다.
+     ⚠️ 중앙 조리섬(솥·로봇·후드·옆 국솥 1.87/3.30)은 **건드리지 않는다** — 좌표 계약. */
+  if (CORRIDOR) {
+    const W = LAYOUT.room, Z0 = W.z0, Z1 = W.z1, X0 = W.x0, X1 = W.x1;
+    const P = Math.PI;
+    ENV_PROPS.length = 0;
+    ENV_PROPS.push(
+      /* ── 북벽 라인 (z=-3.5) — 냉장 2 · 선반 · 작업대 · 국솥 3 · 쓰레기통. ry=0 → 통로(+Z)를 본다 */
+      { f:"env_fridge.glb",           pos:[-5.38, 0, Z0+0.48], ry:0 },
+      { f:"env_fridge.glb",           pos:[-3.94, 0, Z0+0.48], ry:0 },
+      { f:"env_rack.glb",             pos:[-2.14, 0, Z0+0.35], ry:0 },
+      { f:"env_table.glb",            pos:[-0.21, 0, Z0+0.45], ry:0 },
+      { f:"env_kettle_nb.glb",        pos:[ 1.73, 0, Z0+0.65], ry:0 },
+      { f:"env_kettle_nb_closed.glb", pos:[ 3.11, 0, Z0+0.65], ry:0 },
+      { f:"env_kettle_nb_closed.glb", pos:[ 4.49, 0, Z0+0.65], ry:0 },
+      { f:"env_bin.glb",              pos:[ 5.94, 0, Z0+0.35], ry:0 },
+      // 벽걸이 도구랙은 작업대 위 (선반 위에 걸면 서로 파고든다 — 섬 배치에서 겪은 것)
+      { f:"env_wallrack.glb",         pos:[-0.21, 1.72, Z0+0.06], ry:0 },
+
+      /* ── 남벽 라인 (z=+3.5) — 배식구 · 작업대 2 · 선반 2 · 쓰레기통. ry=180° → 통로(−Z) */
+      { f:"env_serve.glb",  pos:[-5.10, 0, Z1-0.45], ry:P },
+      { f:"env_table.glb",  pos:[-2.85, 0, Z1-0.45], ry:P },
+      { f:"env_table.glb",  pos:[-1.15, 0, Z1-0.45], ry:P },
+      { f:"env_rack.glb",   pos:[ 0.78, 0, Z1-0.35], ry:P },
+      { f:"env_rack.glb",   pos:[ 2.14, 0, Z1-0.35], ry:P },
+      { f:"env_bin.glb",    pos:[ 3.58, 0, Z1-0.35], ry:P },
+
+      /* ── 짧은 벽 (동/서) — 복도 양끝. 세정(동) · 전처리(서) */
+      { f:"env_sink.glb",  pos:[X1-0.45, 0, -1.00], ry:-P/2 },
+      { f:"env_rack.glb",  pos:[X1-0.35, 0,  1.20], ry:-P/2 },
+      { f:"env_table.glb", pos:[X0+0.45, 0, -1.00], ry: P/2 },
+      { f:"env_rack.glb",  pos:[X0+0.35, 0,  1.20], ry: P/2 },
+
+      /* ── 통로 카트 — 전부 로봇 베이스(-1.10,0.82)에서 2.2m 밖.
+         안에 넣으면 통행 격자에서 로봇 옆 접근 칸이 사라져 끼임 시나리오가 죽는다. */
+      { f:"env_pancart.glb",    pos:[-3.60, 0, -2.00], ry: 0.25 },
+      { f:"env_pancart.glb",    pos:[ 2.10, 0, -2.05], ry:-0.20 },
+      { f:"env_pancart.glb",    pos:[ 1.10, 0,  2.20], ry: 0.55 },
+      { f:"env_basketcart.glb", pos:[-4.50, 0,  2.05], ry: 0.30 },
+      { f:"env_basketcart.glb", pos:[ 4.50, 0,  2.00], ry:-0.35 },
+      { f:"env_bin.glb",        pos:[ 5.90, 0,  2.30], ry: 0 }
+    );
+    return;
+  }
   if (ISLAND) {
     const W = LAYOUT.room, X0 = W.x0, X1 = W.x1, Z0 = W.z0, Z1 = W.z1;
     const P = Math.PI;
@@ -4733,11 +5229,18 @@ const ENV_PROPS = [
       { f:"env_table.glb",  pos:[X1-0.45, 0,  3.40], ry:-P/2 },
 
       /* ── 남벽 배식·보관 라인 ── ry=180°로 방 안(−Z)을 향한다 */
+      /* ── 남벽 배식·보관 라인 ──
+         ⚠️ **출입문 정면(x 1.32~2.27)은 비운다.** 종전 선반이 x 2.20(반폭 0.55 → 1.65~2.75)
+         이라 문을 **0.62m 가로막고** 있었다(문에서 0.26m). 대피 시나리오를 하려면
+         문에서 방 안쪽으로 곧장 빠지는 통로가 있어야 한다(2026-08-24 사용자 지시).
+         선반 2대는 문 오른쪽으로 밀어 붙인다 — 벽 라인 성격은 그대로 유지된다. */
       { f:"env_serve.glb",  pos:[-2.00, 0, Z1-0.45], ry: P },            // 배식구
       { f:"env_table.glb",  pos:[ 0.20, 0, Z1-0.40], ry: P },
-      { f:"env_rack.glb",   pos:[ 2.20, 0, Z1-0.30], ry: P },
-      { f:"env_rack.glb",   pos:[ 3.50, 0, Z1-0.30], ry: P },
-      { f:"env_bin.glb",    pos:[ 4.50, 0, Z1-0.30], ry: P },
+      /* 간격: 선반 반폭 0.55 · 쓰레기통 0.25. 문 통로대(x 1.18~2.42) 밖에서 시작해
+         서로 안 겹치게 3.05 → 4.25 → 5.25 (동벽 5.75까지 0.25 여유). */
+      { f:"env_rack.glb",   pos:[ 3.05, 0, Z1-0.30], ry: P },           // 문 오른쪽으로 물림
+      { f:"env_rack.glb",   pos:[ 4.25, 0, Z1-0.30], ry: P },
+      { f:"env_bin.glb",    pos:[ 5.25, 0, Z1-0.30], ry: P },
 
       /* ── 통로 — 카트와 중앙 준비대. 빈 바닥을 메우되 **로봇 팔 반경(1.87m) 밖**에 둔다.
          안에 넣으면 통행 격자에서 로봇 옆 접근 칸이 사라져 끼임 시나리오가 죽는다. */
@@ -4746,7 +5249,7 @@ const ENV_PROPS = [
       { f:"env_pancart.glb",    pos:[ 3.10, 0,  2.60], ry:-0.15 },
       { f:"env_pancart.glb",    pos:[-1.60, 0,  3.60], ry: 1.35 },
       { f:"env_basketcart.glb", pos:[-2.90, 0,  2.30], ry: 0.30 },
-      { f:"env_basketcart.glb", pos:[ 0.90, 0,  3.20], ry:-0.25 },
+      { f:"env_basketcart.glb", pos:[-1.30, 0,  4.30], ry:-0.25 },   // 문 통로대 밖·사방 트인 자리(실측)
       { f:"env_bin.glb",        pos:[-3.30, 0, -3.30], ry:0 },  // 북서 모서리 — 국솥 라인 앞으로 물림
       /* 북측 통로 — 벽 라인과 아일랜드 사이가 4m 넘게 비어 있었다. 준비대와 카트를 채운다.
          전부 로봇 베이스에서 2.2m 밖이라 안전링 안쪽 통행 칸을 잡아먹지 않는다. */
@@ -4760,7 +5263,9 @@ const ENV_PROPS = [
       { f:"env_table.glb",      pos:[ 2.60, 0, -3.30], ry:0 },           // 북동 준비대
       { f:"env_basketcart.glb", pos:[ 1.20, 0, -3.20], ry: 0.35 },
       { f:"env_pancart.glb",    pos:[-3.60, 0,  0.20], ry:-0.30 },       // 서측 통로 대기 카트
-      { f:"env_pancart.glb",    pos:[ 2.00, 0,  3.80], ry: 0.55 }        // 배식 대기 카트
+      /* 배식 대기 카트 — 종전 (2.00, 3.80)은 **문 정면 1.9m**라 대피로를 정통으로 막았다.
+         통로 성격은 유지한 채 동쪽으로 비켜 세운다. */
+      { f:"env_pancart.glb",    pos:[ 3.60, 0,  4.65], ry: 0.55 }        // 배식 대기 카트
     );
     return;
   }
@@ -4856,6 +5361,54 @@ const PROP_MAT = (() => {
     tote:   ["#d8dde2","#c8342b","#2f6fb0","#e3b341"].map((h,i) => pbr("tote"+i, h, {roughness:0.5})),
   };
 })();
+
+/* ══ 튀김 바스켓 내용물 ═══════════════════════════════════════════════════
+   빈 망바구니를 로봇이 건져 올리면 **무엇을 조리 중인지 알 수 없다.** 발표에서도
+   "기름에서 뭘 꺼내는가"가 안 보인다. 실사 참조(로봇고_배출)에서도 바구니에는
+   항상 튀김이 담겨 있다.
+
+   지오메트리는 새로 만들지 않고 **PROP_MAT.food의 'fried' 재질을 재사용**한다 —
+   선반·호텔팬 내용물과 같은 색 계열이라 씬에서 따로 놀지 않고, 머티리얼을 공유하므로
+   드로우콜도 안 는다(프롭 재질을 한 번만 만드는 이유와 같다).
+
+   실측 바스켓(2026-08-24): 바닥 y 0.544 · 림 y 0.78 · 지름 0.59(바닥)~0.74(림).
+   내용물은 바닥에서 살짝 띄워 y 0.55~0.64에 쌓는다 — 림까지 채우면 그물망이 안 보여
+   바구니가 아니라 통처럼 보인다. 반경은 0.25로 잡아 벽에 안 묻히게 한다.
+
+   조각은 **하나로 병합**한다. 낱개로 두면 24개 자식에 조각 수만큼 드로우콜이 붙는다. */
+function fillBasket() {
+  if (!basketNode) return 0;
+  const MB = BABYLON.MeshBuilder, rnd = (a,b) => a + Math.random()*(b-a);
+  /* 34개로는 **바닥이 비쳐 보였다**(화면 확인). 아래층을 촘촘히 깔고 위에 얹는 2층
+     구조로 간다 — 실제 튀김 바구니도 바닥부터 쌓인다. 병합하므로 개수는 공짜다. */
+  const N = 96;
+  const parts = [];
+  for (let i = 0; i < N; i++) {
+    /* 원판 위 균일 분포 — sqrt를 안 쓰면 가운데로 몰린다 */
+    const th = Math.random()*Math.PI*2;
+    const lower = i < N*0.62;                       // 아래층을 더 많이·더 넓게 깐다
+    const r = (lower ? 0.255 : 0.195) * Math.sqrt(Math.random());
+    const p = MB.CreateBox("friedBit"+i, { width:rnd(0.050,0.082), height:rnd(0.028,0.044),
+                                           depth:rnd(0.050,0.082) }, scene);
+    p.position.set(Math.cos(th)*r,
+                   lower ? rnd(0.010, 0.048) : rnd(0.042, 0.088),
+                   Math.sin(th)*r);
+    p.rotation.set(rnd(-0.5,0.5), Math.random()*Math.PI*2, rnd(-0.5,0.5));
+    parts.push(p);
+  }
+  const merged = BABYLON.Mesh.MergeMeshes(parts, true, true, undefined, false, false);
+  if (!merged) return 0;
+  merged.name = "basketFood";
+  merged.material = PROP_MAT.food[2].mat;               // 'fried'
+  merged.isPickable = false;
+  merged.receiveShadows = true;
+  if (typeof shadows !== "undefined" && shadows) shadows.addShadowCaster(merged);
+  /* 바스켓 로컬 좌표로 옮긴다 — 노드가 y 1.120에 있고 바닥은 월드 0.544다.
+     로봇이 바구니를 집으면 basketNode가 손목에 붙으므로 내용물도 같이 따라간다. */
+  merged.parent = basketNode;
+  merged.position.y = 0.544 - basketNode.getAbsolutePosition().y + 0.004;
+  return N;
+}
 
 function dressProp(file, holder, idx, inst) {
   const MB = BABYLON.MeshBuilder, put = [];
@@ -5087,6 +5640,7 @@ async function loadAssets() {
   lidNode.rotation.z = -1.40;
   basketNode     = await pivoted("basket.glb",         "bkNode",   ASSETS.pivots.grip);
   basketNode.__home = basketNode.position.clone();     // 파지 시퀀스 리스타트용 원위치
+  fillBasket();                                        // 튀김 바스켓에 내용물을 담는다
   robotGlb.base  = await pivoted("robot_pedestal.glb", "rgBase",   ASSETS.pivots.base);
   robotGlb.j1    = await pivoted("robot_j1.glb",       "rgJ1",     ASSETS.pivots.j1);
   robotGlb.upper = await pivoted("robot_upper.glb",    "rgUpper",  ASSETS.pivots.s);
@@ -5096,15 +5650,42 @@ async function loadAssets() {
   //    이후 슬라이더·IK의 델타 회전이 정확한 피벗(S/E/W)에서 세그먼트를 구동한다.
   applyAll();
   const jn = JOINTS.map(j => j.node);
+  /* ?reach= 로 팔을 키웠으면 **부모로 붙이는 동안만 관절 앵커를 원래 길이로 되돌린다.**
+     ── 왜 필요한가 (2026-08-24, 사용자 보고 "모양이 틀어져서 이상해 보인다") ──
+     setParent는 월드 위치를 보존하며 로컬 오프셋을 역산한다. 그런데 세그먼트 노드는
+     GLB가 구워진 **원래 피벗(S/E/W)**에 놓여 있고, 앵커는 이미 REACH.k만큼 바깥으로
+     나가 있다. 그래서 역산된 로컬 오프셋이 그 차이를 그대로 흡수한다 — 즉 메시가
+     **관절을 따라가지 않고 원래 자리에 남는다.** 실측(k=1.308):
+       rgFore  (0.016, 0.014, 0) → (−0.142, −0.132, 0)   ≈ 19cm 처짐
+       rgHand  (0.015, 0.014, 0.030) → (−0.328, −0.132, 0.030) ≈ 35cm 처짐
+     팔뚝·손목이 팔꿈치보다 아래·뒤에 붙어 관절이 어긋나 보인다.
+     앵커를 원래 길이로 되돌린 상태에서 붙이면 오프셋은 GLB 원점 보정분(~1.5cm)만
+     남고, 그 보정분에 배율을 곱해 주면 확대해도 관절에 정확히 붙는다.
+     ⚠️ 배율만 주고 이 보정을 빼먹으면 안 된다 — 그게 원래 버그였다. */
+  const REACH_FIX = REACH.k !== 1 ? (() => {
+    const saved = [jn[2].position.x, jn[3].position.x];
+    jn[2].position.x /= REACH.k; jn[3].position.x /= REACH.k;   // 붙이는 동안만 원래 길이
+    jn[2].computeWorldMatrix(true); jn[3].computeWorldMatrix(true);
+    return () => { jn[2].position.x = saved[0]; jn[3].position.x = saved[1];
+                   jn[2].computeWorldMatrix(true); jn[3].computeWorldMatrix(true); };
+  })() : null;
   robotGlb.j1.setParent(jn[0]);
   robotGlb.upper.setParent(jn[1]);
   robotGlb.fore.setParent(jn[2]);
   robotGlb.hand.setParent(jn[4]);   // wrist=0 → j5가 W에 위치, 피치(J4)+롤(J5) 모두 반영
+  if (REACH_FIX) {
+    /* 남은 오프셋은 GLB 원점 보정분이다 — 메시가 배율만큼 커지므로 보정분도 같이 커져야
+       같은 자리를 가리킨다. 앵커 길이를 되돌리기 **전에** 곱한다. */
+    [robotGlb.upper, robotGlb.fore, robotGlb.hand].forEach(n => n && n.position.scaleInPlace(REACH.k));
+    REACH_FIX();
+  }
   robotGlb.base.setParent(scene.getTransformNodeByName("robotRoot"));   // GT 분류·이동 일관성
   /* ?reach= 로 팔을 키웠으면 **GLB 세그먼트도 같은 배율로** 늘린다.
      링크 길이(R.upper/R.fore)만 키우면 관절 앵커는 벌어지는데 메시는 원래 크기라
      세그먼트 사이가 빈다. 각 세그먼트는 자기 피벗(S/E/W)에 놓여 있으므로 그 노드에
      배율을 주면 피벗에서 늘어나 다음 앵커와 정확히 맞물린다.
+     ⚠️ **비균일 배율(길이축만 늘리기)은 쓰지 마라** — 관절 구가 타원으로 찌그러진다
+     (2026-08-24 시도했다가 되돌림). 굵어지는 게 싫으면 배율이 아니라 ?reach= 값을 낮춘다.
      setParent 뒤에 넣는다 — setParent가 월드 보존으로 로컬 스케일을 다시 계산하므로
      그 전에 주면 상쇄된다(실측). 페데스탈·J1은 그대로 둔다(바닥 고정면). */
   if (REACH.k !== 1) {
@@ -5380,7 +5961,12 @@ const PRED = { horizon:1.6, steps:12, vel:new V3(0,0,0), lastPos:null, lastT:0,
                   sigM = 검출 위치 노이즈(m). 카메라 검출 흔들림 수준. */
                model:"kalman", sigA:0.25, sigM:0.06,
                kx:kf1(), kz:kf1(), sigma:0,           // sigma = 지평선 끝 위치 불확실성 1σ(m)
-               hist:[] };                             // 최근 관측 (학습형 예측기 입력용)
+               hist:[],                               // 최근 관측 (학습형 예측기 입력용)
+               /* 이 관측 이력이 '누구' 것인지. 최근접 대상이 A→B로 바뀌면 hist에 서로 다른
+                  사람의 좌표가 섞여 예측이 순간이동으로 오염된다(감사 P0). srcId가 바뀌면
+                  predictionUpdate가 관측 상태(hist·칼만·속도·경로)를 통째로 초기화한다.
+                  형식: "mil:<트랙id>" | "gt:<사람idx>" — 모드가 달라도 값이 달라 리셋된다. */
+               srcId:null };
 
 /* ══ 학습형 예측기 연결 지점 ══════════════════════════════════════════════
    계획서의 예측 3단계는 `등속 → 칼만 → 학습형`이다. 앞의 둘은 이 파일이 직접 푼다.
@@ -5399,7 +5985,23 @@ const PRED = { horizon:1.6, steps:12, vel:new V3(0,0,0), lastPos:null, lastT:0,
    직전 경로를 계속 쓴다(실제 온디바이스 추론과 같은 조건). 등록이 없거나 실패하면
    **조용히 칼만으로 되돌아간다** — 예측기가 죽었다고 로봇이 못 서면 안 된다.        */
 const CPRED = { fn:null, hz:10, acc:0, busy:false, path:null, modes:null, at:0, sigma:0,
-                lastMs:0, n:0, err:0, lastErr:null };
+                lastMs:0, n:0, err:0, lastErr:null,
+                gen:0 };   // 관측 대상 세대. 대상이 바뀌면 ++ → in-flight 응답을 무효화(옛 대상 경로 폐기)
+
+/* ══ 다인원 예측 (감사 P0-5) ═══════════════════════════════════════════════
+   PRED/CPRED가 '제어 대상 1명'이라면 MPRED는 '활성 전원'을 담는 층이다.
+     hist  = 사람별 관측 이력(id별 분리 → 서로 다른 사람 좌표가 한 창에 섞이는 게 구조적으로 불가)
+     pred  = 사람별 백엔드 K모드 + 위험(risk)
+     worst = 미래 위험 중재 결과(2단계 제어에서 사용)
+   백엔드 /predict 배치가 채운다. 서버 부재·실패 시 조용히 비고, 렌더는 사람별 휴리스틱으로 폴백한다
+   — 안전 제어는 PRED의 로컬 칼만 바닥이 담당하므로 네트워크와 무관하게 로봇은 즉시 반응한다. */
+const MPRED = { hist:new Map(), pred:new Map(), worst:null,
+                hz:10, acc:0, busy:false, reqId:0, lastT:0, at:0,
+                cap:10, lastN:0, lastMs:0, err:0, lastErr:null, _capLogN:0,
+                _milSeenT:new Map() };   // 검출 모드: 트랙별 마지막으로 담은 검출 시각(중복 push 방지)
+function mpredFresh(rec) { return !!(rec && performance.now() - rec.at < 1000); }
+// 신선한 사람별 예측이 하나라도 있나 — 대표선(PRED.line) 표시 게이트에 쓴다.
+function mpredAnyFresh() { for (const r of MPRED.pred.values()) if (mpredFresh(r)) return true; return false; }
 function customPredictTick(srcPos, now, dtMs) {
   CPRED.fn = (typeof window.__customPredictor === "function") ? window.__customPredictor : null;
   if (!CPRED.fn) return false;
@@ -5407,10 +6009,12 @@ function customPredictTick(srcPos, now, dtMs) {
   if (!CPRED.busy && CPRED.acc >= 1000 / CPRED.hz) {
     CPRED.acc = 0; CPRED.busy = true;
     const t0 = performance.now();
+    const gen = CPRED.gen;                 // 이 요청이 어느 대상 것인지 고정
     Promise.resolve(CPRED.fn({
       now, pos:{ x:srcPos.x, z:srcPos.z }, vel:{ x:PRED.vel.x, z:PRED.vel.z },
       hist: PRED.hist.slice(), horizon: PRED.horizon, mPerAU: SCALE.mPerAU,
     })).then(res => {
+      if (gen !== CPRED.gen) return;        // 응답이 오는 사이 대상이 바뀌었다 → 옛 대상 경로 폐기
       if (res && Array.isArray(res.path) && res.path.length) {
         CPRED.path = res.path; CPRED.at = performance.now();
         CPRED.sigma = isFinite(res.sigma) ? res.sigma : 0;
@@ -5460,6 +6064,94 @@ async function trajPredict(obs) {
   return { path: ml.path, sigma: SCALE.m(ml.sigma[ml.sigma.length - 1]), modes };
 }
 if (!window.__customPredictor) window.__customPredictor = trajPredict;   // 팀 훅이 이미 있으면 존중, 없을 때만 기본 등록
+
+/* ══ 다인원 관측·배치 예측 (감사 P0-5 1단계) ═══════════════════════════════
+   매 프레임 활성 전원의 좌표를 사람별 이력에 쌓고(mpredObserve), hz로 제한해 전원을 한 번에
+   /predict 배치로 보낸다(mpredTick). GT 모드는 peopleList()(idx 0=주인물, i+1=EXTRAS[i])를 쓴다. */
+/* 검출 모드에서 **관측·렌더·제어가 같은 트랙 집합**을 보도록 하는 단일 소스.
+   신선(5s 이내)·유효(pos 존재) 트랙만 {id:"mil:"+key, tr}로 돌려준다.
+   now 를 인자로 받아 관측(mpredObserve)과 렌더(mpredAgents)가 같은 시각 기준을 쓴다. */
+function milFreshTracks(now) {
+  const out = [];
+  for (const key of Object.keys(MIL.tracks)) {
+    const tr = MIL.tracks[key];
+    if (!tr || !tr.pos || now - tr.t > 5000) continue;       // 만료(5s)·무효 트랙 제외
+    out.push({ id: "mil:" + key, tr });
+  }
+  return out;
+}
+function mpredObserve(now) {
+  const live = new Set();
+  const push = (id, x, z) => {                               // 사람별 이력에 한 점 추가(+3.2s 트림)
+    live.add(id);
+    let h = MPRED.hist.get(id);
+    if (!h) { h = []; MPRED.hist.set(id, h); }
+    h.push({ t: now, x, z });
+    while (h.length && now - h[0].t > 3200) h.shift();       // 학습형 입력용 여유 3.2s
+  };
+  if (MIL.safety && MIL.on) {
+    /* 검출 모드: 로봇이 실제로 본 것(YOLO+ByteTrack 트랙)만 관측한다 — GT 전지성 누출 방지.
+       MIL.tracks 는 검출 응답이 올 때만 갱신되므로 **새 검출(tr.t 증가)일 때만** 한 점 쌓는다.
+       (매 프레임 같은 위치를 복붙하면 공백 동안 계단형 이력이 되어 속도·예측이 왜곡됨.) */
+    for (const { id, tr } of milFreshTracks(now)) {
+      if (MPRED._milSeenT.get(id) === tr.t) { live.add(id); continue; }   // 새 검출 아님 → 유지만
+      MPRED._milSeenT.set(id, tr.t);
+      push(id, tr.pos.x, tr.pos.z);
+    }
+  } else {
+    // GT 모드: 시뮬이 아는 진짜 위치. idx 0=주인물, i+1=EXTRAS[i].
+    peopleList().forEach((node, idx) => { const p = node.position; push("gt:" + idx, p.x, p.z); });
+  }
+  // 사라진 사람(인원 감소·트랙 만료)의 이력·예측 폐기 — 좌표가 다른 사람에게 섞이지 않게.
+  for (const id of [...MPRED.hist.keys()]) if (!live.has(id)) MPRED.hist.delete(id);
+  for (const id of [...MPRED.pred.keys()]) if (!live.has(id)) MPRED.pred.delete(id);
+  for (const id of [...MPRED._milSeenT.keys()]) if (!live.has(id)) MPRED._milSeenT.delete(id);
+}
+function mpredTick(now, dtMs) {
+  if (typeof window.__customPredictor !== "function") return;   // 예측기 훅 없으면 배치 안 함
+  MPRED.acc += dtMs;
+  if (MPRED.busy || MPRED.acc < 1000 / MPRED.hz) return;
+  MPRED.acc = 0;
+  const bx = LAYOUT.robot.base.x, bz = LAYOUT.robot.base.z;
+  let ids = [...MPRED.hist.keys()];
+  if (ids.length > MPRED.cap) {                                // N 상한 — 로봇 근접순, silent cap 금지
+    const dist = id => { const h = MPRED.hist.get(id), p = h[h.length - 1];
+                         return Math.hypot(p.x - bx, p.z - bz); };
+    ids.sort((a, b) => dist(a) - dist(b));
+    if (ids.length !== MPRED._capLogN) {                       // 인원 수 바뀔 때만 로그(매 틱 도배 방지)
+      MPRED._capLogN = ids.length;
+      console.log("[MPRED] N=" + ids.length + " > cap " + MPRED.cap + " — 근접 " + MPRED.cap +
+                  "명만 예측(" + (ids.length - MPRED.cap) + "명 생략)");
+    }
+    ids = ids.slice(0, MPRED.cap);
+  } else { MPRED._capLogN = 0; }
+  const tracks = ids.map(id => ({ id, hist: trajResample(MPRED.hist.get(id), now) }));
+  if (!tracks.length) return;
+  MPRED.lastN = tracks.length;
+  const reqId = ++MPRED.reqId;
+  MPRED.busy = true;
+  const t0 = performance.now();
+  fetch("/predict", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tracks, robot: { x: bx, z: bz },
+        stopR: SCALE.au(SAFE.stopR), slowR: SCALE.au(SAFE.slowR),
+        horizon: PRED.horizon, safeKsig: PRED.safeKsig, safeTau: PRED.safeTau }) })
+    .then(r => { if (!r.ok) throw new Error("/predict " + r.status); return r.json(); })
+    .then(j => {
+      if (reqId !== MPRED.reqId) return;                      // 응답 오는 사이 새 요청 → stale 폐기
+      const at = performance.now();
+      const next = new Map();
+      for (const t of (j.tracks || [])) {
+        const modes = (t.modes || []).map(m => ({
+          path: m.path.map(([x, z], i) => ({ t: 0.4 * (i + 1), x, z })), w: m.w, sigma: m.sigma }));
+        next.set(t.id, { modes, risk: t.risk, at });
+      }
+      MPRED.pred = next; MPRED.worst = j.worst || null;
+      MPRED.at = at; MPRED.lastMs = at - t0;
+    })
+    .catch(e => { MPRED.err++; MPRED.lastErr = String(e && e.message || e).slice(0, 120);
+                  MPRED.pred = new Map(); MPRED.worst = null; })   // 실패 → 비우고 휴리스틱 폴백
+    .finally(() => { MPRED.busy = false; });
+}
 /* 학습형 모드 경로/σ 보간 — 밀도 구름이 실제 곡선 경로 점을 쓰게 한다(방향 근사 아님). */
 function modePosAt(m, t) {
   const p = m.path; let a = p[0], b = p[p.length - 1];
@@ -5587,25 +6279,33 @@ function peopleList() {
   if (typeof EXTRAS !== "undefined") for (const P of EXTRAS) if (P && P.root) out.push(P.root);
   return out;
 }
-function pmodeArrowsFor(node, idx, dt) {
-  const p = node.position;
-  let st = PVEL.get(node);
-  if (!st) { PVEL.set(node, { x:p.x, z:p.z, vx:0, vz:0 }); return 0; }
-  if (dt > 1e-3) {
-    const ivx = (p.x - st.x)/dt, ivz = (p.z - st.z)/dt;
-    st.vx = st.vx*0.75 + ivx*0.25; st.vz = st.vz*0.75 + ivz*0.25;
+function pmodeArrowsFor(agent, idx, dt) {
+  const p = agent.pos;
+  /* 속도: GT는 노드 위치 차분 EMA(PVEL), 검출은 트랙이 이미 낸 월드 속도(vWorld).
+     (검출 모드엔 Babylon 노드가 없어 위치 차분 대신 트랙 속도를 그대로 쓴다.) */
+  let vx, vz;
+  if (agent.node) {
+    let st = PVEL.get(agent.node);
+    if (!st) { PVEL.set(agent.node, { x:p.x, z:p.z, vx:0, vz:0 }); return 0; }
+    if (dt > 1e-3) {
+      const ivx = (p.x - st.x)/dt, ivz = (p.z - st.z)/dt;
+      st.vx = st.vx*0.75 + ivx*0.25; st.vz = st.vz*0.75 + ivz*0.25;
+    }
+    st.x = p.x; st.z = p.z;
+    vx = st.vx; vz = st.vz;
+  } else {
+    vx = (agent.vel && agent.vel.x) || 0; vz = (agent.vel && agent.vel.z) || 0;
   }
-  st.x = p.x; st.z = p.z;
-  const speed = Math.hypot(st.vx, st.vz);
-  /* 학습형 예측기가 **이 사람(추적 대상)**을 예측 중이면 그 K모드를 쓴다 — 바닥 구름이
-     goalModesAt(목표 휴리스틱) 대신 학습형 봉우리를 그린다(이슈 #2 완료 조건). 추적 대상은
-     predictionUpdate가 PRED._learned.src에 남긴 위치로 판별(가장 가까운 사람). */
-  const L = (PRED._learned && idx === PRED._learnedIdx) ? PRED._learned.modes : null;
+  const speed = Math.hypot(vx, vz);
+  /* 다인원(P0-5): 이 사람의 실제 LSTM 모드를 MPRED에서 조회(신선할 때만) → 화살표·경로선·바닥
+     구름이 goalModesAt(목표 휴리스틱) 대신 학습형 봉우리를 그린다. 없으면 휴리스틱 폴백. */
+  const _rec = MPRED.pred.get(agent.id);
+  const L = mpredFresh(_rec) ? _rec.modes : null;
   const modes = L
     ? L.map((m, i) => { const e = m.path[m.path.length - 1];
         const dx = e.x - p.x, dz = e.z - p.z, d = Math.hypot(dx, dz) || 1e-6;
         return { name:"L" + i, w:m.w, dist:d, ux:dx / d, uz:dz / d }; })
-    : goalModesAt(p, st.vx, st.vz, speed);
+    : goalModesAt(p, vx, vz, speed);
   let n = 0;
   /* 이 사람의 **띠 성분**도 같이 만든다 — 화살표는 "몇 가지 가능성"을, 띠는 "어디쯤"을 말한다.
      학습형이면 각 모드의 실제 곡선 경로 점(모델 σ)을, 아니면 방향 외삽 띠를 쓴다.
@@ -5631,16 +6331,33 @@ function pmodeArrowsFor(node, idx, dt) {
       }
     });
   }
+  /* 실제 LSTM이면 모드색 실선, 휴리스틱 폴백이면 회색으로 구분(감사 P0-5 완료조건).
+     그리고 학습형은 **실제 미래 경로 폴리라인**을 그린다 — 화살표(방향 요약)로 뭉개지 않도록
+     곡선 경로를 직접 보여준다. 화살표는 진행 방향 glyph로 보조한다. */
+  const isLearned = !!L;
   modes.forEach((md, mi) => {
+    const hex = isLearned ? PRED.modeCols[mi % PRED.modeCols.length] : "#8a93a3";  // 휴리스틱=회색
+    const w = PMODE.w * (0.55 + 0.45*md.w) * (isLearned ? 1 : 0.55);               // 휴리스틱 얇게
+    // 경로선(학습형만) — 실제 예측 곡선. 최빈(mi=0) 진하게·굵게, 나머지 갈래 흐리게.
+    if (isLearned && L[mi] && L[mi].path.length > 1) {
+      const pathPts = L[mi].path.map(q => new V3(q.x, PMODE.y, q.z));
+      /* 최고위험(worst)의 최빈 경로는 **미래 위험색**으로 — 반응형 링(지금)과 달리 '앞으로 진입'을
+         보여준다(2단계). 빨강=정지 예상, 주황=감속 예상. 굵게 강조. */
+      let phex = hex, pw = w;
+      if (mi === 0 && MPRED.worst && MPRED.worst.id === agent.id) {
+        phex = MPRED.worst.tEntryStop != null ? "#f85149"
+             : MPRED.worst.tEntrySlow != null ? "#e3853d" : hex;
+        pw = PMODE.w * 1.4;
+      }
+      pmodeDraw(idx + "_" + mi + "_path", pathPts, phex, pw);
+    }
     const len = Math.min(Math.max(speed * PRED.vizHorizon, PMODE.minLen), md.dist);
     if (!(len > 0.15)) return;
-    const hex = PRED.modeCols[mi % PRED.modeCols.length];
     const a = new V3(p.x, PMODE.y, p.z);
     const tip = new V3(p.x + md.ux*len, PMODE.y, p.z + md.uz*len);
     const back = len * PMODE.headFrac, px = -md.uz, pz = md.ux;
     const hl = new V3(tip.x - md.ux*back + px*back*0.55, PMODE.y, tip.z - md.uz*back + pz*back*0.55);
     const hr = new V3(tip.x - md.ux*back - px*back*0.55, PMODE.y, tip.z - md.uz*back - pz*back*0.55);
-    const w = PMODE.w * (0.55 + 0.45*md.w);      // 가중치 큰 모드를 굵게
     pmodeDraw(idx + "_" + mi + "_shaft", [a, tip], hex, w);
     pmodeDraw(idx + "_" + mi + "_head", [hl, tip, hr], hex, w);
     n++;
@@ -5649,24 +6366,22 @@ function pmodeArrowsFor(node, idx, dt) {
 }
 /* Fig.1처럼 **모든 보행자**에게 각자 화살표를 그린다 — 위협 1명만 그리면 "여러 주체가
    각자 여러 가능성을 갖는다"는 그림의 요지가 사라진다. */
+/* 렌더·속도추정용 에이전트 목록 — 관측(mpredObserve)과 **같은 규칙**으로 만들어
+   id 가 MPRED.pred/worst 키와 일치한다(화면과 판정이 어긋나지 않게). */
+function mpredAgents() {
+  if (MIL.safety && MIL.on)   // 검출 모드: 로봇이 실제로 본 트랙만(관측과 동일 소스). GT 노드를 쓰면 진짜 위치가 샌다.
+    return milFreshTracks(performance.now()).map(({ id, tr }) =>
+      ({ id, pos: tr.pos, vel: tr.vWorld || { x:0, z:0 } }));
+  return peopleList().map((node, i) => ({ id: "gt:" + i, pos: node.position, node }));
+}
 function predModeArrows(dtMs) {
   for (const k in PMODE.mesh) PMODE.mesh[k].setEnabled(false);
   PRED.bands = [];
   if (!PMODE.on || vizSuppressed) return;
   const dt = Math.min(Math.max((dtMs || 16)/1000, 1e-3), 0.5);
-  const nodes = peopleList();
-  /* 학습형 추적 대상 = src에 가장 가까운 사람 **1명**(임계 0.4 AU 내). 임계만 쓰면
-     지나가며 두 사람이 다 걸릴 수 있어 최근접 하나로 못박는다. */
-  PRED._learnedIdx = -1;
-  if (PRED._learned) {
-    let best = 0.4 * 0.4;
-    nodes.forEach((node, i) => {
-      const p = node.position, s = PRED._learned.src;
-      const d2 = (p.x - s.x) ** 2 + (p.z - s.z) ** 2;
-      if (d2 < best) { best = d2; PRED._learnedIdx = i; }
-    });
-  }
-  nodes.forEach((node, i) => pmodeArrowsFor(node, i, dt));
+  // 다인원(P0-5): 사람별 학습 모드는 각 pmodeArrowsFor가 MPRED.pred에서 직접 조회한다
+  // (예전의 '최근접 1명만 학습형' 방식은 폐기). GT=진짜 노드, 검출=MIL.tracks(로봇이 본 것).
+  mpredAgents().forEach((a, i) => pmodeArrowsFor(a, i, dt));
 }
 /* 진행 방향과 정렬된 스테이션들을 '행동 모드'로 뽑는다.
    정렬도(진행방향·목표방향 내적)를 제곱해 가중치로 쓴다 — 정면 목표가 확실히 더 진하게.
@@ -5821,7 +6536,20 @@ function densUpdate(dtMs) {
   ctx.putImageData(DENS.img, 0, 0);
   DENS.tex.update();
 }
-function predictionUpdate(srcPos, now) {
+function predictionUpdate(srcPos, now, srcId) {
+  /* 관측 대상이 바뀌면(최근접 인물 A→B, 트랙 ID 스위치, GT↔검출 모드 전환) 관측 상태를
+     통째로 초기화한다. 안 하면 A의 좌표가 남은 hist에 B의 좌표가 이어 붙어, 한 관측창에
+     서로 다른 사람이 섞이고 예측이 '순간이동'으로 오염된다(감사 P0 — 다인원 확장 전 선결).
+     srcId 미지정(구 호출부)이면 리셋하지 않아 기존 동작과 동일. */
+  if (srcId !== undefined && srcId !== PRED.srcId) {
+    PRED.srcId = srcId;
+    PRED.hist = [];
+    PRED.lastPos = null;
+    PRED.vel = new V3(0, 0, 0);
+    PRED.kx = kf1(); PRED.kz = kf1();
+    PRED.sigma = 0;
+    CPRED.path = null; CPRED.modes = null; CPRED.gen++;   // 옛 대상 예측 경로 폐기 + in-flight 무효화
+  }
   if (PRED.lastPos) {
     const dt = (now - PRED.lastT) / 1000;
     if (dt > 0.02 && dt < 1.5) {
@@ -5969,9 +6697,7 @@ function predictionUpdate(srcPos, now) {
   PRED.modes = modes.map(m => ({ name:m.name, w:+m.w.toFixed(2), dist:+m.dist.toFixed(2),
                                  ux:m.ux, uz:m.uz,
                                  len: cModes ? m.dist : Math.min(speed * PRED.vizHorizon, m.dist) }));
-  /* 추적 대상 + 학습형 모드를 per-person 밴드 빌더(pmodeArrowsFor)에 넘긴다 →
-     바닥 구름이 이 사람만 학습형 봉우리로 그려진다. */
-  PRED._learned = cModes ? { src: { x: srcPos.x, z: srcPos.z }, modes: CPRED.modes } : null;
+  // 다인원(P0-5): 사람별 학습 모드 렌더는 predModeArrows→pmodeArrowsFor가 MPRED.pred에서 직접 조회.
   predModeArrows(dtMs);
   graphUpdate();                     // 씬 그래프(노드 흰 원 + 상호작용 점선)
   densUpdate(dtMs);                  // 바닥 확률밀도 음영 (논문 그림)
@@ -5988,7 +6714,10 @@ function predictionUpdate(srcPos, now) {
     PRED.line.setPoints(pts);
   }
   if (PRED.line.greasedLineMaterial) PRED.line.greasedLineMaterial.color = predCol;
-  PRED.line.setEnabled(PRED.moving && PRED.showLine && !vizSuppressed);   // 이동 중일 때만(히스테리시스 적용)
+  /* 다인원(P0-5)이 활성이면 대표선은 사람별 경로선 + worst 안전색에 흡수되므로 숨긴다(겹선 제거).
+     단 '신선한' 예측이 있을 때만 흡수 — 예측이 낡거나(>1s) 없으면 단일 대표선으로 폴백해
+     stale 구간에 안전색 경로선이 사라지지 않게 한다. */
+  PRED.line.setEnabled(PRED.moving && PRED.showLine && !vizSuppressed && !mpredAnyFresh());
   // (예측 불확실성 표시는 바닥 밀도 음영 DENS 하나로 통일 — 예전 3D σ 밴드는 중복이라 제거)
 }
 
@@ -6017,6 +6746,13 @@ function lampApply(level) {
 }
 
 function safetyUpdate() {
+  // 다인원 관측·배치 예측(P0-5) — 제어 대상과 무관하게 매 프레임 전원을 본다.
+  const _mnow = performance.now();
+  const _mdt = MPRED.lastT ? (_mnow - MPRED.lastT) : 16;
+  MPRED.lastT = _mnow;
+  mpredObserve(_mnow);
+  mpredTick(_mnow, _mdt);
+
   const near = (typeof nearestPerson === "function") ? nearestPerson()
              : { pos: person.node.position, dist: Math.hypot(person.node.position.x - LAYOUT.robot.base.x,
                                                              person.node.position.z - LAYOUT.robot.base.z) };
@@ -6025,6 +6761,8 @@ function safetyUpdate() {
   SAFE.trueDist = SCALE.m(near.dist);
 
   let srcPos = pp;
+  // 예측 이력 분리용 대상 식별자. GT 모드는 최근접 인물 idx, 검출 모드는 트랙 id.
+  let srcId = "gt:" + (near.id != null ? near.id : 0);
   if (MIL.safety && MIL.on) {
     // 모델 기반 안전 — 로봇은 '모델이 마지막으로 사람을 본 위치'만 안다.
     // 지연·미검출 동안 실제 위치와 벌어지는 간극이 곧 이 연구의 위험 시나리오다.
@@ -6035,6 +6773,7 @@ function safetyUpdate() {
       SAFE.dist = SCALE.m(Math.hypot(s.pos.x - LAYOUT.robot.base.x, s.pos.z - LAYOUT.robot.base.z));
       srcPos = s.pos;
       SAFE.trackId = thr ? thr.id : -1;
+      srcId = "mil:" + SAFE.trackId;
     } else {
       SAFE.dist = 99;   // 최근 5초 내 사람 검출 없음 → 로봇은 '없다'고 판단
       srcPos = null;
@@ -6111,9 +6850,21 @@ function safetyUpdate() {
   const reactive = clamp((SAFE.dist - SAFE.stopR) / (SAFE.slowR - SAFE.stopR), 0, 1);
   let predictive = 1;
   if (srcPos) {
-    predictionUpdate(srcPos, performance.now());
-    if (PRED.tStop < PRED.horizon) predictive = clamp(PRED.tStop / PRED.horizon, 0.15, 1) * 0.5;
-    else if (PRED.tSlow < PRED.horizon) predictive = 0.75;
+    predictionUpdate(srcPos, performance.now(), srcId);
+    /* 2단계(P0-5): 로컬 칼만 바닥과 백엔드 최고위험(worst) 중 **더 이른(보수적)** 진입시각을 쓴다.
+       worst는 '최근접'이 아니라 '예측상 최고위험'이라, 멀지만 빨리 진입할 사람을 여기서 잡는다.
+       백엔드 응답이 없거나 낡으면 로컬 칼만 값 그대로(로봇은 네트워크를 안 기다림).
+       관측 출처는 모드에 맞춘다 — GT 모드=진짜 위치, 검출 모드=MIL.tracks(로봇이 실제로 본 것).
+       그래서 검출 모드에서도 GT 전지성 누출 없이 worst를 제어에 반영한다. */
+    let effStop = PRED.tStop, effSlow = PRED.tSlow;
+    const w = MPRED.worst;
+    if (w && performance.now() - MPRED.at < 1000) {
+      if (w.tEntryStop != null) effStop = Math.min(effStop, w.tEntryStop);
+      if (w.tEntrySlow != null) effSlow = Math.min(effSlow, w.tEntrySlow);
+    }
+    PRED.effStop = effStop; PRED.effSlow = effSlow;
+    if (effStop < PRED.horizon) predictive = clamp(effStop / PRED.horizon, 0.15, 1) * 0.5;
+    else if (effSlow < PRED.horizon) predictive = 0.75;
   } else {   // 검출 없음/미탐 — 예측 시각화 전부 숨긴다
     if (PRED.line) PRED.line.setEnabled(false);
     if (DENS.plane) DENS.plane.setEnabled(false);
@@ -6127,9 +6878,17 @@ function safetyUpdate() {
     PRED.level = level;
     lampApply(level);
     if (level === 1 && !stopped && predictive < reactive && state.auto) {
-      const tIn = PRED.tStop < Infinity ? PRED.tStop : PRED.tSlow;
-      setStatus("🟡 선제 감속 — 예측 경로가 " + tIn.toFixed(1) + "s 후 " +
-                (PRED.tStop < Infinity ? "정지" : "감속") + " 반경 진입");
+      // 유효 진입시각(로컬 칼만 ∧ worst 중 이른 값). worst가 결정을 당겼으면 그 작업자를 알린다(2단계 UI).
+      const es = (PRED.effStop != null ? PRED.effStop : PRED.tStop);
+      const el = (PRED.effSlow != null ? PRED.effSlow : PRED.tSlow);
+      const isStop = es < Infinity, tIn = isStop ? es : el;
+      const w = MPRED.worst;
+      const byWorst = w && performance.now() - MPRED.at < 1000
+        && ((isStop && w.tEntryStop != null && w.tEntryStop <= es + 1e-6)
+            || (!isStop && w.tEntrySlow != null && w.tEntrySlow <= el + 1e-6));
+      setStatus("🟡 선제 감속 — " + (byWorst ? ("최고위험 작업자 " + w.id + "의 예측 경로가 ")
+                                             : "예측 경로가 ") +
+                tIn.toFixed(1) + "s 후 " + (isStop ? "정지" : "감속") + " 반경 진입");
       RUNLOG.onEvent("preSlow", SAFE.trueDist);
     }
     if (level === 0) RUNLOG.onEvent("clear", SAFE.trueDist);
@@ -6516,7 +7275,99 @@ function camIntrinsics(cam, w, h) {
     world_matrix_row_major: Array.from(wm.m).map(v => +v.toFixed(6)),
   };
 }
-async function renderWith(cam, setup, teardown) {
+/* opts.wait — 셰이더 대기(whenReadyAsync, 상한 1.5s)를 **켠다**. 기본은 끔.
+   2026-08-21에 기본값을 뒤집었다. 원래는 모든 패스가 기다렸고 "첫 캡처 검은 프레임 방지"가
+   이유였는데, 실측해 보니 **마스크 계열 3종만 안 기다려도 되고 나머지는 필요했다.**
+   ⚠️ 처음엔 RGB도 필요 없다고 보고 뺐다가 회귀를 냈다 — 아래 RGB 항목 참고.
+   이 대기를 뺄 때는 **반드시 연속 캡처 2~3장을 확인해라.** 첫 장만 보면 놓친다.
+   그리고 **첫 장도 따로 확인해라** — 첫 장에서만 터지는 문제가 따로 있다(마스크 패스 항목).
+   ⚠️ 측정할 때 URL에 ?v=... 를 붙여 브라우저 캐시를 우회해라. 캐시된 옛 sim.html을 보고
+   "효과 없음"으로 오판해 옳은 수정을 되돌린 적이 있다.
+
+   먼저 옛 주석의 진단 두 개는 사실이 아니다:
+     · "빈 LinesMesh가 영원히 !isReady" → !isReady인 메시 0개,
+       !isReadyForSubMesh인 서브메시도 0개다. 그 메시는 범인이 아니다.
+     · "그래서 상한 1.5s가 매번 만료된다" → 만료되지 않는다. 8회 중 7회 실제로 resolve됐다
+       (정상 5~16ms · 콜드 캡처 276·351·613ms · 웜 캡처 64~87ms).
+   실제 동작은 이렇다. scene.isReady()는 부작용 호출이라 첫 호출이 셰이더 컴파일을 유발하며
+   false를 뱉고, 끝나면 true가 된다. Scene._checkIsReady는 rAF가 아니라 setTimeout(...,100)
+   폴링이다. 그래서 대기 비용 ≈ isReady()가 메시 1591개를 훑는 값(웜 6ms·콜드 54ms) + 폴링 몇 바퀴.
+
+   ▸ **RGB 패스는 대기가 필요하다** (한때 필요 없다고 판단했다가 회귀를 냈다)
+     콜드 페이지 첫 캡처만 보면 대기 없이도 멀쩡해 보인다 — 카메라 4대를 대기 0으로
+     처음 찍었을 때 평균 밝기 192~207 · 검은 픽셀 0~0.02%였다. **그게 함정이다.**
+     문제는 2번째 캡처부터 터진다. gtOff/gtOn이 캡처마다 카메라 후처리를 껐다 켜므로
+     다음 캡처의 RGB 패스 때 후처리 이펙트가 아직 컴파일 중이고, 그러면 씬은 중간
+     텍스처에 정상적으로 그려지지만 **백버퍼로 복사하는 패스가 건너뛰어져** 결과가
+     scene.clearColor 단색이 된다(드로우콜은 정상, 프레임버퍼 바인딩도 정상).
+     예열 렌더를 20회로 늘려도 안 고쳐진다 — 렌더가 아니라 비동기 컴파일 완료를
+     기다려야 한다. 자세한 실측은 groundTruthImpl의 RGB 패스 주석에 있다.
+
+   ▸ **클래스 마스크 패스도 대기가 필요하다** — gtMat 재질을 처음 만드는 곳이라
+     컴파일 전에 찍으면 그 메시들이 통째로 안 그려져 **첫 캡처가 라벨의 절반을 잃는다.**
+     (실측: 1장째 26개·71,653px → 대기 넣으면 34개·138,377px). 자세한 건 해당 패스 주석.
+
+   ▸ 대기가 필요 없는 패스 (연기 농도 · 인스턴스 마스크)
+     바로 앞 클래스 마스크 패스가 이미 기다렸고 같은 계열 재질이라 컴파일이 끝나 있다.
+
+   ▸ 대기가 **반드시** 필요한 패스 (깊이맵 2장 — scene.fogEnabled를 켠다)
+     안개는 셰이더 define이다. 켜는 순간 재질 전체가 재컴파일 대상이 되는데, 그 전에 찍으면
+     안개가 안 먹은 **순백 프레임**이 나온다. 검게 나오는 게 아니라 **조용히 틀린다** —
+     같은 코드로 콜드 페이지 A/B (0~6m 깊이 패스, cvNE):
+        대기 없음 → 전 픽셀 226~227, 히스토그램 1구간 = "전부 0.67m" (쓰레기)
+        대기 있음 → min 22 · max 255 · 15구간 정상 램프 · 평균 124.6
+     깊이 패스에서 opts.wait를 빼지 말 것. 이게 그 대기가 지키고 있던 진짜 값이다. */
+/* ══ 마스크 픽셀 → 클래스 판정: 최근접 색 ══════════════════════════════════
+   캔버스 백버퍼는 4배 MSAA로 만들어져 있다(engine antialias:true, gl.SAMPLES=4).
+   그래서 물체 외곽선 픽셀이 **이웃 클래스와 정확히 25/50/75%로 섞인다.**
+   실측(cvNE 마스크 1장): 마스크 전체 색이 41가지뿐인데 클래스 색이 아닌 것들이
+     equip α0.75/배경 = (5,101,196) · α0.5 = (9,73,136) · α0.25 = (14,46,77)
+     kettle α0.75/배경 = (196,101,5) · equip α0.25/kettle 위 = (191,128,64) …
+   전부 "클래스 색을 알파 0.25/0.5/0.75로 합성한 값"과 소수점까지 일치했다.
+   종전의 "픽셀 색 == 클래스 색(±8)" 판정은 이 픽셀들을 통째로 버렸다(9,582px = 라벨 픽셀의 4.7%).
+   외곽선이라 얇은 물체일수록 손해가 크다.
+
+   해결: 정확 일치 대신 **가장 가까운 색**으로 판정한다. MSAA 혼합색은 두 원본 색의
+   선형결합이라 선분 위의 점이고, 선분 위의 점은 **커버리지가 큰 쪽 끝점에 더 가깝다.**
+   즉 최근접 색 = 그 픽셀을 실제로 더 많이 덮은 물체다. 수학적으로 정확한 복원이다.
+   배경색도 후보에 넣어야 한다 — 그래야 배경이 우세한 바깥쪽 외곽선이 물체로 끌려오지 않는다.
+
+   ⚠️ 렌더링 쪽으로 고치려던 시도(마스크만 samples=1 렌더타깃에 찍기)는 **되돌렸다.**
+   마스크는 완벽해졌지만(색 41→5, 미일치 0) RTT가 렌더 패스를 하나 더 만들면서
+   **sensorGrain 후처리가 준비 안 된 상태로 남아 2번째 캡처부터 RGB가 단색**이 됐다.
+   판정만 바꾸는 이쪽이 렌더 파이프라인을 전혀 건드리지 않아 안전하다. */
+const GT_BG_C = GT_ENV;                 // 배경(환경) 색 — 최근접 후보에 포함
+function nearestColorKey(r, g, b, palette) {
+  /* palette: [key, [r,g,b]] 배열. 배경보다 가까운 클래스가 없으면 null(=배경).
+     tol: 완전히 동떨어진 색(후처리 잔재 등)은 버린다. MSAA 혼합은 항상 두 원본
+     사이에 있으므로 최근접 거리가 클 수 없다. */
+  let bestK = null, bestD = Infinity;
+  for (const [k, c] of palette) {
+    const d = (r-c[0])*(r-c[0]) + (g-c[1])*(g-c[1]) + (b-c[2])*(b-c[2]);
+    if (d < bestD) { bestD = d; bestK = k; }
+  }
+  const db = (r-GT_BG_C[0])*(r-GT_BG_C[0]) + (g-GT_BG_C[1])*(g-GT_BG_C[1]) + (b-GT_BG_C[2])*(b-GT_BG_C[2]);
+  return db <= bestD ? null : bestK;    // 배경이 더 가까우면 그 픽셀은 배경이다
+}
+/* 이미지 전체를 훑기 전에 **서로 다른 색만 모아 한 번씩** 판정한다.
+   마스크는 색이 수십 가지뿐이라(MSAA 단계가 유한하다) 픽셀마다 팔레트를 도는 것보다
+   훨씬 싸다 — 96만 픽셀 × 팔레트 40개 대신, 색 41가지 × 40개. */
+function classifyByNearest(px, w, h, palette) {
+  const cache = new Map(), out = new Int32Array(w*h).fill(-1);
+  const keys = palette.map(e => e[0]);
+  for (let i = 0, pi = 0; i < px.length; i += 4, pi++) {
+    const code = (px[i] << 16) | (px[i+1] << 8) | px[i+2];
+    let ki = cache.get(code);
+    if (ki === undefined) {
+      const k = nearestColorKey(px[i], px[i+1], px[i+2], palette);
+      ki = k === null ? -1 : keys.indexOf(k);
+      cache.set(code, ki);
+    }
+    out[pi] = ki;
+  }
+  return out;
+}
+async function renderWith(cam, setup, teardown, opts) {
   const savedCams = scene.activeCameras ? scene.activeCameras.slice() : null;
   const savedCam = scene.activeCamera;
   const savedVp = cam.viewport;   // PiP 인셋 뷰포트가 물려오면 GT가 구석에 렌더됨 — 전체 프레임 강제
@@ -6524,9 +7375,10 @@ async function renderWith(cam, setup, teardown) {
   scene.activeCameras = [];
   scene.activeCamera = cam;
   if (setup) setup();
-  // 갓 생성된 마스크 머티리얼의 병렬 셰이더 컴파일 대기 — 첫 캡처 검은 프레임 방지.
-  // 단 상한 1.5s: 빈 LinesMesh(predLine 등)는 영원히 !isReady라 무한 대기로 캡처가 멈춘다(실측).
-  await Promise.race([scene.whenReadyAsync(), new Promise(r => setTimeout(r, 1500))]);
+  // setup이 셰이더 define을 바꾼 패스만 컴파일을 기다린다(현재 깊이맵 2장 = 안개 켜기).
+  // 상한 1.5s — whenReadyAsync가 늦어도 이만큼 벌어 주면 예열 렌더가 제 값을 찍는다.
+  if (opts && opts.wait)
+    await Promise.race([scene.whenReadyAsync(), new Promise(r => setTimeout(r, 1500))]);
   scene.render(); scene.render(); scene.render();   // 카메라·뷰포트 전환 후 첫 프레임은 포스트체인 재바인딩으로 검게 나옴 — 예열 렌더
   const w = engine.getRenderWidth(), h = engine.getRenderHeight();
   const data = await engine.readPixels(0, 0, w, h);
@@ -6549,6 +7401,11 @@ function pixelsToDataURL(px, w, h) {
   return cv.toDataURL("image/png");
 }
 const GT_W = 960, GT_H = 720;   // 데이터셋 해상도 — 창 크기와 무관하게 고정
+/* 한때 연기 농도 패스를 반해상도로 찍어 캡처를 줄이려 했는데 **효과가 없어서 뺐다.**
+   픽셀 수가 병목이 아니었다 — 실측: 불투명 파티클 렌더 48ms(평소 54ms와 동일) ·
+   파티클 스냅샷 3패스 8ms · readPixels 2ms. 전부 무시할 수준이다.
+   그때는 패스마다 붙는 셰이더 대기를 주범으로 봤는데, 그 대기는 2026-08-21에
+   통째로 제거했다(근거는 renderWith 주석). 남은 비용은 파티클 렌더 자체다. */
 /* 동시 실행 방지 — 캡처 중에는 씬 전체의 머티리얼을 마스크용으로 바꿨다가 되돌린다.
    두 호출이 겹치면 서로의 저장/복원 맵을 덮어써 **라벨이 0개로 나온다**(실측 확인).
    generateDataset은 await로 순차 호출하지만, GT 버튼 연타 등으로 겹칠 수 있다. */
@@ -6577,7 +7434,18 @@ async function groundTruthImpl(camId, opt) {
   try {
 
   // 1) RGB
-  const rgb = await renderWith(cam, null, null);
+  /* ★ opts.wait 필수 — 빼면 **2번째 캡처부터 RGB가 통째로 단색**이 된다(2026-08-21 회귀).
+     한때 이 대기를 "첫 캡처 검은 프레임 방지"로 보고 없앴는데, 실제로 지키던 것은
+     **카메라 후처리 체인의 준비 상태**였다. gtOff/gtOn이 캡처마다 후처리를 껐다 켜므로
+     다음 캡처의 RGB 패스 때 이펙트가 아직 컴파일 중이고, 그러면 씬은 중간 텍스처에
+     정상적으로 그려지지만(드로우콜도 정상) **백버퍼로 복사하는 패스가 건너뛰어져**
+     scene.clearColor 단색만 남는다. 검게 나오는 게 아니라 조용히 빈 이미지가 된다.
+     실측(연속 3장, cvNE, RGB 이미지의 서로 다른 색 가짓수):
+        대기 있음 → 14,709 / 14,703 / 14,688   (정상)
+        대기 없음 → 14,669 /      1 /      1   (2번째부터 단색)
+     예열 렌더를 3회 → 20회로 늘려도 안 고쳐진다 — 컴파일은 렌더가 아니라
+     비동기 완료를 기다려야 하기 때문이다. **첫 장만 보고 판단하지 말 것.** */
+  const rgb = await renderWith(cam, null, null, { wait:true });
 
   // 2) 세그멘테이션 마스크 — 전 메시를 클래스별 무광 색으로 스왑.
   //    톤매핑이 머티리얼 레벨(IPC)에 적용되므로 마스크 렌더 동안은 꺼야
@@ -6646,21 +7514,37 @@ async function groundTruthImpl(camId, opt) {
   }, () => {
     savedMats.forEach((mat, mesh) => { mesh.material = mat; });
     gtOn();
-  });
+  }, { wait:true });
+  /* ★ opts.wait 필수 — 빼면 **페이지 로드 후 첫 캡처가 라벨의 절반을 잃는다.**
+     이 패스가 gtMat 재질을 처음 만들어 메시 1591개에 붙이는 곳이다. 컴파일이 끝나기 전에
+     찍으면 Babylon이 준비 안 된 재질의 메시를 **그리지 않고 건너뛰어**, 그 물체가
+     마스크에서 통째로 빠진다. 실측(콜드 페이지, cvNE, noDepth):
+        대기 없음 → 1장째 라벨 26개·라벨픽셀 71,653 / 2장째부터 34개·138,336
+        대기 있음 → 1장째 라벨 34개·라벨픽셀 138,377 / 이후 동일
+     시간 비용은 사실상 없다(6.4s → 6.5s). 첫 캡처에만 실제로 기다리고 그 뒤로는
+     scene.isReady()가 true라 즉시 통과하기 때문이다.
+     ⚠️ 한때 "효과 없음"으로 판단해 되돌린 적이 있는데 **브라우저가 옛 sim.html을 캐시**해
+     생긴 오판이었다. 이 파일을 고치고 측정할 때는 URL에 ?v=... 를 붙여 캐시를 우회해라. */
+  /* ↑ 셰이더 대기는 renderWith에서 통째로 없앴다(2026-08-21). 근거는 renderWith 주석 참고 —
+     "항상 1.5s 만료" 진단이 틀렸고, 실제 비용은 패스당 60~600ms였다. */
 
   /* 2.1) 연기 농도 패스 — 전 메시를 검정으로 깔고 **연기만 흰색·본래 알파**로 찍는다.
      겹칠수록 밝아지므로 픽셀 밝기가 곧 그 시선의 연기 두께(광학 깊이)가 된다.
      이 값으로 "여기는 정말 안 보이는가"를 판정해 아래에서 마스크에 덮는다. */
+  /* 연기가 없으면 이 패스를 통째로 건너뛴다. 표본의 절반가량이 화재 아님이고,
+     그 경우 결과는 전부 검정이라 아래 덮어쓰기가 아무 일도 하지 않는다. */
   let savedMatsS = null;
-  const smokeDen = await renderWith(cam, () => {
+  const smokeDen = fsmoke.particles.length === 0 ? null : await renderWith(cam, () => {
     gtOff();
     savedMatsS = new Map();
-    /* 여기서는 `!m.material`도 건너뛰지 않는다 — 재질이 없는 메시는 Babylon 기본 재질로
-       **희게** 그려져 연기로 오인된다(연기 0개인데 smoke 113px이 남던 원인).
-       다른 패스는 클래스 색을 입히는 것이라 재질 없는 메시를 빼도 됐지만,
-       이 패스는 "검게 깔고 연기만 밝게"가 전제라 하나라도 밝으면 임계를 넘는다. */
+    /* 다른 패스와 같은 조건으로 훑는다(`!m.material`은 건너뜀).
+       한때 재질 없는 메시까지 칠했는데 — "재질이 없으면 기본 재질로 희게 그려져 연기로
+       오인된다"고 봤기 때문 — **그게 캡처를 1.3s → 6.5s로 만들었다.** 없던 메시에 재질을
+       붙이면 셰이더를 새로 컴파일하고, 그 비용이 렌더를 막는다.
+       실제로 확인해 보니 재질 없는 보이는 메시 46개는 **전부 `__root__`(정점 0개)**라
+       그려지지도 않는다. 만질 이유가 없었다. */
     for (const m of scene.meshes) {
-      if (!m.isEnabled() || !m.isVisible) continue;
+      if (!m.isEnabled() || !m.isVisible || !m.material) continue;
       savedMatsS.set(m, m.material);
       m.material = gtMat("smokeblack", [0,0,0]);
     }
@@ -6692,7 +7576,7 @@ async function groundTruthImpl(camId, opt) {
   const isFireAt = (arr, i) => FIRE_C && Math.abs(arr[i]-FIRE_C[0]) <= 8
     && Math.abs(arr[i+1]-FIRE_C[1]) <= 8 && Math.abs(arr[i+2]-FIRE_C[2]) <= 8;
   const paintSmoke = (target, color, protectFrom) => {
-    if (smokeAlive === 0) return 0;
+    if (smokeAlive === 0 || !smokeDen) return 0;   // 연기 없으면 농도 패스 자체를 건너뛴다
     const t = smokeThresh(), d = smokeDen.data, p = target.data;
     if (!d || d.length !== p.length) return 0;     // 해상도가 어긋나면 건드리지 않는다
     const pf = (protectFrom && protectFrom.length === p.length) ? protectFrom : null;
@@ -6748,6 +7632,7 @@ async function groundTruthImpl(camId, opt) {
     savedMatsI.forEach((mat, mesh) => { mesh.material = mat; });
     gtOn();
   });
+
   /* YOLO 라벨은 **이 인스턴스 마스크**에서 나온다(클래스 마스크는 참고용).
      그러므로 연기 덮기를 여기에도 반드시 적용해야 학습 라벨이 맞는다. */
   instMat("smoke_0");                                      // 팔레트 슬롯 확보
@@ -6758,18 +7643,16 @@ async function groundTruthImpl(camId, opt) {
   {
     const { data:ip, w:iw, h:ih } = inst;
     const byColor = [...instIndex.entries()].map(([k, idx]) => [k, INST_PALETTE[idx]]);
+    // 정확 일치 대신 최근접 색 — MSAA 외곽선 픽셀을 우세한 개체로 되돌린다(위 주석)
+    const cls = classifyByNearest(ip, iw, ih, byColor);
     for (let y = 0; y < ih; y++) for (let x = 0; x < iw; x++) {
-      const i = (y*iw + x) * 4;
-      const r = ip[i], g = ip[i+1], b = ip[i+2];
-      for (const [k, c] of byColor) {
-        if (Math.abs(r-c[0]) <= 8 && Math.abs(g-c[1]) <= 8 && Math.abs(b-c[2]) <= 8) {
-          const bx = instBoxes.get(k) || (instBoxes.set(k, {minX:x, maxX:x, minY:y, maxY:y, n:0}), instBoxes.get(k));
-          if (x < bx.minX) bx.minX = x; if (x > bx.maxX) bx.maxX = x;
-          if (y < bx.minY) bx.minY = y; if (y > bx.maxY) bx.maxY = y;
-          bx.n++;
-          break;
-        }
-      }
+      const ki = cls[y*iw + x];
+      if (ki < 0) continue;                              // 배경
+      const k = byColor[ki][0];
+      const bx = instBoxes.get(k) || (instBoxes.set(k, {minX:x, maxX:x, minY:y, maxY:y, n:0}), instBoxes.get(k));
+      if (x < bx.minX) bx.minX = x; if (x > bx.maxX) bx.maxX = x;
+      if (y < bx.minY) bx.minY = y; if (y > bx.maxY) bx.maxY = y;
+      bx.n++;
     }
   }
   const instances = [];
@@ -6809,7 +7692,7 @@ async function groundTruthImpl(camId, opt) {
       scene.fogEnd = savedFog.end; scene.fogColor = savedFog.color;
       scene.fogEnabled = savedFog.enabled;
       gtOn();
-    });
+    }, { wait:true });   // ★ 안개 define 재컴파일 대기 — 빼면 깊이맵이 순백 평면이 된다(renderWith 주석)
     depthURL = pixelsToDataURL(depthRes.data, depthRes.w, depthRes.h);
   } catch (e) { console.warn("depth 캡처 실패:", e); }
 
@@ -6842,27 +7725,25 @@ async function groundTruthImpl(camId, opt) {
       scene.fogEnd = savedFog2.end; scene.fogColor = savedFog2.color;
       scene.fogEnabled = savedFog2.enabled;
       gtOn();
-    });
+    }, { wait:true });   // ★ 같은 이유. 근거리 깊이도 안개를 켠다
     depthNearURL = pixelsToDataURL(nearRes.data, nearRes.w, nearRes.h);
   } catch (e) { console.warn("근거리 깊이 캡처 실패:", e); }
 
   // 4) 마스크 픽셀 → 클래스별 bbox (YOLO 정규화, 상단 원점)
   const { data:mp, w, h } = mask;
   const boxes = {};
+  // 정확 일치 대신 최근접 색 (위 nearestColorKey 주석 참고)
+  const clsPal = GT_CLASSES.map(gc => [gc.key, gc.color]);
+  const clsIdx = classifyByNearest(mp, w, h, clsPal);
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      const i = (y*w + x) * 4;
-      const r = mp[i], g = mp[i+1], b = mp[i+2];
-      for (const gc of GT_CLASSES) {
-        const c = gc.color;
-        if (Math.abs(r-c[0]) <= 8 && Math.abs(g-c[1]) <= 8 && Math.abs(b-c[2]) <= 8) {
-          const bx = boxes[gc.key] || (boxes[gc.key] = {minX:x, maxX:x, minY:y, maxY:y, n:0});
-          if (x < bx.minX) bx.minX = x; if (x > bx.maxX) bx.maxX = x;
-          if (y < bx.minY) bx.minY = y; if (y > bx.maxY) bx.maxY = y;
-          bx.n++;
-          break;
-        }
-      }
+      const ki = clsIdx[y*w + x];
+      if (ki < 0) continue;                              // 배경
+      const key = clsPal[ki][0];
+      const bx = boxes[key] || (boxes[key] = {minX:x, maxX:x, minY:y, maxY:y, n:0});
+      if (x < bx.minX) bx.minX = x; if (x > bx.maxX) bx.maxX = x;
+      if (y < bx.minY) bx.minY = y; if (y > bx.maxY) bx.maxY = y;
+      bx.n++;
     }
   }
   // 클래스 마스크 bbox — 클래스당 1개. 참고용으로만 남긴다(labelsByClass).
@@ -6912,6 +7793,28 @@ async function groundTruthImpl(camId, opt) {
     label_mode: "instance",
     label_note: "labels/labelText는 인스턴스 마스크 기준(개체당 1박스). 클래스 마스크 기준 " +
                 "합산 박스는 labelsByClass에 별도 보관 — 학습에는 쓰지 말 것.",
+    /* ── 씬 조건 — "이 프레임을 왜 놓쳤나"에 사후에 답하기 위한 필드 (2026-08-24) ──
+       종전 메타에는 카메라·깊이·인스턴스만 있었다. 그래서 학습 쪽에서 "검출된 데이터와
+       안 된 데이터가 뭐가 다르냐"를 물어도 **근거가 파일에 없었다.**
+       아래 값은 전부 randomizeScene()이 샘플마다 흔드는 축이라, 그대로 실패 원인
+       후보가 된다. images/labels와 같은 base 이름으로 짝지어진다.
+       ⚠️ imagesOnly 모드에서는 gt/를 아예 안 쓰므로 이 메타도 안 나온다. */
+    scene: {
+      seed: SEED0,
+      fire: state.fire,
+      // 0 = 점화 직후, 1 = 최성기(90s). "옅은 구간에서만 놓치는가"를 가르는 축
+      fire_progress: state.fire ? +Math.min(1, FIRE_FOG.t / FIRE_FOG.full).toFixed(4) : 0,
+      fog_density: +scene.fogDensity.toFixed(5),    // 화면 전체를 덮는 연무 (렌더된 실제 값)
+      smoke_particles: fsmoke.particles.length,     // 연기 입자 수 — 가림 정도의 직접 지표
+      steam_k: +STEAM.k.toFixed(3),                 // 김 세기 — 화재 오탐(개요 핵심 난제) 축
+      people: 1 + (typeof EXTRAS !== "undefined" ? EXTRAS.length : 0),
+      /* 센서 열화는 프리셋 이름이 아니라 **값을 직접** 흔든다(randomizeScene).
+         그래서 이름이 아니라 값을 남긴다 — 프리셋으로 적으면 거짓말이 된다. */
+      sensor: { grain:+SENSOR.grain.toFixed(2), distortion:+SENSOR.distortion.toFixed(3),
+                chroma:+SENSOR.chroma.toFixed(3), blur:+SENSOR.blur.toFixed(3),
+                vignette:+SENSOR.vignette.toFixed(3), expJit:+SENSOR.expJit.toFixed(3),
+                lowres:SENSOR.lowres, on:SENSOR.on },
+    },
     instances,
   };
   return { rgb: pixelsToDataURL(rgb.data, rgb.w, rgb.h),
@@ -7097,7 +8000,18 @@ function randomizeScene() {
      1/3도 안 돼 클래스 불균형이 커진다(실측: 2샘플에서 fire 3박스 vs equipment 296박스).
      화재 감지가 이 프로젝트 목적의 절반이므로 절반은 화재 장면이어야 한다.
      sim.html?fire=0.7 처럼 회차별로 조절할 수 있게 열어 둔다. */
-  setFire(Math.random() < FIRE_P);
+  const wantFire = Math.random() < FIRE_P;
+  setFire(wantFire);
+  /* 화재 표본은 **진행 단계를 여기서 뽑는다.** 안 하면 직전 샘플 상태가 그대로 이어져
+     초기 발화(연기 25개)와 최성기(연기 3548개) 두 극단만 나오고, 정작 필요한
+     "연기가 옅게 낀" 중간 구간이 비어 버린다. fireSeekTo가 그 상태를 즉시 만든다. */
+  if (wantFire) fireSeekTo(fireRandomStage());
+  else { fsmoke.reset(); firePS.reset(); }   // 꺼진 표본에 직전 연기가 남지 않게
+  /* 김 세기 — 실사 김은 조리 종류·시점에 따라 0~대량까지 변한다(C-2, 참조프레임 확인).
+     15%는 투입·배출급 대량 방출 표본 — "김이 연기 규모에 접근하는" 어려운 음성 표본이
+     난제를 데이터에 존재하게 만든다. temp가 170 고정이므로 배율 k가 유일한 손잡이다. */
+  STEAM.k = (0.2 + Math.random() * 1.8) * (Math.random() < 0.15 ? 3 : 1);
+  steamSettle();
   // 센서 특성 랜덤화 — 카메라 개체차·설치환경 차이를 데이터에 반영
   SENSOR.grain = 2 + Math.random() * 22;
   SENSOR.distortion = Math.random() * 0.30;
@@ -7188,6 +8102,14 @@ async function generateDataset(n) {
   });
   const t0 = performance.now();
   let done = 0;
+  /* ── conditions.csv — 샘플별 씬 조건을 한 장으로 모은다 (2026-08-24) ──────────
+     gt/*_meta.json은 이미지 1장당 파일 1개라, "검출된 것 vs 안 된 것"을 비교하려면
+     수천 개를 열어야 한다. 학습 쪽이 예측 결과와 바로 join할 수 있게 CSV로도 남긴다.
+     imagesOnly 모드에서도 나온다 — meta는 안 저장해도 조건은 알아야 하기 때문이다. */
+  const CSV_COLS = ["file","camera","seed","fire","fire_progress","fog_density",
+                    "smoke_particles","steam_k","people","grain","distortion",
+                    "chroma","blur","vignette","expJit","lowres"];
+  const condRows = [CSV_COLS.join(",")];
   try {
     for (let i = 0; i < n && !DATAGEN.abort; i++) {
       /* 샘플마다 인원 수도 랜덤 — 다인원 분포를 데이터에 반영.
@@ -7203,6 +8125,11 @@ async function generateDataset(n) {
         await write("images", base + ".png", gt.rgb);
         DATAGEN.saved++;                                   // 상태바 데이터셋 카운트
         await write("labels", base + ".txt", undefined, gt.labelText);
+        const sc = gt.meta.scene, sn = sc.sensor;
+        condRows.push([base + ".png", id, sc.seed, sc.fire ? 1 : 0, sc.fire_progress,
+                       sc.fog_density, sc.smoke_particles, sc.steam_k, sc.people,
+                       sn.grain, sn.distortion, sn.chroma, sn.blur, sn.vignette,
+                       sn.expJit, sn.lowres].join(","));
         if (!DATAGEN.imagesOnly) {
           await write("gt", base + "_mask.png", gt.mask);
           await write("gt", base + "_inst.png", gt.instMask);
@@ -7229,6 +8156,7 @@ async function generateDataset(n) {
         aborted: DATAGEN.abort,
       };
       await write("", "dataset.json", undefined, JSON.stringify(manifest, null, 1));
+      await write("", "conditions.csv", undefined, condRows.join("\n"));
       const fh = await dir.getFileHandle("classes.txt", { create:true });
       const ws = await fh.createWritable();
       await ws.write(GT_CLASSES.map(c => c.label).join("\n"));
@@ -7398,8 +8326,51 @@ function buildPushables() {
      solid 기본값(true)으로 부르므로 밀 수 있는 물건도 벽으로 취급된다. */
   resolvePersonCollision(person.node.position);
   for (const e of EXTRAS) if (e && e.node) resolvePersonCollision(e.node.position);
+  buildStaticPropColliders();
   console.log("[PUSH] 밀 수 있는 물건 " + PUSH.bodies.length + "개 — " +
               PUSH.bodies.map(b => b.label + " " + b.size.join("×")).join(" · "));
+}
+
+/* ══ 설비 정적 충돌체 — 밀린 카트가 설비를 뚫고 들어가던 문제 (2026-08-24) ═══════
+   buildColliders()가 만드는 정적 충돌체는 **셀 안쪽 9개뿐**이다(바닥·벽4·튀김솥·조리대·
+   선반·제어반·로봇받침). ENV_PROPS로 놓은 나머지 설비 — 국솥·냉장고·세척대·배식구·
+   재료선반·건조선반·작업대 — 는 **충돌체가 아예 없었다.** 그래서 사람이 민 카트가
+   설비를 그대로 통과했다(실측 스크린샷).
+
+   프롭마다 상수를 적지 않고 **자식 메시의 월드 AABB에서 잰다** — GLB가 바뀌거나 배치를
+   옮겨도 따라간다. 밀 수 있는 물건은 건너뛴다(그쪽은 동적 바디가 따로 있다).
+
+   ⚠️ 0.94로 살짝 줄인다. 붙여 놓은 설비끼리 AABB가 1~2cm 겹치는 경우가 있는데,
+   정적끼리는 서로 안 밀지만 그 사이에 낀 카트가 떨리는 것을 막는다.
+   ⚠️ 벽선반처럼 공중에 뜬 것도 그대로 만든다 — 카트가 닿지 않으므로 무해하고,
+   높이를 따져 거르면 규칙이 하나 더 늘 뿐이다. */
+function buildStaticPropColliders() {
+  if (!PHYS.ready || PHYS.propCols) return;
+  PHYS.propCols = [];
+  const ST = BABYLON.PhysicsShapeType;
+  for (let i = 0; i < ENV_PROPS.length; i++) {
+    const h = scene.getTransformNodeByName("envProp_" + i);
+    if (!h) continue;
+    if (h.metadata && h.metadata.pushable) continue;          // 동적 바디가 이미 있다
+    let x0=1e9, x1=-1e9, y0=1e9, y1=-1e9, z0=1e9, z1=-1e9, n=0;
+    for (const m of h.getChildMeshes()) {
+      if (!m.getTotalVertices || !m.getTotalVertices()) continue;
+      m.computeWorldMatrix(true);
+      const bb = m.getBoundingInfo().boundingBox;
+      const a = bb.minimumWorld, b = bb.maximumWorld;
+      x0=Math.min(x0,a.x); x1=Math.max(x1,b.x);
+      y0=Math.min(y0,a.y); y1=Math.max(y1,b.y);
+      z0=Math.min(z0,a.z); z1=Math.max(z1,b.z); n++;
+    }
+    if (!n) continue;
+    const sx=(x1-x0)*0.94, sy=(y1-y0)*0.94, sz=(z1-z0)*0.94;
+    if (sx < 0.05 || sz < 0.05) continue;                     // 장식용 얇은 것은 건너뛴다
+    const box = invisibleBox("col_env_" + i, [sx, sy, sz],
+                             [(x0+x1)/2, (y0+y1)/2, (z0+z1)/2]);
+    new BABYLON.PhysicsAggregate(box, ST.BOX, {mass:0, friction:0.7, restitution:0.05}, scene);
+    PHYS.propCols.push(box);
+  }
+  console.log("[PHYS] 설비 정적 충돌체 " + PHYS.propCols.length + "개 생성");
 }
 /* ══ 사람 → 카트 밀기 ═══════════════════════════════════════════════════════
    **키네마틱 캡슐에 물리 접촉만 맡기면 사람이 카트를 뚫고 지나간다**(실측: 카트가 4cm만
@@ -7483,12 +8454,20 @@ function pushUpdate(dt) {
 function demoPushCart() {
   if (!PUSH.active) { setStatus("물리가 꺼져 있어 카트를 밀 수 없습니다"); return null; }
   const B = LAYOUT.robot.base;
-  // 로봇에서 가장 가까운 카트를 고른다 — 가장 짧게 밀어도 링에 들어간다
+  /* 로봇에서 가까운 것 중 **손 높이에 맞는 카트**를 고른다 (2026-08-24).
+     종전에는 거리만 봐서 바스켓 카트(윗면 0.81m)가 뽑혔는데, `Push_Loop`은 손을
+     1.18m로 내밀어 민다. 0.37m 차이를 상체 숙임으로 메우느라 **동작이 카트에 비해
+     과하게** 보였다. 팬 카트(1.43m)는 손이 오히려 윗면보다 낮아 숙일 필요가 없다.
+     거리에 높이 벌점을 더해 고른다 — 가까워도 낮은 카트면 밀린다. */
+  const HAND_Y = 1.18;
   let best = null, bd = 1e9;
   for (const b of PUSH.bodies) {
     const d = Math.hypot(b.box.position.x - B.x, b.box.position.z - B.z);
-    if (d < bd) { bd = d; best = b; }
+    const topY = b.box.position.y + b.half[2];
+    const cost = d + Math.max(0, HAND_Y - topY) * 6;      // 손보다 낮을수록 벌점
+    if (cost < bd) { bd = cost; best = b; }
   }
+  bd = best ? Math.hypot(best.box.position.x - B.x, best.box.position.z - B.z) : 0;
   if (!best) return null;
   const c = best.box.position;
   // 카트 → 로봇 방향. 사람은 그 반대편에 선다
@@ -7524,7 +8503,12 @@ function demoPushCart() {
 /* 상한 0.50rad(29°) — 스파인 굽힘 1rad당 손이 약 0.58m 내려간다(실측: 0.20→0.113m,
    0.40→0.232m). 낮은 물건(0.69~0.80m)에서 필요한 굽힘이 약 0.56rad이라 상한에 걸리지만,
    그 이상은 미는 자세가 아니라 절하는 자세가 된다. 손이 조금 뜨는 쪽을 택한다. */
-const PUSH_LEAN_MAX = 0.50, PUSH_LEAN_GAIN = 2.2, PUSH_LEAN_RELAX = 1.5;
+/* 상한 0.50rad(28.6°)은 제일 낮은 물건(쓰레기통 0.69m)에 손을 닿게 하려고 잡은 값이다.
+   그런데 그만큼 숙이면 **평범한 카트에서는 동작이 과해 보인다**(2026-08-24 피드백).
+   0.34rad(19.5°)로 낮춘다 — 바스켓 카트(0.81m)까지는 이걸로 닿고, 그보다 낮은 물건은
+   손이 조금 뜬다. 과한 자세보다 그쪽이 낫다. 런타임에서 __sim.PUSH_LEAN으로 조절 가능. */
+const PUSH_LEAN = { max: 0.25, gain: 1.8, relax: 1.5 };   // 0.50 → 0.34 → 0.25 (피드백)
+const PUSH_LEAN_MAX = PUSH_LEAN.max, PUSH_LEAN_GAIN = PUSH_LEAN.gain, PUSH_LEAN_RELAX = PUSH_LEAN.relax;
 function pushLeanRig(rig, sk, dt) {
   if (!rig || !sk) return;
   if (!rig.__hands) {
@@ -7544,10 +8528,10 @@ function pushLeanRig(rig, sk, dt) {
   const sec = (dt / 1000);
   if (rig.pushT > 0 && rig.pushTopY != null) {
     const handY = (hL.getAbsolutePosition(mesh).y + hR.getAbsolutePosition(mesh).y) / 2;
-    rig.__lean = clamp((rig.__lean || 0) + (handY - rig.pushTopY) * PUSH_LEAN_GAIN * sec,
-                       0, PUSH_LEAN_MAX);
+    rig.__lean = clamp((rig.__lean || 0) + (handY - rig.pushTopY) * PUSH_LEAN.gain * sec,
+                       0, PUSH_LEAN.max);
   } else {
-    rig.__lean = Math.max(0, (rig.__lean || 0) - PUSH_LEAN_RELAX * sec);
+    rig.__lean = Math.max(0, (rig.__lean || 0) - PUSH_LEAN.relax * sec);
   }
   if (rig.__lean > 0.002) {
     const e = tn.rotationQuaternion.toEulerAngles();
@@ -7908,8 +8892,13 @@ const RUNLOG = {
   },
 };
 
+/* cam — **자유 시점일 때 대신 쓸 카메라.** 종전 기본값 `corner`(CAM2 코너 월마운트)는
+   섬 배치에서 SURV에 등록되지 않는 카메라라, 자유 시점에서 검증을 켜면 milCapture가
+   매번 조용히 실패했다(실측: 박스 0개 · MIL.err만 증가). 실제 설치각에 가장 가까운
+   `cvN`(북벽 조리라인)으로 둔다 — 2026-08-24 회의에서 카메라를 10대로 줄이며 cv45가
+   빠졌다. 배치가 달라 이것마저 없으면 milCamId()가 첫 카메라로 물러선다. */
 const MIL = { on:false, mode:"mock", url:"http://localhost:8000/detect",
-              latency:2000, hz:1, acc:0, busy:false, cam:"corner",
+              latency:2000, hz:1, acc:0, busy:false, cam:"cvN",
               lastBoxes:null, lastAge:0, drift:0, err:0, n:0,
               safety:false, lastPersonSeen:null,
               // 트래킹 연동: 서버가 track id를 주면 트랙별 월드 위치·이력·속도를 여기 유지한다.
@@ -7986,7 +8975,24 @@ const ONNX = {
   labels: GT_CLASSES.map(c => c.label),
   conf: 0.25, iou: 0.45, ep: null, inName: null, outName: null, lastMs: 0,
   canvas: null, ctx: null,
+  isDummy: false,          // 더미 모델이면 true — 화면이 "검출된다"고 거짓말하지 않게 한다
+  nc: null,                // 모델이 실제로 내는 클래스 수 (출력에서 읽는다)
+  labelsSrc: "GT",         // "GT" | "URL" — 라벨을 어디서 가져왔는지
 };
+
+/* 라벨을 URL로 갈아끼운다: `?labels=fire,smoke`
+   **왜 필요한가.** ONNX 출력에는 클래스 *이름*이 없다. 번호(0,1,2…)만 온다.
+   이름은 우리가 붙이는데 기본값이 이 시뮬의 GT 6종이다. 화재팀이 Roboflow에서
+   fire/smoke **2종**만 학습해 오면 번호 0=fire·1=smoke인데 우리 목록은 0=person·1=fire이라
+   **불이 person으로 찍힌다.** 박스는 멀쩡해 보여서 아무도 못 알아챈다
+   (2026-08-25 시험 모델 `_eval/onnx_shape_test/v8_2cls.onnx`로 재현). */
+try {
+  const q = new URLSearchParams(location.search).get("labels");
+  if (q) {
+    const L = q.split(",").map(v => v.trim()).filter(Boolean);
+    if (L.length) { ONNX.labels = L; ONNX.labelsSrc = "URL"; }
+  }
+} catch (e) { /* 잘못 준 값은 무시 — 발표 중에 예외로 멈추면 안 된다 */ }
 async function onnxLoadRuntime() {
   if (ONNX.ort) return ONNX.ort;
   await new Promise((res, rej) => {
@@ -8001,6 +9007,25 @@ async function onnxLoadRuntime() {
   ONNX.ort.env.wasm.numThreads = 1;                // COOP/COEP 없이도 동작하게
   return ONNX.ort;
 }
+/* **더미 모델을 진짜로 착각하는 사고를 막는다.**
+   `vendor/ort/_test_yolov8_dummy.onnx`는 배관 검증용이라 입력과 무관하게 늘 같은 값을 뱉는다.
+   그런데 이걸 `demo_clips/best.onnx`로 **이름만 바꿔 복사해 두면** 자동 로드가 붙고
+   안내문에는 "모델 best.onnx"라고 떠서 **다 준비된 것처럼 보인다**(2026-08-24 실제로 그랬다).
+   판별은 파일 안의 그래프 이름 문자열로 한다 — 이름을 바꿔도 안 지워지는 표식이다.
+   바이트로 훑는다: 12MB짜리 실모델을 통째로 문자열로 만들면 낭비다. */
+function onnxLooksDummy(buf, name) {
+  if (/dummy/i.test(name || "")) return true;
+  const mark = "dummy_yolov8";
+  const b = new Uint8Array(buf), m0 = mark.charCodeAt(0), n = b.length - mark.length;
+  for (let i = 0; i <= n; i++) {
+    if (b[i] !== m0) continue;
+    let hit = true;
+    for (let j = 1; j < mark.length; j++) if (b[i + j] !== mark.charCodeAt(j)) { hit = false; break; }
+    if (hit) return true;
+  }
+  return false;
+}
+
 async function onnxLoadModel(fileOrBuf, name) {
   const ort = await onnxLoadRuntime();
   const buf = fileOrBuf instanceof ArrayBuffer ? fileOrBuf : await fileOrBuf.arrayBuffer();
@@ -8011,6 +9036,9 @@ async function onnxLoadModel(fileOrBuf, name) {
   }
   if (!sess) throw new Error("세션 생성 실패 (WebGPU·wasm 모두)");
   ONNX.session = sess; ONNX.ep = ep; ONNX.name = name || "model.onnx";
+  ONNX.isDummy = onnxLooksDummy(buf, ONNX.name);
+  ONNX.nc = null;                                  // 새 모델이므로 다시 잰다(첫 추론에서 채워진다)
+  if (ONNX.isDummy) console.warn("[ONNX] ⚠ 더미 모델이다 — 박스는 입력과 무관한 고정값이다:", ONNX.name);
   ONNX.inName = sess.inputNames[0]; ONNX.outName = sess.outputNames[0];
   // 입력 해상도 자동 감지 — 메타데이터가 없거나 동적(-1)이면 640
   let dims = null;
@@ -8027,12 +9055,21 @@ function onnxPreprocess(px, w, h) {
   const S = ONNX.imgsz;
   if (!ONNX.canvas) { ONNX.canvas = document.createElement("canvas"); ONNX.ctx = ONNX.canvas.getContext("2d", {willReadFrequently:true}); }
   ONNX.canvas.width = S; ONNX.canvas.height = S;
-  const src = document.createElement("canvas"); src.width = w; src.height = h;
-  const sctx = src.getContext("2d");
-  const id = sctx.createImageData(w, h);
-  // renderWith는 하단 원점(WebGL) → 상단 원점으로 뒤집는다
-  for (let y = 0; y < h; y++) id.data.set(px.subarray((h-1-y)*w*4, (h-y)*w*4), y*w*4);
-  sctx.putImageData(id, 0, 0);
+  /* px는 두 가지가 올 수 있다 (2026-08-24 실영상 패널 때문에 넓혔다):
+       ① renderWith가 준 픽셀 배열 — **하단 원점(WebGL)**이라 뒤집어야 한다
+       ② <video>·<canvas> 같이 그릴 수 있는 원본 — 상단 원점이라 **뒤집으면 안 된다**
+     레터박스 계산(r·dx·dy)을 그대로 공유해야 박스 좌표 역산이 맞는다.
+     별도 함수로 복제했다가는 두 경로가 조용히 어긋난다. */
+  let src;
+  if (px && px.nodeType === 1) {
+    src = px;                                   // video / canvas 를 그대로 그린다
+  } else {
+    src = document.createElement("canvas"); src.width = w; src.height = h;
+    const sctx = src.getContext("2d");
+    const id = sctx.createImageData(w, h);
+    for (let y = 0; y < h; y++) id.data.set(px.subarray((h-1-y)*w*4, (h-y)*w*4), y*w*4);
+    sctx.putImageData(id, 0, 0);
+  }
   const r = Math.min(S/w, S/h), nw = Math.round(w*r), nh = Math.round(h*r);
   const dx = Math.floor((S-nw)/2), dy = Math.floor((S-nh)/2);
   ONNX.ctx.fillStyle = "rgb(114,114,114)"; ONNX.ctx.fillRect(0, 0, S, S);
@@ -8070,6 +9107,17 @@ function onnxDecode(out, meta) {
   let v5 = ONNX.layout === "v5";
   if (ONNX.layout === "auto") v5 = (C - 5 === nl) && (C - 4 !== nl);
   const clsOff = v5 ? 5 : 4, nc = C - clsOff;
+  /* **모델 클래스 수와 라벨 수가 다르면 이름이 통째로 어긋난다.**
+     예외를 던지지 않는다 — 발표 중에 멈추는 게 더 나쁘다. 대신 화면에 띄운다. */
+  if (ONNX.nc !== nc) {
+    ONNX.nc = nc;
+    if (nc !== nl)
+      console.warn("[ONNX] ⚠ 클래스 수 불일치 — 모델 " + nc + "종 / 라벨 " + nl +
+                   "종(" + ONNX.labels.join(",") + "). 이름이 어긋난다. " +
+                   "?labels=fire,smoke 처럼 모델 순서대로 맞춰라");
+    if (typeof vidNote === "function") vidNote();
+    if (typeof vidStatusLine === "function") vidStatusLine();
+  }
   const res = [];
   for (let i = 0; i < N; i++) {
     let best = 0, bi = 0;
@@ -8101,11 +9149,19 @@ async function onnxInfer(px, w, h) {
   return onnxDecode(out[ONNX.outName], { r:pre.r, dx:pre.dx, dy:pre.dy, srcW:w, srcH:h });
 }
 
+/* 어떤 배치에서도 존재하는 카메라를 돌려준다. 주 시점이 CCTV면 그걸,
+   아니면 MIL.cam을, 그것도 없으면 등록된 첫 카메라. **null을 돌려주는 경우는 없다**
+   (SURV가 비는 배치는 없다). 종전에는 없는 id를 그대로 써서 `SURV[id].cam`에서 터졌다. */
+function milCamId() {
+  if (SURV[mainView]) return mainView;
+  if (SURV[MIL.cam]) return MIL.cam;
+  return Object.keys(SURV)[0];
+}
 async function milCapture() {
   if (MIL.busy) return;
   MIL.busy = true;
   try {
-    const camId = SURV[mainView] ? mainView : MIL.cam;
+    const camId = milCamId();
     const cam = SURV[camId].cam;
     const capturedAt = performance.now();
     const personAt = person.node.position.clone();
@@ -8428,7 +9484,13 @@ overlayCv.id = "overlay";
 overlayCv.style.cssText = "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:5";
 ($("viewport") || document.body).appendChild(overlayCv);
 window.__overlayReady = true;
-const MIL_COLORS = { person:"#ff4d4f", robot:"#52e06f", kettle:"#ffab40", equipment:"#58a6ff" };
+/* 검출 박스 색 — **GT_CLASSES의 색조를 그대로 따르고 화면용으로만 누그러뜨린다.**
+   GT는 마스크에서 픽셀 색으로 클래스를 판정하느라 순색(255/0)을 쓰는데 선으로 그으면 눈이 아프다.
+   대응: person 빨강 · fire 노랑 · smoke 하늘 · robot 초록 · kettle 주황 · equipment 파랑.
+   ⚠️ fire를 "불이니까 주황"으로 두면 **kettle 주황·person 빨강과 붙어** 화재 장면에서
+   셋을 구분할 수 없다. GT가 노랑인 데는 이유가 있다 — 색조를 바꾸지 않는다. */
+const MIL_COLORS = { person:"#ff4d4f", fire:"#ffe14d", smoke:"#5ad1e0",
+                     robot:"#52e06f", kettle:"#ffab40", equipment:"#58a6ff" };
 /* CCTV HUD — 감시 화면임을 알아보게 한다.
    자유 시점과 CCTV 시점이 똑같이 렌더되니 어느 쪽을 보고 있는지 구분이 안 됐다.
    화질을 떨어뜨려 구분하는 방법도 있지만(그게 예전 기본값이었다) 완성도가 낮아 보인다.
@@ -8797,6 +9859,9 @@ function startStep(i) {
    "횡단에 걸리는 시간 안에 사람이 정지 반경까지 올 수 있나"를 직접 물어볼 수 있다.
    σ를 빼서 보수적으로 본다(불확실할수록 더 가까이 있을 수 있다고 가정).            */
 const AVOID = { on:true, mode:"proceed", eff:"proceed", rate:1, reason:"", holdMs:0, retractMs:0,
+                /* 데모 모드는 여유 0 — 0.35면 판정 반경이 3.45m가 되는데, 조리 스테이션이
+                   로봇에서 3~4m에 몰려 있어 **사람이 제 일만 해도 상시 보류**가 된다
+                   (실측: 보류 98%, "2.1s 내 2.99m 접근 예측"). 실제로 가까워질 때만 반응. */
                 margin:0.35,        // 정지 반경에 더할 여유(m)
                 startT:0.06 };      // 이 진행도 이하면 '아직 출발 전'으로 보고 hold
 /* 예측 시간창 안에서 사람이 로봇 베이스에 얼마나 가까워질 수 있는지(m). σ 보정 포함. */
@@ -8815,7 +9880,10 @@ function avoidMinDist(window) {
 function avoidDecide(dtMs) {
   const s = SEQ[state.seqIdx];
   AVOID.rate = 1; AVOID.mode = "proceed"; AVOID.reason = "";
-  if (!AVOID.on || !state.auto || !s || !s.cross) return;   // 위험 구간(통로 횡단)에서만 개입
+  /* SAFE.blind(검출 실패 데모) 중에는 회피도 꺼진다 — 인지가 사람을 놓친 상태를
+     강제하는 게 데모의 전제인데, 예측 회피만 살아 있으면 로봇이 영원히 출발 보류돼
+     충돌·끼임 데모가 성립하지 않는다(2026-08-22 실측: hold로 210프레임+ 정지). */
+  if (!AVOID.on || !state.auto || !s || !s.cross || SAFE.blind) return;   // 위험 구간(통로 횡단)에서만 개입
   const t = state.dur ? clamp(state.seqT / state.dur, 0, 1) : 0;
   const remain = state.dur ? (state.dur - state.seqT) / 1000 : 0;   // 남은 횡단 시간(s)
   const window = Math.max(0.4, Math.min(remain, PRED.vizHorizon));
@@ -8995,6 +10063,7 @@ function cookColor(p) {
   return SOUP_COLORS[SOUP_COLORS.length-1][1];
 }
 function cookLabel() {
+  if (state.burn > 0.7)  return "눌음 심화 — 발화 임박!";
   if (state.burn > 0.35) return "눌어붙음 — 교반 필요!";
   if (state.burn > 0.1)  return "바닥 눌기 시작";
   if (state.cook < 0.05) return "조리 전";
@@ -9002,18 +10071,43 @@ function cookLabel() {
   if (state.cook < 1)    return "거의 완성";
   return "완성";
 }
+/* ══ 과열 자동 발화 — 눌음이 한계를 넘으면 불이 붙는다 ═══════════════════════
+   발표 시나리오 "과열 → 기름에 불 → 연기"의 연결부. 지금까지는 눌음(burn)과 화재가
+   따로 놀아서 시나리오를 화재 버튼으로 손수 이어야 했다.
+   에지 트리거 + 히스테리시스다: th를 넘는 순간 딱 한 번 발화하고, 진압한 뒤에는
+   교반으로 눌음을 rearm 밑까지 걷어내야 다시 무장된다. 이게 없으면 소화 직후
+   같은 프레임에 재발화한다 — burn이 그대로 높기 때문이다.
+   ⚠️ 데이터셋 캡처 중에는 개입하지 않는다. 화재 표본 비율은 randomizeScene의
+   FIRE_P가 정하고 fireSeekTo가 단계까지 지정하므로, 여기서 불을 붙이면
+   그 비율·단계 분포가 깨진다. (fireFogTick의 GT_BUSY 가드와 같은 원칙) */
+const AUTO_IGNITE = { th: 0.9, rearm: 0.5, armed: true };
+function autoIgniteTick() {
+  if (DATAGEN.running || GT_BUSY) return;
+  if (state.fire) return;
+  if (AUTO_IGNITE.armed && state.burn >= AUTO_IGNITE.th) {
+    AUTO_IGNITE.armed = false;
+    setFire(true);
+    setStatus("🔥 눌어붙은 기름이 발화했습니다 — 과열 상태로 교반 없이 방치");
+  } else if (!AUTO_IGNITE.armed && state.burn <= AUTO_IGNITE.rearm) {
+    AUTO_IGNITE.armed = true;                      // 눌음을 걷어냈다 — 재발화 가능 상태로 복귀
+  }
+}
 function updateCooking(dt) {
   const boiling = state.temp >= 150;
   const rate = (state.temp - 140) / 50;               // 150°C→0.2, 190°C→1.0
   const bladeIn = Math.abs(effector().getAbsolutePosition().y - LAYOUT.fryer.oilY) < 0.16 &&
     Math.hypot(effector().getAbsolutePosition().x - LAYOUT.fryer.pos.x,
                effector().getAbsolutePosition().z - LAYOUT.fryer.pos.z) < LAYOUT.fryer.r;
+  steamPuffTick(dt);                                 // 김 대량 방출(투입·배출) 타이머
   if (boiling) {
     if (state.cook < 1) state.cook = clamp(state.cook + dt/1000 * 0.055 * rate, 0, 1);
     // 고온 + 교반 없음 → 눌음 / 교반 중 → 회복
     if (state.stirring && bladeIn) state.burn = clamp(state.burn - dt/1000 * 0.10, 0, 1);
     else if (state.temp > 172 && state.cook > 0.25) state.burn = clamp(state.burn + dt/1000 * 0.028 * rate, 0, 1);
-    bubbles.emitRate = 260 * rate; steam.emitRate = 110 * rate;
+    autoIgniteTick();                              // 과열 자동 발화 — burn 갱신 직후에 판정
+    bubbles.emitRate = 260 * rate;
+    /* C-2: 김 기본 ×2 (66~110 → 132~220) + 표본 배율 k + 퍼프 ×3. 산수는 steam 정의부에 */
+    steam.emitRate = 220 * rate * STEAM.k * (STEAM.puff ? 3 : 1);
   } else {
     bubbles.emitRate *= 0.9; steam.emitRate *= 0.94;
   }
@@ -9652,9 +10746,25 @@ Object.entries(SCENARIO).forEach(([k, v]) => {
 });
 $("scenRun").addEventListener("click", () => runScenario($("scenSel").value));
 
-$("scRoleFar").addEventListener("click", () => spawnRole("far"));
-$("scRoleCaution").addEventListener("click", () => spawnRole("caution"));
-$("scRoleDanger").addEventListener("click", () => spawnRole("danger"));
+/* 인원 UI 동기화 — **사람 수가 바뀌는 모든 경로가 여기를 지난다.**
+   종전에는 경로가 셋(자동 시나리오·＋A/B/C 버튼·슬라이더)인데 서로 몰라서,
+   버튼으로 5명을 만들어도 슬라이더는 0을 가리켰다(2026-08-22 실측: 실제 2명 / 표시 0).
+   슬라이더 상한(2)을 넘으면 max까지만 표시한다 — 값이 튀는 것보다 낫다. */
+function syncPeopleUI() {
+  const sl = document.getElementById("pplN"), lab = document.getElementById("pplNV");
+  if (!sl) return;
+  const n = EXTRAS.length;
+  sl.value = String(Math.min(n, +sl.max));
+  if (lab) lab.textContent = String(n);          // 실제 인원은 있는 그대로 보여준다
+}
+$("scRoleFar").addEventListener("click", async () => { await spawnRole("far"); syncPeopleUI(); });
+$("scRoleCaution").addEventListener("click", async () => { await spawnRole("caution"); syncPeopleUI(); });
+$("scRoleDanger").addEventListener("click", async () => { await spawnRole("danger"); syncPeopleUI(); });
+$("scRoleClear").addEventListener("click", async () => {
+  await setExtraCount(0);
+  syncPeopleUI();
+  setStatus("추가 인원 전원 제거 — 주인공만 남았습니다");
+});
 /* 로봇 접촉 사고 데모 */
 $("ovLap").addEventListener("change", e => {
   OVERLAP.on = e.target.checked;
@@ -9662,6 +10772,10 @@ $("ovLap").addEventListener("change", e => {
                        : "작업 겹침 꺼짐 — 각자 자기 동선만 돕니다");
 });
 $("hzPush").addEventListener("click",  () => demoHazard("push"));
+$("hzFall").addEventListener("click", () => {          // 실신 토글 — 쓰러짐/일어나기
+  if (PERSON.acting === "down") { personGetUp(); setStatus("조리원이 일어납니다"); }
+  else { personFall(); setStatus("조리원 실신 — 연기 질식·낙상 장면 (다시 누르면 일어납니다)"); }
+});
 $("hzPinch").addEventListener("click", () => demoHazard("pinch"));
 $("hzClear").addEventListener("click", () => demoHazardClear());
 $("scWander").addEventListener("click", () => personWander(!WANDER.on));
@@ -9697,8 +10811,8 @@ $("fireBtn").addEventListener("click", () => setFire(!state.fire));
 
 /* 조리실 인원 UI */
 $("pplN").addEventListener("input", async e => {
-  $("pplNV").textContent = e.target.value;
   await setExtraCount(+e.target.value);
+  syncPeopleUI();                                // 실제 결과로 다시 맞춘다(스폰 실패 대비)
 });
 $("pplReroll").addEventListener("click", async () => {
   const n = EXTRAS.length;
@@ -10050,14 +11164,19 @@ $("milBtn").addEventListener("click", () => {
       label: ($("runLabel").value || "").trim() ||
              (MIL.mode === "onnx" && ONNX.name ? ONNX.name : MIL.mode),
       mode: MIL.mode, hz: MIL.hz, latency: MIL.mode === "mock" ? MIL.latency : null,
-      cam: SURV[mainView] ? mainView : MIL.cam,
+      cam: milCamId(),
       backend: MIL.mode === "onnx" ? (ONNX.ep || null) : null,
       imgsz: MIL.mode === "onnx" ? ONNX.imgsz : null,
       modelSafety: MIL.safety, ringMode: SAFE.ringMode,
       persons: 1 + EXTRAS.length,
       accident: ACC.on ? (ACC.prone ? "prone" : "on") : null,
     });
-    if (!SURV[mainView]) setStatus("자유 시점 — CAM2 프레임 사용 중. 주 시점을 CCTV로 바꾸면 박스 오버레이가 보입니다");
+    /* 안내문에 카메라 이름을 **박아 두지 않는다.** 종전에는 "CAM2 프레임 사용 중"이라고
+       적혀 있었는데 그 카메라가 이 배치에 없었다 — 실제로는 아무 프레임도 안 잡히고 있었다. */
+    if (!SURV[mainView]) {
+      const fb = milCamId(), lab = (CAM_DEFS.find(d => d.id === fb) || {}).label || fb;
+      setStatus("자유 시점 — " + lab + " 프레임 사용 중. 주 시점을 CCTV로 바꾸면 박스 오버레이가 보입니다");
+    }
   }
 });
 $("predModel").addEventListener("change", e => {
@@ -10430,6 +11549,7 @@ scene.registerBeforeRender(() => {
   updateCooking(dt);
   fireFogTick(dt);           // 화재 연무 — 발화 후 경과에 따라 방 전체 농도를 올린다
   smokeConfineTick();        // 연기가 후드·천장을 뚫고 나가지 않게 가둔다
+  steamVentTick();           // 김은 후드에서 빨려 사라진다(C-2) — 옆으로 밀면 연기와 같아져 금지
   personUpdate(dt);
   cookGearUpdate();
   extrasUpdate(dt);
@@ -10615,7 +11735,7 @@ window.__sim = {
   /* EXTRAS는 이 export 블록보다 **뒤에** 선언되므로 여기 직접 넣으면 const TDZ에 걸려
      스크립트가 통째로 죽는다. getter로 감싸 접근 시점에 읽는다. */
   ROLE, roleStations, spawnRole, buildPersonColliders, transitPath,
-  JOB, SCENARIO, spawnJob, runScenario, jobRole, jobNextTarget,
+  JOB, SCENARIO, spawnJob, runScenario, jobRole, jobDistance, jobNextTarget,
   WF, WORKFLOW, wfPlan, workflowTarget, personWorkflow,
   get TRAJ() { return TRAJ; },   // 선언이 이 블록보다 뒤 — TDZ 회피(EXTRAS·OVERLAP과 같은 규약)
   trajRun, trajRunScene,         // 궤적 데이터 수집(이슈 #2 2단계) — 함수 선언이라 hoisted
@@ -10637,7 +11757,7 @@ window.__sim = {
   SURV, capture, captureBoth, applyCameras, camOf, pipRect, swapViews, cyclePip, pickView,
   setView: v => { mainView = v; viewSel.value = v; applyCameras(); },
   setPip:  v => { pipView = v; pipSel.value = v; applyCameras(); },
-  person, personGo, SCN, SAFE, setFire, FIRE_FOG,
+  person, personGo, SCN, SAFE, setFire, FIRE_FOG, SMOKE_LAYER, fireSeekTo, fireRandomStage,
   // Ground Truth · 데이터셋
   groundTruth, generateDataset, DATAGEN, randomizeScene, restoreAfterDataset,
   GT_CLASSES, classOfMesh, showInspector,
@@ -10757,14 +11877,14 @@ initPhysics();   // 비동기 — 파일 없으면 물리만 꺼진 채 계속 �
   const panel = $("panel");
   const TABS = [
     { id:"start", label:"🚀 시작", secs:[] },   // 아래 startTabUI()가 내용을 채운다
-    { id:"run",  label:"▶ 실행",   secs:["관절 제어","조리 설정","조리 상태","조작 대상","사람 시나리오 · 화재","사고 시나리오 (연쇄)"] },
-    { id:"cam",  label:"📷 카메라", secs:["카메라 · 모델 입력","시점 프리셋","감시 카메라 관리"] },
+    { id:"run",  label:"▶ 실행",   secs:["발표 시나리오","관절 제어","조리 설정","조리 상태","조작 대상","사람 시나리오 · 화재","사고 시나리오 (연쇄)"] },
+    { id:"cam",  label:"📷 카메라", secs:["카메라 · 모델 입력","시점 프리셋","샷 리스트","감시 카메라 관리"] },
     /* 데이터 탭은 "데이터를 만든다 → 모델을 검증한다 → 회차를 비교한다" 순서로 읽히게 둔다.
        센서 리얼리즘·조리실 인원은 데이터셋의 다양성을 정하는 손잡이라 고급이 아니라 여기다.
        (고급에 있으면 데이터 만드는 사람이 영영 못 찾는다) */
     { id:"data", label:"📊 데이터", secs:["데이터셋 · Ground Truth","궤적 데이터 수집",
                                          "센서 리얼리즘 (CCTV 특성)",
-                                         "조리실 인원 (다양성)","모델 검증 (Model-in-the-Loop)",
+                                         "조리실 인원 (다양성)","모델 검증 (Model-in-the-Loop)","실영상 패널",
                                          "궤적 예측","회차 기록 (Run Log)"] },
     { id:"adv",  label:"⚙ 고급",   secs:["전문가 기능","시각화 표시","화면 품질","물리 · 안전 (Havok)","에셋 임포트 (선택)"] },
   ];
@@ -11027,11 +12147,62 @@ let EXTRA_GEN = 0;
 const extraSeed = i =>
   ((typeof TRAJ !== "undefined" && TRAJ.seedBase != null) ? TRAJ.seedBase : SEED0)
   + 7919 * (i + 1) + 104729 * EXTRA_GEN;
-const RAND_PATHS = [
-  [new V3(1.9,0,2.4), new V3(1.9,0,-1.2), new V3(-1.0,0,-1.7), new V3(-2.3,0,0.4), new V3(-2.2,0,2.4)],
-  [new V3(-2.3,0,2.6), new V3(-0.9,0,2.2), new V3(1.4,0,1.4), new V3(2.2,0,-0.6)],
-  [new V3(0.9,0,-1.6), new V3(-1.6,0,-1.4), new V3(-2.4,0,1.2), new V3(-0.4,0,2.6), new V3(1.6,0,2.0)],
-];
+/* ══ 배회·스폰 경로 — **방에서 유도한다** (하드코딩 금지) ═══════════════════
+   ⚠️ 종전에는 좌표를 박아 뒀는데, 옛 9×9 배치 시절 값이라 14개 웨이포인트가 **전부
+   감속 반경 안, 10개는 정지 반경 안**이었다(실측 2026-08-22). 섬 배치로 로봇이 방
+   한가운데로 오면서 그 경로가 곧 '로봇 주위를 도는 코스'가 됐고, 스폰 위치도
+   path[0]에서 오므로 **사람이 안전 반경 안에서 태어났다.**
+
+   고쳐서 다시 박아 봤더니 이번엔 **복도형 배치(13×7m)에서 12개 중 10개가 방 밖**이었다
+   — 배치가 늘어날수록 같은 사고가 반복된다. 그래서 좌표를 적지 않고 **방 크기·로봇
+   위치·안전 반경에서 매번 계산**한다. 새 배치를 추가해도 따라온다.
+
+   규칙: 로봇 베이스를 중심으로 각도를 훑으며, 감속 반경 밖이면서 방 안(여유 1.0m)인
+   가장 먼 지점을 고른다. 통행 격자가 준비돼 있으면 갈 수 없는 칸은 버린다. */
+let _WPATH = null, _WPATH_NAV = null;
+/* 통행 격자 준비 여부가 바뀌면 다시 계산한다 — 스폰이 NAV 준비 전후 어느 쪽에서 일어나도
+   그 시점에 맞는 경로가 나온다. */
+function wanderPaths() {                 // ⚠️ 전역 WANDER(순회 상태 객체)와 다른 것 — 이름 충돌 주의
+  if (_WPATH && _WPATH_NAV === NAV.ready) return _WPATH;
+  _WPATH = buildWanderPaths(3, 4); _WPATH_NAV = NAV.ready;
+  return _WPATH;
+}
+function buildWanderPaths(nPaths, ptsPerPath) {
+  const B = LAYOUT.robot.base, R = LAYOUT.room, PAD = 1.0;
+  const minD = SAFE.NOM_SLOW + 0.25;
+  const ring = [];
+  for (let a = 0; a < 360; a += 10) {
+    const th = a * Math.PI / 180, ux = Math.cos(th), uz = Math.sin(th);
+    let best = null;
+    for (let r = minD; r <= minD + 6; r += 0.25) {
+      const x = B.x + ux * r, z = B.z + uz * r;
+      if (x < R.x0 + PAD || x > R.x1 - PAD || z < R.z0 + PAD || z > R.z1 - PAD) break;
+      const v = new V3(x, 0, z);
+      if (NAV.ready && !navReachable(v)) continue;
+      best = v;                                  // 방 안에서 갈 수 있는 가장 먼 지점
+    }
+    if (best) ring.push(best);
+  }
+  if (ring.length < nPaths * 2) return null;     // 만들 수 없으면 호출부가 대비한다
+  const out = [];
+  for (let i = 0; i < nPaths; i++) {
+    const path = [];
+    for (let k = 0; k < ptsPerPath; k++) {
+      const idx = Math.round((i * (ring.length / nPaths) + k * (ring.length / ptsPerPath)) % ring.length);
+      path.push(ring[idx].clone());
+    }
+    out.push(path);
+  }
+  return out;
+}
+/* 최후 대비 — 계산이 실패하면(방이 아주 좁거나 통행 격자가 막힌 경우) 로봇에서 가장 먼
+   방 모서리 4곳을 쓴다. 반경 밖 보장은 못 하지만 방 밖으로 나가지는 않는다. */
+let RAND_PATHS = (() => {
+  const R = LAYOUT.room, P = 1.0;
+  const c = [new V3(R.x0+P,0,R.z0+P), new V3(R.x1-P,0,R.z0+P),
+             new V3(R.x1-P,0,R.z1-P), new V3(R.x0+P,0,R.z1-P)];
+  return [c, [c[1],c[2],c[3],c[0]], [c[2],c[3],c[0],c[1]]];
+})();
 // 안전 판정·부착물이 참조하는 표준 본 이름 (믹사모 규격)
 const UNI_BONES = ["Hips", "Spine", "Spine1", "Spine2", "Neck", "Head",
   "LeftArm", "LeftForeArm", "LeftHand", "RightArm", "RightForeArm", "RightHand",
@@ -11165,7 +12336,7 @@ async function spawnExtraPerson(i) {
     /* 인원마다 독립 시드 — 전역 시드에서 파생시키되 간격을 크게 벌린다.
        한 명을 추가해도 기존 인원의 궤적이 바뀌지 않는다(각자 자기 흐름만 소비). */
     rng: prng,
-    path: RAND_PATHS[i % RAND_PATHS.length].map(v => v.clone()),
+    path: (wanderPaths() || RAND_PATHS)[i % 3].map(v => v.clone()),
     pi: 0, speed: prng.range(0.45, 1.00), mode: "walk", playing: null,
   };
   root.position.copyFrom(P.path[0]);
@@ -11495,7 +12666,8 @@ function extrasUpdate(dt) {
     resolvePersonCollision(n);
     /* 역할 반경 유지 — 스테이션만 제한하면 **가는 길이 반경을 가로지른다.**
        far가 조리대(2.8m)→제어반(3.3m)으로 갈 때 직선이 로봇 옆을 스칠 수 있다.
-       역할별 최소 거리보다 안쪽으로 들어오면 로봇 반대 방향으로 밀어낸다. */
+       역할별 최소 거리보다 안쪽으로 들어오면 로봇 반대 방향으로 밀어낸다.
+ */
     const RR = ROLE[P.role] || ROLE.far;
     const minR = RR.zone === "out" ? SAFE.NOM_SLOW : RR.zone === "slow" ? SAFE.NOM_STOP : 0;
     if (minR > 0) {
@@ -11569,6 +12741,9 @@ async function spawnJob(jobKey) {
 async function spawnJobList(jobs) {
   await setExtraCount(0);
   for (const j of jobs) await spawnJob(j);
+  /* 스폰 코어 한 곳에서 UI를 맞춘다 — runScenario·trajSpawn·autoStart가 전부 여길 지난다.
+     호출부마다 따로 적으면 새 경로가 생길 때 또 빠진다(그래서 원래 어긋나 있었다). */
+  if (typeof syncPeopleUI === "function") syncPeopleUI();
   return EXTRAS.slice();
 }
 async function runScenario(name) {
@@ -11720,9 +12895,17 @@ async function trajRun(opts) {
   return out;
 }
 /* 역할을 지정해 인원을 추가한다. 회의 요구의 A/B/C가 이것으로 만들어진다. */
+/* 추가 인원 상한 — 주인공 포함 4명. 통로가 좁아 그 이상은 동선이 뭉개진다
+   (「추가 인원」 슬라이더가 2로 제한된 것과 같은 이유). 종전에는 상한도 제거 수단도
+   없어서 ＋버튼을 누르는 만큼 무한히 늘었다(2026-08-22 사용자 보고). */
+const EXTRA_MAX = 3;
 async function spawnRole(roleKey) {
   const R = ROLE[roleKey];
   if (!R) { console.warn("[ROLE] 없는 역할:", roleKey); return null; }
+  if (EXTRAS.length >= EXTRA_MAX) {
+    setStatus("추가 인원 상한 " + EXTRA_MAX + "명 — 「－ 인원 전원 제거」로 비운 뒤 다시 추가하세요");
+    return null;
+  }
   const P = await spawnExtraPerson(EXTRAS.length);
   if (!P) { setStatus("캐릭터가 꺼져 있어 인원을 추가할 수 없습니다"); return null; }
   P.role = roleKey;
@@ -11936,6 +13119,10 @@ function findHazardSpot(kind) {
     const abx = cart.x - F.x, abz = cart.z - F.z, L2 = abx*abx + abz*abz;
     let t = clamp(((x - F.x)*abx + (z - F.z)*abz) / L2, 0, 1);
     const dLine = Math.hypot(x - (F.x + abx*t), z - (F.z + abz*t));
+    /* 밀림 데모의 막힘 페널티를 0.60까지 올려 봤지만 효과가 없어 되돌렸다(2026-08-22).
+       자리는 (-0.30→-0.05,1.65)로 옮겨졌는데 접촉 분류는 여전히 끼임 — 8방향 개방도와
+       "접촉 순간 팔-법선 방향 5cm 탈출 지점"은 다른 물건이라, 자리 점수로는 못 가른다.
+       충돌 버튼이 쓰러짐을 내려면 접촉 기하까지 봐야 한다 — 배치 작업(F) 때 함께 볼 것. */
     const score = dLine + (kind === "pinch" ? -0.05 * blk : 0.05 * blk);
     if (!best || score < best.score) best = { x, z, blk, dLine:+dLine.toFixed(2), score };
   }
@@ -12007,12 +13194,13 @@ function workOverlapUpdate(dt) {
 /* 안전 판정용 — 모든 인원 중 로봇에 가장 가까운 사람 */
 function nearestPerson() {
   const bx = LAYOUT.robot.base.x, bz = LAYOUT.robot.base.z;
-  let best = person.node.position, bd = Math.hypot(best.x - bx, best.z - bz);
-  for (const P of EXTRAS) {
-    const p = P.root.position, d = Math.hypot(p.x - bx, p.z - bz);
-    if (d < bd) { bd = d; best = p; }
+  // id = 관측 대상 식별자(예측 이력 분리용). 0 = 조작 인물, i+1 = EXTRAS[i].
+  let best = person.node.position, bd = Math.hypot(best.x - bx, best.z - bz), bid = 0;
+  for (let i = 0; i < EXTRAS.length; i++) {
+    const p = EXTRAS[i].root.position, d = Math.hypot(p.x - bx, p.z - bz);
+    if (d < bd) { bd = d; best = p; bid = i + 1; }
   }
-  return { pos: best, dist: bd };
+  return { pos: best, dist: bd, id: bid };
 }
 async function setExtraCount(n) {
   while (EXTRAS.length > n) {
@@ -12038,6 +13226,1012 @@ window.__simReady = true;
 setStatus(V.ok ? "준비 완료 — ▶ 자동 작업(튀김 배출)을 눌러보세요 · 도움말 H"
                : "⚠ 도달 불가 지점 " + V.failed.length + "건 (콘솔 확인)");
 
+/* ══ 발표 시나리오 — before / after 자동 재생 (2026-08-24) ══════════════════
+   왜 만드는가. 부품은 이미 다 있다 — 김·과열 발화·연기 확산·쓰러짐·검출·대피·진화가
+   전부 개별 버튼으로 존재한다. 문제는 **흩어져 있다**는 것이다. 발표 중에 사람이
+   순서대로 눌러야 하고, 한 번 순서가 틀리면 이야기 자체가 무너진다.
+   그래서 검증된 `ACC_BEATS`와 같은 "시각 → 메시지 → 동작" 구조로 한 줄기로 묶는다.
+
+   ⚠️ 이 블록은 **파일 끝에 몰아 둔다.** 같은 sim.html을 팀원이 동시에 고치고 있어
+   (로봇 회피 기동), 기존 함수 사이에 끼워 넣으면 병합할 때 통째로 충돌한다.
+   렌더 훅도 공용 registerBeforeRender에 줄을 더하지 않고 **관찰자를 따로 등록**한다. */
+const DEMO = { on:false, kind:null, t:0, beat:-1, saved:null, fade:null, evac:null, follow:null };
+
+/* 화재 진행을 4배로 감는다 — 90초 곡선을 발표용 22초로 압축한다.
+   fireSeekTo로 순간이동시키지 않는 이유: **연기가 서서히 차오르는 과정 자체가**
+   "카메라가 왜 화재를 놓치는가"를 보여주는 그림이다. 건너뛰면 설명이 사라진다. */
+const DEMO_FIRE_SPEED = 4;
+
+function demoSay(msg) {
+  setStatus(msg);
+  const n = $("demoNote"); if (n) n.textContent = msg;
+}
+
+/* ── 비트마다 카메라가 무엇을 보는지 정한다 ────────────────────────────────
+   기본 자유 시점은 **로봇 셀**을 보도록 잡혀 있다. 그래서 조리원이 나오는 비트에서
+   사람이 화면 밖이었다 — 실측: ① 화면좌표 (1.67, 1.20) · ⑤ 쓰러짐 (1.54, 1.47).
+   둘 다 0~1 범위 밖이라 **아무것도 안 보이는 채로 자막만 나왔다.**
+   비트가 무엇을 보여주려는지에 따라 사람 / 솥 / 방 전체로 나눈다. */
+function demoFreeCam(alpha, beta, radius, target) {
+  if (mainView !== "free") {
+    mainView = "free";
+    if (typeof viewSel !== "undefined" && viewSel) viewSel.value = "free";
+    applyCameras();
+  }
+  /* ⚠️ 순서가 중요하다. ArcRotateCamera.setTarget()은 **카메라 위치를 유지한 채**
+     alpha·beta·radius를 다시 계산한다. 각도를 먼저 넣고 setTarget을 뒤에 부르면
+     방금 넣은 값이 통째로 덮어써진다(실측: 반경 7.6 → 2.5, beta 1.14 → 0.83).
+     조준점을 먼저 옮기고 각도를 나중에 못박는다. */
+  camera.setTarget(target);
+  camera.alpha = alpha; camera.beta = beta; camera.radius = radius;
+}
+/* 조리원을 따라간다. 거리 4.6m로 잡았다가 **7.6m로 넓혔다** — 4.6에서는 사람이 화면을
+   가득 채워 주방도 로봇도 안 보였다. "조리원이 평소대로 작업한다"는 사람만이 아니라
+   **일하는 자리**가 같이 보여야 성립한다. */
+function demoPersonView() {
+  const p = person.node.position;
+  demoFreeCam(-2.05, 1.14, 7.6, new V3(p.x, 1.05, p.z));
+  DEMO.follow = "person";
+}
+function demoKettleView() {                       // 솥 — 김·불꽃이 여기서 난다
+  DEMO.follow = null;
+  const k = (anchors["kettle"] && anchors["kettle"].node) ? anchors["kettle"].node.position : new V3(0,0,0);
+  demoFreeCam(-2.25, 1.12, 4.2, new V3(k.x, 1.00, k.z));
+}
+
+function demoWideView() {                         // 방 전체 — 연기가 차는 것을 보여준다
+  DEMO.follow = null;
+  demoFreeCam(-2.35, 1.20, 8.6, new V3(0.2, 1.10, 1.6));
+}
+
+/* 어느 시나리오든 ①번은 같다 — 직전 회차의 잔재(불·연기·쓰러짐·검출)를 먼저 지운다.
+   안 지우면 before를 돌린 뒤 after를 눌렀을 때 이미 쓰러진 사람에서 시작한다. */
+function demoNormalWork() {
+  if (typeof ACC !== "undefined" && ACC.on) accReset();
+  demoHazardClear();
+  demoStandUp();
+  setFire(false);
+  FIRE_FOG.speed = DEMO_FIRE_SPEED;
+  STEAM.k = 0.6; steamSettle();
+  person.freeze = false;
+  if (!state.auto) $("autoBtn").click();      // 로봇은 평소처럼 튀김 작업 중
+  /* "정상 작업"이 서 있는 그림이면 안 된다. 조리 전용 액션(젓기·투입)은 리그에 없지만,
+     스테이션 작업 루트가 선반에서 집고(pickup) 조리대·솥에서 다루는(interact) 동작을
+     돌려 준다 — 지금 가진 것 중 작업으로 보이는 유일한 경로다. */
+  if (typeof personRoute === "function") personRoute("tidy", { loop:true });
+  demoPersonView();
+}
+
+function demoSteamUp() { STEAM.k = 5; steamSettle(); }
+
+function demoIgnite() { FIRE_FOG.speed = DEMO_FIRE_SPEED; setFire(true); }
+
+/* 검출을 켠다. 자유 시점이면 박스 오버레이가 안 보이므로(milCapture는 CCTV 프레임을
+   쓴다) 화재가 제일 잘 보이는 CCTV로 먼저 옮긴다. 모드는 기본 mock —
+   .onnx 파일 없이도 도는 경로라 발표 자리에서 실패하지 않는다. */
+function demoDetectOn() {
+  DEMO.follow = null;                            // CCTV 화면으로 넘어간다
+  if (!SURV[mainView]) {
+    mainView = "cvN";
+    if (typeof viewSel !== "undefined" && viewSel) viewSel.value = "cvN";
+    applyCameras();
+  }
+  /* **좌우가 같은 모델이어야 증명이 된다.**
+     `mock`은 `milMaskBoxes()`가 GT 마스크에서 박스를 뽑는다 — 주석에도 "완벽한 검출"이라
+     적혀 있는, 정답지를 보고 그리는 경로다. 그 상태로 우측(실영상, 진짜 추론)과 나란히
+     놓으면 "같은 모델이 둘 다 잡는다"가 아니라 **연출**이 된다.
+     → 실모델이 붙어 있을 때만 onnx로 바꾼다. 없거나 더미면 mock이 낫다 —
+       발표 중에 빈 화면이 뜨는 것보다는 모의라도 도는 편이 낫고, 더미로 바꿔 봐야
+       입력과 무관한 고정 박스라 정답지보다 나을 게 없다. */
+  if (ONNX.session && !ONNX.isDummy && MIL.mode === "mock") {
+    const sel = $("milMode");
+    if (sel) { sel.value = "onnx"; sel.dispatchEvent(new Event("change")); }  // 행 표시까지 핸들러가 맞춘다
+    else MIL.mode = "onnx";
+    console.warn("[DEMO] 시뮬 검출을 onnx로 전환 — 우측 실영상과 같은 모델");
+  } else if (MIL.mode === "mock") {
+    console.warn("[DEMO] 시뮬 검출이 mock이다 — GT 마스크 기반 '완벽한 검출'이지 모델이 아니다" +
+                 (ONNX.isDummy ? " (붙은 모델이 더미다)" : " (모델 없음)"));
+  }
+  if (!MIL.on) $("milBtn").click();
+  /* 실영상 패널도 같이 연다 — 시뮬이 시뮬을 검출하는 그림만으로는 설득이 안 된다.
+     클립이 하나도 없으면 조용히 넘어간다(패널이 안 열릴 뿐 시나리오는 계속 간다). */
+  if (vidShowFor(vidBestSlot()) && ONNX.session && !VID.detect) $("vidDetectBtn").click();
+}
+
+function demoCollapse() { personFall(); }
+
+/* 실신 상태를 푼다. demoHazardClear()로는 안 풀린다 — 그쪽은 엑스트라의 충돌/끼임
+   상태를 되돌리는 함수이고, 실신은 **주인공의 액션**이라 계통이 다르다. */
+function demoStandUp() { if (PERSON && PERSON.acting === "down") personGetUp(); }
+
+/* 출입구로 대피 — **문 메시에서 좌표를 읽는다.**
+   ⚠️ `STATION.door`를 쓰면 안 된다. 라벨이 "입구"라 처음에 그걸 썼는데, 실측하니
+   (4.77, 3.37)로 **진짜 문(1.8, 5.71)에서 3m 떨어진 작업 스테이션**이었다.
+   조리원이 문 근처 엉뚱한 데로 걸어가 대피처럼 보이지 않았다.
+   남벽 문 정면(x 1.32~2.27)은 v86에서 이미 비워 뒀으므로 직선으로 나갈 수 있다. */
+/* 대피를 **보여줄 카메라가 없다** (2026-08-24 실측).
+   벽 CCTV 8대는 전부 셀 안쪽을 조준하도록 설치돼 있어서, 남벽 문은 화면 맨 위 가장자리에
+   걸린다. 제일 나은 `cvN`(조리라인)조차 대피 지점까지 **9.6m**이고 사람이 화면 y=0.11에
+   찍히는 점이 된다 — 나가는 게 안 보인다.
+   → 대피 비트에서만 **자유 시점을 문 쪽으로 돌린다.** 실제 CCTV 성능을 속이는 게 아니라
+     (그건 ④ 감지 비트가 CCTV로 보여준다) 이야기를 보여주는 컷이다. */
+function demoExitView() {
+  DEMO.follow = null;                            // 문 쪽 고정 컷 — 따라가기와 싸우면 안 된다
+  if (mainView !== "free") {
+    mainView = "free";
+    if (typeof viewSel !== "undefined" && viewSel) viewSel.value = "free";
+    applyCameras();
+  }
+  /* 조준점은 **문 메시에서 계산한다.** 처음에 섬 배치 좌표(1.8, 4.6)를 박아 뒀는데
+     복도형(`?layout=corridor`)에서는 방이 z1=3.5까지라 **벽 바깥을 보게 된다**(실측 1.55m 어긋남).
+     각도(alpha·beta)는 월드 기준이라 그대로 둬도 두 배치 모두 방 안에 카메라가 선다. */
+  const d = scene.getMeshByName("door");
+  const dx = d ? d.position.x : 1.8;
+  const zt = LAYOUT.room.z1 - 1.15;              // 문 조금 안쪽 — 걸어오는 구간이 같이 잡힌다
+  camera.setTarget(new V3(dx, 1.00, zt));
+  camera.alpha = -2.60; camera.beta = 1.28; camera.radius = 5.3;
+}
+
+/* ══ 출입문 열림 — 대피 연출 (2026-08-25) ═══════════════════════════════════
+   **왜.** 종전에는 조리원이 문 앞에서 **그냥 사라졌다.** 방 밖에 지오메트리가 없어
+   계속 걷게 두면 허공에 서 있는 그림이 되기 때문인데, 관객 눈에는 "사람이 증발했다"로
+   보인다. 대피 성공이 이 장면의 결론인데 그게 전달되지 않는다.
+
+   **어떻게.** 문이 열리고 → 사람이 문턱을 **지나서** 어두운 안쪽까지 걸어 들어가고 →
+   거기서 숨고 → 문이 닫힌다. 사라지는 순간을 어둠이 가려 주고, 닫히는 문이
+   "나갔다"를 확정한다.
+
+   ⚠️ 걸린 것 3가지 — 전부 **조용히** 실패하는 종류였다.
+
+   1. **`door`는 월드행렬이 고정돼 있다.** 최적화 단계에서 STATIC 정규식(`door` 포함)에
+      걸려 `freezeWorldMatrix()`를 맞는다. 그냥 회전시키면 값은 바뀌는데 **화면은 안
+      움직인다.** 예외도 경고도 없다. → `unfreezeWorldMatrix()`를 먼저 부른다.
+
+   2. **벽에 구멍이 없다.** 문은 남벽에 얹은 상자일 뿐이라 열어도 뒤가 벽이다.
+      → 문 크기의 어두운 상자(`doorVoid`)를 뒤에 둔다. 닫혀 있으면 문이 가리고(문 z가
+        0.02 더 앞), 열리면 복도처럼 깊이가 생긴다. **벽 지오메트리는 안 건드린다** —
+        벽을 자르면 GT 마스크·충돌·조명이 전부 딸려 온다.
+
+   3. **문 상자는 피벗이 한가운데다.** 그대로 돌리면 벽 한복판에서 팽이처럼 돈다.
+      → 경첩 노드를 왼쪽 모서리에 만들고 문·창을 거기 붙인다.
+      ⚠️ 붙이는 순간 `door.position`이 **로컬 좌표로 바뀐다.** 문 x를 읽어 쓰는 곳은
+        `getAbsolutePosition()`으로 고쳐야 한다(demoEvacuate가 그랬다).
+
+   사람이 벽을 통과하는 것은 문제가 없다 — 벽(`wall_`)은 사람 충돌 목록에서 빠져 있고
+   (자동 충돌 생성의 SKIP 목록), 위치를 방 안으로 가두는 코드도 없다(확인함). */
+const DOOR = { hinge:null, void:null, cur:0, target:0, closeAt:0,
+               OPEN: 1.75,        // 약 100° — 벽에 거의 붙을 때까지 열린다
+               MS: 800 };         // 완전히 열리는 데 걸리는 시간
+
+function doorBuild() {
+  if (DOOR.hinge) return true;
+  const d = scene.getMeshByName("door");
+  if (!d) { console.warn("[DOOR] door 메시가 없다 — 문 연출을 건너뛴다"); return false; }
+  const w = scene.getMeshByName("doorWin");
+  d.unfreezeWorldMatrix(); if (w) w.unfreezeWorldMatrix();
+
+  const dp = d.getAbsolutePosition().clone();
+  const HALF = 0.475;                                   // 문 폭 0.95의 절반
+  const h = new BABYLON.TransformNode("doorHinge", scene);
+  h.position.set(dp.x - HALF, 0, dp.z);                 // 경첩 = 문 왼쪽 모서리
+  d.parent = h; d.position.set(HALF, dp.y, 0);
+  if (w) { const wp = w.getAbsolutePosition().clone();
+           w.parent = h; w.position.set(HALF, wp.y, wp.z - dp.z); }
+
+  /* 어두운 출입구. 앞면이 벽보다 0.02m 안쪽이라 벽 위에 그려지고, 닫힌 문(0.04m 안쪽)이
+     그보다 앞이라 평소에는 안 보인다. */
+  const RM = LAYOUT.room;
+  const v = BABYLON.MeshBuilder.CreateBox("doorVoid",
+              { width:0.95, height:2.05, depth:0.62 }, scene);
+  v.position.set(dp.x, 1.025, RM.z1 + 0.29);
+  const m = new BABYLON.StandardMaterial("doorVoidMat", scene);
+  m.diffuseColor  = new BABYLON.Color3(0.02, 0.02, 0.03);
+  m.specularColor = BABYLON.Color3.Black();
+  m.emissiveColor = new BABYLON.Color3(0.012, 0.012, 0.018);   // 완전 검정은 구멍이 아니라 얼룩으로 보인다
+  v.material = m; v.isPickable = false; v.receiveShadows = false;
+  DOOR.void = v; DOOR.hinge = h;
+  return true;
+}
+
+function doorOpen()          { if (doorBuild()) { DOOR.target = DOOR.OPEN; DOOR.closeAt = 0; } }
+function doorClose(delayMs)  { if (DOOR.hinge) DOOR.closeAt = performance.now() + (delayMs || 0); }
+function doorReset() {
+  DOOR.target = 0; DOOR.cur = 0; DOOR.closeAt = 0;
+  if (DOOR.hinge) DOOR.hinge.rotation.y = 0;
+}
+
+/* 프레임률과 무관하게 같은 속도로 돈다 — 등속이라 dt가 흔들려도 걸리는 시간이 같다. */
+function doorTick(dt) {
+  if (!DOOR.hinge) return;
+  if (DOOR.closeAt && performance.now() >= DOOR.closeAt) { DOOR.target = 0; DOOR.closeAt = 0; }
+  const diff = DOOR.target - DOOR.cur;
+  if (Math.abs(diff) < 0.001) return;
+  const step = (DOOR.OPEN / DOOR.MS) * dt;
+  DOOR.cur += Math.sign(diff) * Math.min(step, Math.abs(diff));
+  DOOR.hinge.rotation.y = DOOR.cur;
+}
+
+function demoEvacuate() {
+  demoHazardClear();
+  demoStandUp();                                // 쓰러진 채로는 문까지 미끄러져 간다
+  person.freeze = false;
+  doorOpen();                                   // 걸어가는 동안 열린다 (0.8초)
+  const d = scene.getMeshByName("door");
+  /* ⚠️ `position`이 아니라 `getAbsolutePosition()`이다 — doorBuild가 문을 경첩에 붙이면
+     `position`은 로컬(0.475)이 되어 문이 방 한가운데에 있는 것처럼 읽힌다. */
+  const dx = d ? d.getAbsolutePosition().x : 1.8;
+  const zOut = LAYOUT.room.z1 + 0.18;           // 문턱을 **지나** 어두운 출입구 안쪽
+  /* 접근점은 **이미 지나쳤으면 건너뛴다.** 안 그러면 문보다 남쪽에 서 있던 사람이
+     북쪽으로 되돌아갔다가 다시 내려온다 — 실측으로 확인한 지그재그다(z 4.52 → 3.8 → 5.3). */
+  const zApp = zOut - 1.5;
+  const path = [];
+  if (person.node.position.z < zApp) path.push(new V3(dx, 0, zApp));
+  path.push(new V3(dx, 0, zOut));
+  personGo(path, { speed:1.15 });
+  demoExitView();
+  DEMO.evac = { x:dx, z:zOut };                 // 도착 판정은 demoTick이 한다
+}
+
+/* 진화 — 불을 끄되 **연기가 서서히 걷히게** 한다.
+   왜 setFire(false)를 그대로 안 쓰는가: 그 경로의 fireFogStop()은 안개 밀도를
+   **즉시** 원래대로 되돌린다. 화면에서는 "불이 꺼졌다"가 아니라 "장면이 리셋됐다"로
+   보여서 수습되는 그림이 안 나온다.
+
+   ⚠️ 기본 동작은 **일부러 안 바꿨다.** 데이터셋 생성은 setFire(false) 직후
+   fsmoke.reset()으로 표본을 깨끗이 비운다. 거기서 안개가 9초씩 남으면 화재 아닌
+   표본에 연무가 섞여 그림과 라벨이 어긋난다. 그래서 페이드는 발표용에서만 켠다. */
+function demoExtinguish(ms) {
+  if (!state.fire) return;
+  /* ⚠️ 목표는 `saved.density`가 **아니다.** 실측하니 원래 씬은 안개가 아예 없다
+     (저장된 fogMode = NONE — 그때 density 0.1은 쓰이지 않는 값이다).
+     0.1로 페이드하면 끝에서 fireFogStop이 모드를 NONE으로 되돌리는 순간
+     0.115 → 없음으로 툭 튄다. 페이드를 넣은 이유가 사라진다.
+     혹시 배치가 바뀌어 기본 안개가 생기면 그 값으로 가도록 분기해 둔다. */
+  const target = (FIRE_FOG.saved && FIRE_FOG.saved.mode !== BABYLON.Scene.FOGMODE_NONE)
+    ? FIRE_FOG.saved.density : 0;
+  /* FIRE_FOG.on을 먼저 내린다 — fireFogTick이 매 프레임 밀도를 다시 올리므로
+     안 내리면 내 페이드와 서로 싸운다. fireFogStop()은 페이드가 끝난 뒤 부른다
+     (fogMode·색·enabled를 정식으로 복원하는 건 거기다). */
+  FIRE_FOG.on = false;
+  state.fire = false;                           // 불빛은 메인 루프가 알아서 줄인다
+  firePS.emitRate = 0; fsmoke.emitRate = 0;
+  DEMO.fade = { t:0, dur: ms || 9000, from: scene.fogDensity, to: target };
+}
+
+const DEMO_SCRIPTS = {
+  /* before — 지금 현장에서 실제로 일어나는 순서. 감지가 없으면 어떻게 끝나는가. */
+  before: [
+    { at:0,     msg:"① 조리원이 평소대로 작업합니다",                   act: demoNormalWork },
+    /* ✅ 자막에 "수증기"를 되돌렸다 (2026-08-25). 회의록 2단계가 "주방 조리 간 수증기 발생"이라
+       명시돼 있고, 다시 재 보니 **김은 보인다** — 해치 정면에서 가시픽셀 7.83%다.
+       뺐던 근거(1.16%)는 전체 화면 평균이라 국소 기둥에는 안 맞는 지표였다.
+       ⚠️ 카메라는 종전 시점(솥 근접 자유시점) 그대로다. 해치 정면으로 옮기면 김이
+       1.7배 크게 잡히지만(6.22% → 10.48%) 연출이 바뀌는 판단이라 별도 브랜치로 뺐다.
+       종전 시점도 6.22%라 안 보이는 수준이 아니다 — 자막 복원은 이대로도 정당하다. */
+    { at:7000,  msg:"② 국솥에서 수증기가 오릅니다 — 조리가 한창입니다",   act: () => { demoSteamUp(); demoKettleView(); vidShowFor("normal"); } },
+    { at:15000, msg:"③ 과열된 기름에 불이 붙었습니다",                  act: () => { demoIgnite(); demoKettleView(); vidShowFor("smoke"); } },
+    { at:24000, msg:"④ 연기가 자욱합니다 — 카메라가 화재를 놓칩니다",   act: demoWideView },
+    /* ⚠️ demoHazard는 "push"/"pinch"만 받는다. 처음에 "fall"을 넘겼더니 findHazardSpot이
+       null을 돌려주고 **조용히 아무 일도 안 일어났다.** 실신은 주인공 액션이다. */
+    { at:33000, msg:"⑤ 연기 속에서 조리원이 쓰러집니다",                act: () => { demoPersonView(); demoCollapse(); } },
+    { at:44000, msg:"⑥ 아무도 모릅니다 — 뒤늦게 발견됩니다",            act: () => {} },
+  ],
+  /* after — 같은 사고에 감지를 넣으면 어디서 갈라지는가.
+     ③까지는 before와 **완전히 같아야 한다.** 다르면 "조건이 달랐잖아"가 된다. */
+  after: [
+    { at:0,     msg:"① 조리원이 평소대로 작업합니다",                   act: demoNormalWork },
+    /* ✅ 자막에 "수증기"를 되돌렸다 (2026-08-25). 회의록 2단계가 "주방 조리 간 수증기 발생"이라
+       명시돼 있고, 다시 재 보니 **김은 보인다** — 해치 정면에서 가시픽셀 7.83%다.
+       뺐던 근거(1.16%)는 전체 화면 평균이라 국소 기둥에는 안 맞는 지표였다.
+       ⚠️ 카메라는 종전 시점(솥 근접 자유시점) 그대로다. 해치 정면으로 옮기면 김이
+       1.7배 크게 잡히지만(6.22% → 10.48%) 연출이 바뀌는 판단이라 별도 브랜치로 뺐다.
+       종전 시점도 6.22%라 안 보이는 수준이 아니다 — 자막 복원은 이대로도 정당하다. */
+    { at:7000,  msg:"② 국솥에서 수증기가 오릅니다 — 조리가 한창입니다",   act: () => { demoSteamUp(); demoKettleView(); vidShowFor("normal"); } },
+    { at:15000, msg:"③ 과열된 기름에 불이 붙었습니다",                  act: () => { demoIgnite(); demoKettleView(); vidShowFor("smoke"); } },
+    { at:21000, msg:"④ 화재를 즉시 감지했습니다 — 검출 시작",           act: demoDetectOn },
+    { at:30000, msg:"⑤ 조리원이 출입구로 대피합니다",                   act: demoEvacuate },
+    { at:42000, msg:"⑥ 진화 — 연기가 걷힙니다",                        act: () => { demoWideView(); demoExtinguish(9000); } },
+  ],
+};
+
+function demoTick(dt) {
+  /* 페이드와 대피 도착 판정은 **DEMO.on과 무관하게** 돈다.
+     마지막 비트에서 시계가 멈춘 뒤에도 연기는 계속 걷혀야 하고,
+     조리원은 계속 문까지 걸어가야 한다. */
+  /* 조리원 따라가기 — 사람이 걸어 다니므로 고정 조준으로는 금방 프레임을 벗어난다.
+     부드럽게 쫓아가되(0.08) 자유 시점일 때만 — CCTV 컷을 빼앗으면 안 된다. */
+  if (DEMO.follow === "person" && mainView === "free" && person.node.isEnabled()) {
+    /* **setTarget을 쓰면 안 된다** — 위 주석대로 매 프레임 각도·거리를 다시 계산해
+       카메라가 사람 쪽으로 빨려 들어간다(실측: 몇 초 만에 반경 7.6 → 2.5).
+       target 벡터를 제자리에서 옮기면 alpha·beta·radius가 그대로 유지된다. */
+    const p = person.node.position, t = camera.target;
+    t.x += (p.x - t.x) * 0.08;
+    t.z += (p.z - t.z) * 0.08;
+    t.y += (1.05 - t.y) * 0.08;
+  }
+  if (DEMO.fade) {
+    const f = DEMO.fade; f.t += dt;
+    const k = Math.min(1, f.t / f.dur);
+    scene.fogDensity = f.from + (f.to - f.from) * k;
+    /* 남은 연기 입자가 **페이드가 끝나는 시점에 맞춰 사라지게** 수명을 잘라낸다.
+       최성기 수명이 8~14초라 그냥 두면 안개가 걷힌 뒤에도 연기 덩어리만 떠 있다.
+
+       배수로 늙히는 방식(age += dt×2.2)을 먼저 썼는데 **못 쓴다** — 입자 노화는
+       Babylon이 `getAnimationRatio()` 기준으로 돌리는데, 캡처·검증처럼 강제 렌더
+       루프를 돌리면 이 값이 0.06까지 떨어져(실측) 얼마나 늙을지가 들쭉날쭉해진다.
+       "남은 수명 ≤ 남은 페이드 시간"으로 **직접 못박으면** 프레임률과 무관해진다.
+       age를 고치는 것은 배열을 건드리지 않으므로 내부 재고 풀이 안 깨진다
+       (`particles.length = 0` 금지 규칙과 무관하다). */
+    const parts = fsmoke.particles, remain = Math.max(0, (f.dur - f.t) / 1000);
+    for (let i = 0; i < parts.length; i++) {
+      const q = parts[i];
+      if (q.lifeTime - q.age > remain) q.age = q.lifeTime - remain;
+    }
+    if (k >= 1) { DEMO.fade = null; setFire(false); }   // 여기서 안개를 정식 복원한다
+  }
+  if (DEMO.evac) {
+    const p = person.node.position;
+    if (Math.hypot(p.x - DEMO.evac.x, p.z - DEMO.evac.z) < 0.45) {
+      /* 문을 통과한 것으로 본다 — 방 밖은 지오메트리가 없어서 계속 걷게 두면
+         허공에 서 있는 그림이 된다. 여기서 감춘다. 되돌리기가 다시 보이게 한다. */
+      DEMO.evac = null;
+      person.mode = "idle"; person.path = [];
+      person.node.setEnabled(false);
+      doorClose(700);                           // 나간 뒤 문이 닫힌다 — "나갔다"를 확정한다
+      demoSay("⑤ 조리원이 밖으로 빠져나갔습니다 — 대피 완료");
+    }
+  }
+  if (!DEMO.on) return;
+  DEMO.t += dt;
+  const S = DEMO_SCRIPTS[DEMO.kind];
+  while (DEMO.beat + 1 < S.length && DEMO.t >= S[DEMO.beat + 1].at) {
+    DEMO.beat++;
+    const b = S[DEMO.beat];
+    /* 비트 하나가 실패해도 시나리오는 계속 간다 — 발표 도중 한 줄 때문에
+       화면이 멈추는 것이 제일 나쁘다. 실패는 콘솔에만 남긴다. */
+    try { b.act(); } catch (e) { console.warn("[DEMO] 비트 " + DEMO.beat + " 실패", e); }
+    demoSay(b.msg);
+  }
+  /* 마지막 비트에서 4초 더 보여주고 시계를 멈춘다(화면 상태는 그대로 둔다).
+     ⚠️ 화재 4배속은 **반드시 여기서 되돌린다.** 되돌리기를 안 누르고 그대로
+     데이터셋을 생성하면 표본마다 연기 진행이 4배로 감겨 들어간다. */
+  if (DEMO.beat >= S.length - 1 && DEMO.t > S[S.length - 1].at + 4000) {
+    DEMO.on = false;
+    FIRE_FOG.speed = 1;
+  }
+}
+
+function demoRun(kind) {
+  if (!DEMO_SCRIPTS[kind]) return;
+  demoReset(true);
+  /* 되돌릴 지점을 뜬다 — 사고 시나리오의 ACC.saved와 같은 방식이다.
+     안 뜨면 되돌리기를 눌러도 사람은 문 앞에 서 있고 주 시점은 CCTV에 남는다
+     (실측으로 확인한 첫 판의 실제 증상이다). */
+  DEMO.saved = {
+    pos: person.node.position.clone(), rotY: person.node.rotation.y,
+    view: mainView,
+    /* ⚠️ 검출 모드도 뜬다. ④에서 mock→onnx로 바꾸는데, 되돌리지 않으면
+       **다음 사람이 쓸 때 모드가 바뀐 채로 남는다.** 같은 sim.html을 팀원이 쓴다. */
+    milMode: MIL.mode,
+  };
+  DEMO.on = true; DEMO.kind = kind; DEMO.t = 0; DEMO.beat = -1;
+  demoSay("▶ " + kind + " 시나리오 시작");
+}
+
+function demoReset(quiet) {
+  DEMO.on = false; DEMO.kind = null; DEMO.t = 0; DEMO.beat = -1;
+  FIRE_FOG.speed = 1;                          // 발표용 4배속을 원래대로
+  setFire(false);
+  STEAM.k = 1; steamSettle();
+  demoHazardClear();
+  demoStandUp();
+  if (MIL.on) $("milBtn").click();
+  /* 진화 페이드가 돌던 중이면 끊는다 — 위에서 이미 setFire(false)를 불렀으므로
+     안개는 정식 복원돼 있다. 남겨 두면 복원된 밀도를 페이드가 다시 덮어쓴다. */
+  DEMO.fade = null; DEMO.evac = null; DEMO.follow = null;
+  doorReset();                                  // 문을 닫힌 상태로
+  if (VID.open) { VID.detect = false; const vb = $("vidDetectBtn"); if (vb) vb.textContent = "검출 시작"; vidOpen(false); }
+  person.node.setEnabled(true);                 // 대피로 감췄던 경우 되돌린다
+  person.freeze = false;
+  /* 걷던 경로를 끊고 제자리로. mode·path를 안 비우면 되돌린 뒤에도 문 쪽으로 계속 간다. */
+  person.mode = "idle"; person.path = []; person.pi = 0;
+  if (DEMO.saved) {
+    person.node.position.copyFrom(DEMO.saved.pos);
+    person.node.rotation.y = DEMO.saved.rotY;
+    if (DEMO.saved.view && DEMO.saved.view !== mainView) {
+      mainView = DEMO.saved.view;
+      if (typeof viewSel !== "undefined" && viewSel) viewSel.value = mainView;
+      applyCameras();
+    }
+    /* 검출 모드를 원래대로. 안 되돌리면 팀원이 mock으로 쓰던 환경이 onnx로 바뀐 채 남는다. */
+    if (DEMO.saved.milMode && DEMO.saved.milMode !== MIL.mode) {
+      const sel = $("milMode");
+      if (sel) { sel.value = DEMO.saved.milMode; sel.dispatchEvent(new Event("change")); }
+      else MIL.mode = DEMO.saved.milMode;
+    }
+    DEMO.saved = null;
+  }
+  if (!quiet) demoSay("되돌림 — 초기 상태");
+}
+
+/* 자체 시계로 돈다. 공용 렌더 루프(registerBeforeRender 본체)에 줄을 더하지 않아
+   팀원 작업과 충돌하지 않는다. dt 상한 60ms는 본체와 같은 규칙 — 탭이 쉬다 돌아올 때
+   한 프레임에 비트가 여러 개 건너뛰는 것을 막는다. */
+(() => {
+  let last = performance.now();
+  scene.registerBeforeRender(() => {
+    const now = performance.now();
+    const dt = Math.min(now - last, 60);
+    last = now;
+    doorTick(dt);
+    demoTick(dt);
+    vidTick(dt);
+    shotTick(dt);
+  });
+})();
+
+/* ══ 샷 리스트 — 발표 11컷 자동 전환 (2026-08-24) ═══════════════════════════
+   카메라는 **이미 다 있다.** 요청받은 11컷이 전부 등록된 감시 카메라에 1:1로 맞는다.
+   그래서 만들 게 아니라 **순서대로 트는 것**이 이 작업이다.
+
+   화재 단계를 컷마다 지정하는 이유 — "해치정면(불 나는 거)"과 "저상(연기 낀 뷰)"은
+   시점이 아니라 **타이밍이 조건**이다. 불꽃은 초반이라야 연기에 안 가리고(실측: 후드 밑
+   전용 캠도 후반엔 연무에 묻힌다), 연기 낀 뷰는 후반이라야 자욱하다.
+     fire: null → 지금 상태 그대로 · 0 → 끈다 · N → 켜고 N초 지점으로 맞춘다
+
+   ⚠️ 순서는 **요청받은 그대로** 뒀다. 그래서 ②에서 불을 켰다가 ③~⑧에서 끄고 ⑨에서 다시
+   켠다 — 점화가 두 번 일어난다. 화재 컷(②⑨⑩⑪)을 뒤로 몰면 한 번으로 끝나고 더 매끄럽다.
+   바꾸려면 이 배열 순서만 고치면 된다. */
+const SHOTS = [
+  { cam:"lowFloor", label:"① 저상 — 남서",        fire:0  },
+  { cam:"fireSE",   label:"② 불꽃 — 남동",        fire:12 },
+  { cam:"cvNW",     label:"③ 북서 모서리",        fire:0  },
+  { cam:"cvN",      label:"④ 조리라인",           fire:0  },
+  { cam:"cvNE",     label:"⑤ 북동 모서리",        fire:0  },
+  { cam:"cvSE",     label:"⑥ 입구",               fire:0  },
+  { cam:"cvS",      label:"⑦ 로봇 남",            fire:0  },
+  { cam:"cvSW",     label:"⑧ 배식구",             fire:0  },
+  { cam:"cvHatch",  label:"⑨ 해치 정면 — 발화",   fire:15 },
+  { cam:"lowFloor", label:"⑩ 저상 — 연기 낀 뷰",  fire:65 },
+  { cam:"fireNW",   label:"⑪ 불꽃2 — 북서",       fire:12 },
+];
+const SHOW = { on:false, i:-1, t:0, dwell:4000, saved:null };
+
+function shotSetView(camId) {
+  if (!SURV[camId]) { console.warn("[SHOT] 없는 카메라:", camId); return false; }
+  mainView = camId;
+  if (typeof viewSel !== "undefined" && viewSel) viewSel.value = camId;
+  applyCameras();
+  return true;
+}
+
+function shotGo(i) {
+  const sh = SHOTS[i]; if (!sh) return;
+  SHOW.i = i; SHOW.t = 0;
+  /* 화재 상태를 먼저 맞추고 시점을 옮긴다 — 순서가 반대면 컷이 바뀐 뒤에 불이 붙어
+     첫 프레임이 어정쩡하게 찍힌다. */
+  if (sh.fire === 0) { if (state.fire) setFire(false); }
+  else if (typeof sh.fire === "number") {
+    if (!state.fire) setFire(true);
+    fireSeekTo(sh.fire);
+  }
+  shotSetView(sh.cam);
+  const n = $("shotNote");
+  if (n) n.textContent = sh.label + "  (" + (i + 1) + "/" + SHOTS.length + ") · " + sh.cam;
+  setStatus("샷 " + (i + 1) + "/" + SHOTS.length + " — " + sh.label);
+}
+
+function shotRun() {
+  shotStop(true);
+  SHOW.saved = { view: mainView, fire: state.fire };   // 정지하면 여기로 되돌린다
+  SHOW.on = true;
+  shotGo(0);
+}
+
+function shotStop(quiet) {
+  SHOW.on = false; SHOW.i = -1; SHOW.t = 0;
+  if (SHOW.saved) {
+    if (state.fire !== SHOW.saved.fire) setFire(SHOW.saved.fire);
+    if (SHOW.saved.view && SHOW.saved.view !== mainView) {
+      mainView = SHOW.saved.view;
+      if (typeof viewSel !== "undefined" && viewSel) viewSel.value = mainView;
+      applyCameras();
+    }
+    SHOW.saved = null;
+  }
+  const n = $("shotNote");
+  if (n && !quiet) n.textContent = SHOTS.length + "컷 · 약 " +
+    Math.round(SHOTS.length * SHOW.dwell / 1000) + "초";
+}
+
+function shotTick(dt) {
+  if (!SHOW.on) return;
+  SHOW.t += dt;
+  if (SHOW.t < SHOW.dwell) return;
+  if (SHOW.i + 1 < SHOTS.length) shotGo(SHOW.i + 1);
+  else { shotStop(false); setStatus("샷 리스트 끝 — 원래 시점으로 되돌렸습니다"); }
+}
+
+$("shotRun").addEventListener("click", () => shotRun());
+$("shotStop").addEventListener("click", () => shotStop(false));
+$("shotDwell").addEventListener("input", e => {
+  SHOW.dwell = parseFloat(e.target.value) * 1000;
+  $("shotDwellV").textContent = parseFloat(e.target.value).toFixed(1) + "s";
+  if (!SHOW.on) shotStop(false);                      // 안내문의 총 시간을 갱신한다
+});
+
+/* ══ 실영상 검증 패널 (2026-08-24) ═══════════════════════════════════════════
+   왜. 발표에서 제일 약한 고리는 **시뮬이 시뮬을 검출하는 그림**이다 — 아무도 안 믿는다.
+   같은 모델을 **실제로 찍은 영상**에 돌려 우측에 나란히 띄워야 "된다"가 증명된다.
+
+   지금은 껍데기까지다. 클립 3종(정상 / 연기 낀 / 연기+화재) 중 **실사로 있는 건
+   정상 조리뿐**이고 나머지 둘은 생성 대기다. 껍데기를 먼저 만들어 두면 클립이 오는 대로
+   **파일만 갈아끼우면** 된다.
+
+   ⚠️ 클립은 브라우저 밖으로 안 나간다(objectURL). 실사 CCTV를 저장소에 넣지 않기 위해
+   파일 입력 방식을 쓴다 — `demo_clips/`에 두면 자동으로 잡지만 그 폴더는 동기화 대상이 아니다. */
+const VID = {
+  wrap:null, el:null, ov:null, open:false,
+  clips: { normal:null, smoke:null, fire:null },
+  size:  { normal:0,    smoke:0,    fire:0    },   // 바이트 — 같은 파일을 세 칸에 걸어 둔 것을 잡는다
+  ranges:{ normal:false, smoke:false, fire:false },// 서버가 구간 요청을 받는가 (못 받으면 시킹이 죽는다)
+  order: ["normal", "smoke", "fire"],
+  cur: null,
+  detect:false, busy:false, acc:0, hz:2.5,       // 추론은 비싸다 — 2.5Hz면 충분히 살아 보인다
+  boxes:null, ms:0, err:null,
+};
+const VID_LABEL  = { normal:"① 정상 조리", smoke:"② 연기 낀 조리", fire:"③ 연기 + 화재" };
+/* 색은 MIL_COLORS 하나만 쓴다. 종전에는 여기서 fire·smoke를 따로 얹었는데(패널만 색이 있고
+   시뮬 오버레이는 흰색이었다), 같은 클래스가 좌우에서 다른 색으로 나오면 같은 모델이
+   같은 것을 봤다는 그림이 깨진다. MIL_COLORS에 fire·smoke를 넣어 한 곳으로 합쳤다. */
+
+/* 패널을 3D 화면 안 오른쪽 아래에 붙인다. 위쪽은 PiP, 왼쪽 위는 상태 HUD,
+   아래 가운데는 FPS 줄이 쓰므로 남는 자리가 여기다. 아래 여백을 44로 둔 것은
+   캔버스 우하단 모서리의 작은 토글 버튼을 가리지 않기 위해서다. */
+function vidPlace() {
+  if (!VID.wrap) return;
+  const cv = engine.getRenderingCanvas().getBoundingClientRect();
+  const w = Math.max(280, Math.min(Math.round(cv.width * 0.42), 420));
+  VID.wrap.style.width = w + "px";
+  VID.wrap.style.left = Math.round(cv.right - w - 12) + "px";
+  VID.wrap.style.top = "auto";
+  VID.wrap.style.bottom = Math.round(window.innerHeight - cv.bottom + 44) + "px";
+}
+
+function vidBuild() {
+  if (VID.wrap) return;
+  const w = document.createElement("div");
+  w.id = "vidPanel";
+  /* 위치는 vidPlace()가 **캔버스 기준으로** 잡는다. 종전에는 right:12px 고정이라
+     3D 화면(200~950px)을 넘어 **오른쪽 제어판까지 덮었다**(2026-08-24 피드백). */
+  w.style.cssText = "position:fixed;z-index:120;" +
+    "background:#0d1117ee;border:1px solid #30363d;border-radius:8px;overflow:hidden;display:none;" +
+    "font:12px/1.5 system-ui,sans-serif;color:#e6edf3;box-shadow:0 8px 24px #0008";
+  w.innerHTML =
+    '<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#161b22;' +
+      'border-bottom:1px solid #30363d"><b>실영상 — 검출 검증</b>' +
+      '<span id="vidClip" style="color:#8b949e"></span><span style="flex:1"></span>' +
+      '<button id="vidClose" style="background:none;border:0;color:#8b949e;cursor:pointer;font-size:14px">✕</button></div>' +
+    '<div style="position:relative;background:#000;line-height:0">' +
+      '<video id="vidEl" muted playsinline style="display:block;width:100%"></video>' +
+      '<canvas id="vidOv" style="position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none"></canvas>' +
+      '<div id="vidPh" style="display:none;align-items:center;justify-content:center;height:150px;' +
+        'color:#8b949e;font-size:12px;background:#0d1117;line-height:1.6;text-align:center"></div>' +
+    '</div>' +
+    '<div id="vidStatus" style="padding:5px 10px;color:#8b949e">대기</div>';
+  document.body.appendChild(w);
+  VID.wrap = w;
+  vidPlace();
+  window.addEventListener("resize", vidPlace);
+  VID.el = w.querySelector("#vidEl");
+  VID.ov = w.querySelector("#vidOv");
+  w.querySelector("#vidClose").addEventListener("click", () => vidOpen(false));
+  /* 영상이 안 열리면 **화면에 말해 준다.** 종전에는 검은 화면만 나오고 아무 설명이 없었다.
+     화재팀 클립은 생성 모델(veo·seedance) 출력이라 코덱이 뭘로 나올지 우리가 못 정한다 —
+     크롬이 못 여는 형식(HEVC 등)이면 발표 자리에서 "왜 안 나오지"로 시간을 버린다. */
+  VID.el.addEventListener("error", function () {
+    const e = VID.el.error;
+    const why = !e ? "알 수 없음"
+              : e.code === 4 ? "형식·코덱을 브라우저가 못 엽니다 (H.264 mp4로 다시 받으세요)"
+              : e.code === 3 ? "디코딩 실패 — 파일이 손상됐을 수 있습니다"
+              : e.code === 2 ? "네트워크 오류"
+              : "재생 중단됨";
+    VID.err = (VID_LABEL[VID.cur] || VID.cur || "클립") + " 열기 실패 — " + why;
+    console.warn("[VID] " + VID.err, e && e.code);
+    vidStatusLine();
+  });
+  // 한 클립이 끝나면 다음 클립으로 — 정상 → 연기 → 화재 순서가 곧 이야기다
+  VID.el.addEventListener("ended", () => vidNext());
+  /* 지정한 끝 위치에 닿아도 같은 처리를 한다. timeupdate는 초당 4회쯤 오는데
+     비트가 6~12초라 그 정도면 충분하다 — 매 프레임 검사할 이유가 없다.
+     src를 바꾸면 currentTime이 0으로 돌아가므로 두 번 걸리지 않는다. */
+  VID.el.addEventListener("timeupdate", () => {
+    const e = vidEndOf(VID.cur);
+    if (e && VID.el.currentTime >= e) vidNext();
+  });
+}
+
+function vidOpen(show) {
+  vidBuild();
+  vidPlace();                                   // 창 크기가 바뀌었을 수 있다
+  VID.open = !!show;
+  VID.wrap.style.display = VID.open ? "block" : "none";
+  if (!VID.open) { VID.el.pause(); VID.detect = false; }
+  const b = $("vidToggle"); if (b) b.textContent = VID.open ? "패널 닫기" : "패널 열기";
+}
+
+function vidSet(slot, url, size) {
+  VID.clips[slot] = url;
+  VID.size[slot] = +size || 0;
+  vidNote();
+}
+
+/* **세 칸에 같은 파일이 걸려 있는지** 본다. 실제로 그랬다 — 연기·화재 클립이 아직 없어서
+   정상 조리 영상에 심볼릭 링크만 세 개 걸어 뒀는데, 안내문은 "클립 3종"이라고 떴다.
+   그대로 발표하면 세 장면에 **똑같은 영상**이 나온다. 크기가 같으면 같은 파일로 본다
+   (심볼릭 링크는 HTTP 너머에서 구분할 방법이 없다 — Content-Length가 유일한 단서다). */
+function vidDupSlots() {
+  const by = {};
+  for (const k of VID.order) {
+    const sz = VID.size[k];
+    if (!VID.clips[k] || !sz) continue;
+    (by[sz] = by[sz] || []).push(k);
+  }
+  return Object.values(by).filter(g => g.length > 1);
+}
+
+/* 채워진 클립만 순서대로 돈다. 하나도 없으면 아무 일도 안 한다 —
+   발표 중에 빈 검은 화면이 뜨는 것보다 패널이 안 열리는 편이 낫다. */
+function vidHave() { return VID.order.filter(k => VID.clips[k]); }
+
+/* ④ 감지 비트가 틀 클립. 셋 다 있으면 ③(연기+화재)이 맞지만 **화재팀 영상이 순서대로
+   오지 않는다.** fire가 없으면 smoke로 내려간다 — 없다고 ④를 통째로 건너뛰면 발표에서
+   증명해야 할 장면이 사라진다.
+   ⚠️ normal까지는 안 내려간다. "화재를 즉시 감지했습니다" 자막 밑에 **평범한 조리 영상**이
+   뜨면 자리표시자보다 나쁘다 — 관객이 먼저 알아챈다. */
+function vidBestSlot() {
+  for (const k of ["fire", "smoke"]) if (VID.clips[k]) return k;
+  return "fire";                                  // 없으면 "③ 연기+화재 클립 준비 중"
+}
+
+/* 클립별 시작 위치(초). 실사는 98초인데 발표 비트 하나가 6~8초라 **앞부분만 보인다.**
+   불이 0:40에 나오는 영상을 그대로 틀면 ④ 감지 장면에 아무 일도 안 일어나는 그림이 뜬다.
+   원본을 자르지 않고 시작점만 옮긴다 — 받은 파일을 건드리지 않는 쪽이 안전하다.
+   `?vidstart=smoke:12,fire:38` 로 주거나 __sim.VID_START.fire = 38 로 바꾼다. */
+const VID_START = { normal:0, smoke:0, fire:0 };
+
+/* 클립별 **끝 위치(초)**. 0이면 파일 끝까지. 실사·생성 영상 모두 발표에 쓸 구간은
+   전체가 아니라 한 토막이다 — 시작만 옮기면 그 뒤가 전부 흘러 비트를 넘겨 버린다.
+   끝에 닿으면 **자연 종료와 똑같이** 처리한다(다음 클립으로; 마지막이면 vidNext가
+   일부러 마지막 프레임에서 멈춘다 — 그 결정은 그대로 둔다). */
+const VID_END = { normal:0, smoke:0, fire:0 };
+
+/* 파서를 하나로 쓴다. vidstart/vidend를 따로 짜 두면 한쪽만 고쳐져 **조용히 어긋난다.** */
+function vidParseTimes(param, into) {
+  try {
+    const q = new URLSearchParams(location.search).get(param);
+    if (!q) return;
+    q.split(",").forEach(pair => {
+      const [k, v] = pair.split(":");
+      const key = (k || "").trim();
+      if (key in into && isFinite(+v)) into[key] = Math.max(0, +v);
+    });
+  } catch (e) { /* 잘못 준 값은 무시한다 — 발표 중에 예외로 멈추면 안 된다 */ }
+}
+vidParseTimes("vidstart", VID_START);
+vidParseTimes("vidend",   VID_END);
+
+/* 끝 위치가 시작보다 앞이면 **틀자마자 끝나 검은 화면**이 된다. 그런 값은 없는 셈 친다. */
+function vidEndOf(slot) {
+  const e = VID_END[slot] || 0;
+  return (e > (VID_START[slot] || 0)) ? e : 0;
+}
+
+/* ══ 시킹이 죽는 함정 — **`python -m http.server`는 구간 요청을 못 받는다** ═══════
+   실측(2026-08-25): `Range: bytes=1000000-1000100`을 보내면 **206이 아니라 200**에
+   `Content-Length: 27131197`(파일 전체)이 온다. `Accept-Ranges` 헤더도 없다.
+   그러면 `currentTime` 대입이 **조용히 무시되고 0초부터 재생된다** — 예외도, 경고도 없다.
+   `?vidstart=`가 처음부터 안 먹고 있었다는 뜻이다.
+
+   CLAUDE.md가 이 서버를 쓰라고 안내하므로 발표 자리에서도 똑같이 안 먹는다.
+   서버를 바꾸라고 하면 배포본·팀원 환경까지 전부 따라와야 하므로, **브라우저 쪽에서 끝낸다**:
+   구간을 지정한 클립만 통째로 받아 blob으로 바꾼다. 메모리에 다 있으면 시킹이 항상 된다.
+   ⚠️ 지정 안 한 클립은 건드리지 않는다 — 실사 원본이 928MB짜리도 있다. */
+const VID_BLOB_CAP = 300 * 1024 * 1024;
+async function vidMakeSeekable(slot) {
+  const url = VID.clips[slot];
+  if (!url || url.startsWith("blob:")) return false;          // 파일 선택 경로는 이미 blob이다
+  if (!VID_START[slot] && !vidEndOf(slot)) return false;       // 구간을 안 잡았으면 받을 이유가 없다
+  if (VID.ranges[slot]) return false;                          // 서버가 구간 요청을 받으면 그대로 둔다
+  if (VID.size[slot] > VID_BLOB_CAP) {
+    console.warn("[VID] " + slot + " 는 " + Math.round(VID.size[slot] / 1048576) +
+                 "MB — 통째로 받지 않는다. 구간 지정이 안 먹는다(서버가 구간 요청을 못 받음).");
+    return false;
+  }
+  try {
+    const b = await (await fetch(url)).blob();
+    VID.clips[slot] = URL.createObjectURL(b);
+    console.warn("[VID] " + slot + " 구간 지정용으로 통째로 받았다 — " +
+                 Math.round(b.size / 1048576) + "MB (서버가 구간 요청을 못 받음)");
+    return true;
+  } catch (e) { console.warn("[VID] " + slot + " 내려받기 실패 — 구간 지정이 안 먹는다", e); return false; }
+}
+
+/* currentTime은 **메타데이터가 오기 전에는 안 먹는다** — 조용히 무시되고 0에서 시작한다.
+   그래서 src를 바꾼 직후에 걸지 않고 기다린다.
+
+   ⚠️ **`loadedmetadata`로는 부족하다**(2026-08-25 실측). 그 시점은 readyState 1이라
+   데이터가 아직 없고, 시크를 걸면 `seeking`(t=10)까지는 가는데 **`seeked`가 t=0으로
+   돌아온다** — 브라우저가 조용히 되돌린다. 예외도 경고도 없어서 "시작 위치가 안 먹네"로만
+   보인다. 이벤트 순서를 찍어서야 드러났다:
+       loadstart(rs0) → loadedmetadata(rs1) → seeking(t10,rs1) → **seeked(t0,rs4)**
+   → `canplay`(rs 3 이상, 실제로 틀 수 있는 상태)까지 기다린 뒤에 건다.
+
+   그래도 한 번 더 확인한다. 되돌려졌으면 **딱 한 번** 다시 건다 — 무한 재시도는
+   발표 중에 시크 루프로 화면이 떨리는 것보다 처음부터 트는 편이 낫다.
+   길이를 넘는 값을 주면 재생이 바로 끝나 버리므로 끝에서 0.1s 안쪽으로 자른다. */
+function vidSeekStart(slot) {
+  const st = VID_START[slot] || 0;
+  if (st <= 0) { try { VID.el.currentTime = 0; } catch (e) {} return; }
+  let retried = false;
+  const apply = function () {
+    const v = VID.el, dur = v.duration;
+    const want = (dur && isFinite(dur)) ? Math.min(st, Math.max(0, dur - 0.1)) : st;
+    try { v.currentTime = want; } catch (e) { return; }   // 시킹 못 하는 형식이면 처음부터 튼다
+    if (retried) return;
+    retried = true;
+    v.addEventListener("seeked", function () {
+      if (Math.abs(v.currentTime - want) > 0.5) apply();   // 되돌려졌다 — 한 번만 다시
+    }, { once:true });
+  };
+  VID.el.addEventListener("canplay", apply, { once:true });
+}
+
+function vidPlay(slot) {
+  if (!VID.clips[slot]) return false;
+  vidBuild();
+  VID.cur = slot;
+  /* 이전 클립의 오류 문구가 남으면 안 된다. 상태줄은 매 프레임 갱신되지만
+     **렌더 루프에 기대지 않고** 여기서 한 번 직접 지운다 — 탭이 유휴면 루프가 멈춘다. */
+  VID.err = null;
+  if (typeof vidStatusLine === "function") vidStatusLine();
+  VID.el.src = VID.clips[slot];
+  vidSeekStart(slot);
+  const p = VID.el.play();
+  if (p && p.catch) p.catch(e => console.warn("[VID] 재생 실패", e));
+  const c = VID.wrap.querySelector("#vidClip");
+  if (c) c.textContent = VID_LABEL[slot] || slot;
+  return true;
+}
+
+function vidNext() {
+  const have = vidHave();
+  const i = have.indexOf(VID.cur);
+  if (i >= 0 && i + 1 < have.length) vidPlay(have[i + 1]);
+  else VID.el.pause();                      // 마지막 클립 — 멈춰서 마지막 프레임을 남긴다
+}
+
+/* 지금 장면에 **맞는** 클립만 튼다 (2026-08-24 피드백).
+   종전에는 비트와 무관하게 항상 첫 클립(정상 조리)을 틀었다. 그래서 시뮬은 연기로
+   자욱한데 우측 패널은 **환한 정상 주방**이 나왔다 — 보는 사람이 먼저 이상함을 느낀다.
+   해당 클립이 없으면 **아무 클립도 틀지 않고** 무엇이 없는지 적는다. 없는 것을 있는 척
+   메우는 것보다 비어 있는 편이 정직하고, 클립이 들어오면 그 자리에 그대로 채워진다. */
+function vidShowFor(slot) {
+  vidBuild(); vidOpen(true);
+  const ph = VID.wrap.querySelector("#vidPh");
+  if (VID.clips[slot]) {
+    if (ph) ph.style.display = "none";
+    VID.el.style.display = "block";
+    if (VID.cur !== slot) vidPlay(slot);
+    return true;
+  }
+  VID.el.pause(); VID.el.style.display = "none";
+  VID.cur = null;
+  if (ph) { ph.style.display = "flex"; ph.textContent = (VID_LABEL[slot] || slot) + " 클립 준비 중"; }
+  const c = VID.wrap.querySelector("#vidClip");
+  if (c) c.textContent = VID_LABEL[slot] || slot;
+  VID.boxes = null; vidDraw();
+  return false;
+}
+
+function vidPlaySeq() {
+  const have = vidHave();
+  if (!have.length) { setStatus("실영상 클립이 없습니다 — 파일을 고르거나 demo_clips/ 에 넣으세요"); return false; }
+  vidOpen(true);
+  return vidPlay(have[0]);
+}
+
+async function vidDetectOnce() {
+  if (VID.busy || !VID.el || VID.el.readyState < 2) return;
+  if (!ONNX.session) { VID.err = "모델 미로드 — 모델 검증 섹션에서 .onnx 파일을 고르세요"; return; }
+  VID.busy = true;
+  try {
+    /* 비디오 엘리먼트를 **그대로** 넘긴다. onnxPreprocess가 그릴 수 있는 원본을 받도록
+       입구를 넓혀 뒀다 — 픽셀을 뽑아 넘기면 상단/하단 원점이 뒤집혀 박스가 위아래로 뒤집힌다. */
+    VID.boxes = await onnxInfer(VID.el, VID.el.videoWidth, VID.el.videoHeight);
+    VID.ms = ONNX.lastMs; VID.err = null;
+  } catch (e) {
+    VID.err = String((e && e.message) || e);
+  } finally { VID.busy = false; }
+}
+
+function vidDraw() {
+  if (!VID.open || !VID.ov || !VID.el) return;
+  const W = VID.el.clientWidth, H = VID.el.clientHeight;
+  if (!W || !H) return;
+  if (VID.ov.width !== W || VID.ov.height !== H) { VID.ov.width = W; VID.ov.height = H; }
+  const ctx = VID.ov.getContext("2d");
+  ctx.clearRect(0, 0, W, H);
+  if (!VID.boxes || !VID.boxes.length) return;
+  const s = Math.max(1, W / 640);
+  ctx.font = Math.round(12 * s) + "px ui-monospace,monospace";
+  ctx.lineWidth = 2 * s; ctx.textBaseline = "alphabetic";
+  for (const b of VID.boxes) {
+    const col = MIL_COLORS[b.label] || "#e6edf3";
+    const x = (b.cx - b.w / 2) * W, y = (b.cy - b.h / 2) * H;
+    ctx.strokeStyle = col; ctx.strokeRect(x, y, b.w * W, b.h * H);
+    const tag = b.label + " " + ((b.conf || 0) * 100).toFixed(0) + "%";
+    ctx.fillStyle = col; ctx.fillRect(x, y - 15 * s, ctx.measureText(tag).width + 9 * s, 15 * s);
+    ctx.fillStyle = "#0d1117"; ctx.fillText(tag, x + 4 * s, y - 4 * s);
+  }
+}
+
+function vidStatusLine() {
+  const st = VID.wrap && VID.wrap.querySelector("#vidStatus");
+  if (!st) return;
+  if (VID.err) { st.textContent = "⚠ " + VID.err; return; }
+  if (!VID.detect) { st.textContent = VID.cur ? (VID_LABEL[VID.cur] + " — 검출 꺼짐") : "대기"; return; }
+  const mismatch = ONNX.nc !== null && ONNX.nc !== ONNX.labels.length;
+  st.textContent = (ONNX.isDummy ? "⚠더미 · " : "") + (mismatch ? "⚠라벨불일치 · " : "") +
+                   (ONNX.name || "model") + " · " + (VID.boxes ? VID.boxes.length : 0) + "개 검출 · " +
+                   VID.ms.toFixed(0) + "ms · " + VID.hz + "Hz";
+  st.style.color = (ONNX.isDummy || mismatch) ? "#f0a020" : "";
+}
+
+function vidNote() {
+  const n = $("vidNote"); if (!n) return;
+  const have = vidHave();
+  /* 모델 상태를 같이 적는다. 클립이 다 있어도 모델이 없으면 박스가 안 그려지는데,
+     종전 안내문은 클립만 말해서 **발표 직전에 뭐가 빠졌는지 알 수 없었다.** */
+  const model = !ONNX.session ? "⚠ 모델 없음"
+              : ONNX.isDummy   ? "⚠ 더미 모델 — 실제 검출이 아닙니다"
+              : (ONNX.nc !== null && ONNX.nc !== ONNX.labels.length)
+                ? "⚠ 모델 " + ONNX.nc + "종 vs 라벨 " + ONNX.labels.length + "종 — 이름이 어긋납니다"
+              : "모델 " + (ONNX.name || "로드됨") +
+                (ONNX.labelsSrc === "URL" ? " · 라벨 " + ONNX.labels.join("/") : "");
+  /* 같은 파일을 여러 칸에 건 경우를 **이름까지 찍어서** 알린다. "3종"만 보고
+     준비가 끝났다고 판단하는 것이 이 안내문의 가장 위험한 실패다. */
+  const dup = vidDupSlots();
+  const dupMsg = dup.length
+    ? "  ·  ⚠ " + dup.map(g => g.map(k => VID_LABEL[k]).join("=")).join(", ") + " 같은 파일"
+    : "";
+  n.textContent = (have.length
+    ? "클립 " + have.length + "종: " + have.map(k => VID_LABEL[k]).join(" · ")
+    : "클립 없음 — 파일을 고르거나 demo_clips/ 에 넣으세요") + "  ·  " + model + dupMsg;
+  const mism = ONNX.nc !== null && ONNX.nc !== ONNX.labels.length;
+  n.style.color = (ONNX.isDummy || dup.length || mism) ? "#f0a020" : "";
+}
+
+/* demo_clips/ 자동 탐지. 없으면 조용히 넘어간다 — 있어야 정상인 폴더가 아니다.
+
+   ⚠️ 확장자를 넓혔다(2026-08-24). 연기·화재 클립은 **화재팀이 생성 모델로 뽑아서 준다**
+   (veo·seedance). 그쪽 출력이 mp4로만 나오지 않으므로, 이름만 맞춰 폴더에 떨궈 넣으면
+   붙도록 후보를 순서대로 두드리고 **처음 맞는 하나**를 쓴다. */
+const VID_EXT = ["mp4", "webm", "mov", "m4v"];
+async function vidProbe() {
+  for (const k of VID.order) {
+    if (VID.clips[k]) continue;
+    for (const ext of VID_EXT) {
+      const url = "demo_clips/" + k + "." + ext;
+      try { const r = await fetch(url, { method:"HEAD" });
+            if (r.ok) { VID.clips[k] = url;
+                        VID.size[k]   = +r.headers.get("content-length") || 0;
+                        VID.ranges[k] = /bytes/i.test(r.headers.get("accept-ranges") || "");
+                        break; } }
+      catch (e) { /* 없으면 다음 확장자 */ }
+    }
+  }
+  vidNote();
+  /* 구간을 지정한 클립만 미리 받아 시킹이 되게 해 둔다. 재생 직전에 하면
+     비트가 뜨는 순간 몇 초 멈춰 보인다 — 시작할 때 끝내는 편이 낫다. */
+  for (const k of VID.order) await vidMakeSeekable(k);
+  vidProbeModel();
+}
+
+/* 모델도 같이 찾는다 — 종전에는 **클립만 자동이고 모델은 손으로 골라야 했다.**
+   발표자가 그걸 잊으면 ④ 감지 비트가 **아무 말 없이** 넘어간다: vidShowFor는 성공하는데
+   ONNX.session이 null이라 && 조건이 깨져서, 화면에는 영상만 뜨고 박스가 안 그려진다.
+   실패해도 예외를 올리지 않는다 — 없는 게 정상인 파일이다. */
+async function vidProbeModel() {
+  if (ONNX.session) return false;
+  for (const url of ["demo_clips/best.onnx", "demo_clips/model.onnx"]) {
+    let ok = false;
+    try { ok = (await fetch(url, { method:"HEAD" })).ok; } catch (e) { ok = false; }
+    if (!ok) continue;
+    try {
+      const buf  = await (await fetch(url)).arrayBuffer();
+      const info = await onnxLoadModel(buf, url.split("/").pop());
+      console.warn("[VID] 모델 자동 로드 " + url + " · " + info.ep + " · " + info.imgsz + "px");
+      vidNote(); vidStatusLine();
+      return true;
+    } catch (e) { console.warn("[VID] 모델 자동 로드 실패 " + url, e); }
+  }
+  return false;
+}
+
+$("vidToggle").addEventListener("click", () => vidOpen(!VID.open));
+$("vidPlayBtn").addEventListener("click", () => vidPlaySeq());
+$("vidDetectBtn").addEventListener("click", () => {
+  VID.detect = !VID.detect;
+  $("vidDetectBtn").textContent = VID.detect ? "검출 중지" : "검출 시작";
+  if (VID.detect) { vidOpen(true); VID.acc = 1e9; }     // 즉시 1회
+  else { VID.boxes = null; vidDraw(); }
+  vidStatusLine();
+});
+[["vidFileNormal","normal"], ["vidFileSmoke","smoke"], ["vidFileFire","fire"]].forEach(([id, slot]) => {
+  const inp = $(id); if (!inp) return;
+  inp.addEventListener("change", e => {
+    const f = e.target.files && e.target.files[0];
+    if (f) vidSet(slot, URL.createObjectURL(f), f.size);
+  });
+});
+/* 추론은 비싸다 — 매 프레임이 아니라 hz로 나눠 돌린다. 그리기·상태줄은 매 프레임.
+   MIL의 렌더 루프 게이트와 같은 방식(acc 누적 → 주기 도달 시 1회). */
+function vidTick(dt) {
+  if (!VID.open) return;
+  if (VID.detect) {
+    VID.acc += dt;
+    if (VID.acc >= 1000 / VID.hz && !VID.busy) { VID.acc = 0; vidDetectOnce(); }
+  }
+  vidDraw();
+  vidStatusLine();
+}
+
+vidProbe();
+
+/* 콘솔 패널 표시 — 기본 꺼짐. ?console=1 이면 켠 채로 시작한다(개발용). */
+(() => {
+  const cp = document.getElementById("consolePanel"), cb = $("vizConsole");
+  const on = new URLSearchParams(location.search).get("console") === "1";
+  const apply = v => { if (cp) cp.style.display = v ? "flex" : "none"; };
+  if (cb) { cb.checked = on; cb.addEventListener("change", e => apply(e.target.checked)); }
+  apply(on);
+})();
+
+$("demoBefore").addEventListener("click", () => demoRun("before"));
+$("demoAfter").addEventListener("click",  () => demoRun("after"));
+$("demoStop").addEventListener("click",   () => demoReset(false));
+
+// 콘솔에서도 돌릴 수 있게 — 발표 리허설 때 버튼을 못 찾는 상황 방지
+window.__sim.demoRun = demoRun;
+window.__sim.demoReset = demoReset;
+window.__sim.DEMO = DEMO;
+window.__sim.DEMO_SCRIPTS = DEMO_SCRIPTS;
+window.__sim.demoExtinguish = demoExtinguish;   // 진화 페이드 — 리허설·검증용
+window.__sim.demoEvacuate = demoEvacuate;
+window.__sim.VID = VID;
+window.__sim.vidPlaySeq = vidPlaySeq;
+window.__sim.vidOpen = vidOpen;
+window.__sim.vidShowFor = vidShowFor;
+window.__sim.VID_START = VID_START;          // 클립별 시작 위치(초) — 콘솔에서 조정
+window.__sim.VID_END   = VID_END;            // 클립별 끝 위치(초) — 0이면 파일 끝까지
+window.__sim.vidMakeSeekable = vidMakeSeekable;
+window.__sim.DOOR = DOOR;                    // 문 상태
+window.__sim.doorOpen = doorOpen;            // 문만 따로 열어 보기
+window.__sim.doorClose = doorClose;
+window.__sim.doorReset = doorReset;  // 콘솔에서 구간을 바꾼 뒤 다시 부른다
+window.__sim.vidProbe = vidProbe;            // 파일을 나중에 넣었을 때 다시 훑기
+window.__sim.vidProbeModel = vidProbeModel;
+window.__sim.vidBestSlot = vidBestSlot;
+window.__sim.PUSH_LEAN = PUSH_LEAN;     // 밀기 숙임 — max 0.25rad
+window.__sim.vidDetectOnce = vidDetectOnce;
+window.__sim.SHOTS = SHOTS;
+window.__sim.SHOW = SHOW;
+window.__sim.shotRun = shotRun;
+window.__sim.shotStop = shotStop;
+window.__sim.shotGo = shotGo;
+window.__sim.STEAM = STEAM;          // 김 세기 — 검증·리허설에서 확인용
+
 /* ══ 기본 시나리오 자동 시작 ═══════════════════════════════════════════════
    예전에는 자율 인원 **0명으로 시작**했다. 시나리오 「배치」를 눌러야 사람이 생기는데,
    그걸 모르면 "왜 아무도 안 돌아다니지"가 된다 — 빈 조리실만 보인다.
@@ -12049,6 +14243,7 @@ setStatus(V.ok ? "준비 완료 — ▶ 자동 작업(튀김 배출)을 눌러�
   await runScenario(pick);
   const sel = document.getElementById("scenSel");
   if (sel) sel.value = pick;                     // 드롭다운도 실제 상태와 맞춘다
+  syncPeopleUI();                                // 슬라이더도 — 안 맞추면 "0명 표시에 2명"이 된다
   console.log("[SCEN] 기본 시나리오 자동 시작 —", SCENARIO[pick].label,
               "· 끄려면 ?scenario=none");
 })();

@@ -22,11 +22,18 @@ def _write_scene(d, seed, node_frames):
     (d / f"{scene['scene_id']}.json").write_text(json.dumps(scene), encoding="utf-8")
 
 
+def _write_manifest(d, train=(), val=(), test=()):
+    (d / "split_manifest.json").write_text(
+        json.dumps({"train": list(train), "val": list(val), "test": list(test)}),
+        encoding="utf-8")
+
+
 def test_loader_window_shape_and_split(tmp_path):
-    # 22프레임 → 22-(8+12)+1 = 3 윈도우. seed 5 는 val, seed 1 은 train.
+    # 22프레임 → 22-(8+12)+1 = 3 윈도우. manifest 로 seed5=val, seed1=train 지정.
     frs = [(0.1 * i, 0.0, "kettle", 2.0, 0.0) for i in range(22)]
     _write_scene(tmp_path, 5, {"extra_0": frs})       # val
     _write_scene(tmp_path, 1, {"extra_0": frs})       # train
+    _write_manifest(tmp_path, train=["t_seed1.json"], val=["t_seed5.json"], test=[])
 
     val = load_windows("val", traj_dir=tmp_path)
     train = load_windows("train", traj_dir=tmp_path)
@@ -46,6 +53,7 @@ def test_loader_skips_discarded_nodes(tmp_path):
     d = json.loads(f.read_text(encoding="utf-8"))
     d["nodes"][1]["discarded"] = True
     f.write_text(json.dumps(d), encoding="utf-8")
+    _write_manifest(tmp_path, val=["t_seed5.json"])
     wins = load_windows("val", traj_dir=tmp_path)
     assert all(w.node_id == "extra_0" for w in wins)   # 폐기 노드 제외
 

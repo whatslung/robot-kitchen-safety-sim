@@ -38,6 +38,7 @@ detect_server.py — 시뮬레이터 '모델 검증(http 모드)'용 어댑터 �
 import base64
 import io
 import json
+import math
 import os
 import time
 import argparse
@@ -62,6 +63,16 @@ _HUB_REPO = os.environ.get("DETECT_MODEL_REPO", "chanubc/robot-kitchen-nadir-yol
 _HUB_FILE = os.environ.get("DETECT_MODEL_FILE", "best.pt")
 
 
+def _is_detect_off(path) -> bool:
+    """DETECT_MODEL 이 검출 비활성(예측 전용)을 뜻하는 값인가.
+
+    `none`/`off`/빈 값이면 검출을 명시적으로 끈다 — 모델을 로드하지도, 허브에서 받지도
+    않는다. 과거엔 `Path("none").exists()`가 False라 이 값이 그대로 허브 다운로드로 빠져,
+    문서(=GT 좌표만 쓰는 예측 전용)와 어긋나고 오프라인에서 부팅이 실패했다.
+    """
+    return str(path).strip().lower() in ("", "none", "off")
+
+
 def _resolve_model_path(path: str) -> str:
     """로컬 가중치가 있으면 그대로, 없으면 허깅페이스 허브에서 받아 캐시 경로를 준다."""
     if Path(path).exists():
@@ -73,7 +84,12 @@ def _resolve_model_path(path: str) -> str:
     return got
 
 
-if os.environ.get("DETECT_DISABLE_MODEL", "").strip().lower() in {"1", "true", "yes"}:
+if _is_detect_off(_MODEL_PATH):
+    # 검출 비활성 — 예측 전용(GT 좌표). 모델/허브를 건드리지 않는다.
+    MODE = "off"
+    print(f"[detect_server] DETECT_MODEL={_MODEL_PATH!r} → 검출 비활성(예측 전용). "
+          "모델 로드·허브 다운로드 안 함. /detect 는 빈 박스를 돌려준다.")
+elif os.environ.get("DETECT_DISABLE_MODEL", "").strip().lower() in {"1", "true", "yes"}:
     print("[detect_server] DETECT_DISABLE_MODEL=1 → 검출 DUMMY")
 else:
     try:
@@ -111,6 +127,8 @@ def run_detect(pil_image):
     반환: [{"label","conf","cx","cy","w","h"}]  (cx,cy,w,h 는 0~1 정규화)
     ultralytics 대신 다른 검출기를 쓰려면 이 함수만 바꾸면 된다.
     """
+    if MODE == "off":                     # 검출 비활성(예측 전용) — 박스 없음
+        return []
     if MODE.startswith("yolo"):
         w, h = pil_image.size
         out = []
@@ -484,31 +502,92 @@ def _get_predictor():
     return _PREDICTOR
 
 
+def _round(v):
+    """JSON 직렬화용 반올림. None·비유한 float는 None으로(무한대 JSON 오염 방지)."""
+    if isinstance(v, float):
+        return round(v, 4) if math.isfinite(v) else None
+    return v
+
+
+def _mode_json(m):
+    return {"path": [[round(x, 4), round(z, 4)] for (x, z) in m["path"]],
+            "w": round(m["w"], 4),
+            "sigma": [round(s, 4) for s in m["sigma"]]}
+
+
+def _predict_response(body, p):
+    """/predict 본체 — 순수 함수(HTTP 분리, 테스트 가능). 스펙 §3·§4-2.
+
+    배치: body에 tracks 있으면 predict_batch(forward 1회) → 트랙별 위험 → 중재.
+    하위호환: 옛 단일 hist면 {"modes": …} 그대로.
+    """
+    from trajectory.risk import track_risk, arbitrate
+
+    if "tracks" in body:
+        robot = (float(body["robot"]["x"]), float(body["robot"]["z"]))
+        stopR = float(body["stopR"])
+        slowR = float(body["slowR"])
+        horizon = float(body.get("horizon", 1.6))
+        ksig = float(body.get("safeKsig", 1.0))
+        tau = float(body.get("safeTau", 0.1))
+        tracks_in = body["tracks"]
+        hists = [[(float(x), float(z)) for x, z in t["hist"]] for t in tracks_in]
+        modes_all = p.predict_batch(hists)
+
+        out_tracks, risks = [], []
+        for tin, modes in zip(tracks_in, modes_all):
+            r = track_risk(modes, robot, stopR, slowR, horizon, ksig, tau)
+            risks.append({"id": tin["id"], **r})
+            out_tracks.append({
+                "id": tin["id"],
+                "modes": [_mode_json(m) for m in modes],
+                "risk": {k: _round(v) for k, v in r.items()},
+            })
+        worst = arbitrate(risks)
+        if worst is not None:
+            worst = {k: _round(v) for k, v in worst.items()}
+        return {"tracks": out_tracks, "worst": worst}
+
+    # 하위호환 — 단일 hist
+    hist = [(float(x), float(z)) for x, z in body["hist"]]
+    return {"modes": [_mode_json(m) for m in p.predict_modes(hist)]}
+
+
 @app.post("/predict")
 async def predict(req: Request):
-    """단일 관측 또는 글로벌 트랙 배치의 멀티모달 궤적 예측.
+    """단일 관측, 다인원 배치 또는 글로벌 트랙의 멀티모달 궤적 예측.
 
-    시뮬의 window.__customPredictor가 관측 8점(씬 AU, 0.4s 간격으로 리샘플)을 보내면
-    K개 모드(각 경로+가중치+스텝별 σ)를 돌려준다. 좌표는 모델 학습 단위(AU)와 동일.
-    요청: {"hist": [[x,z], … 8개]}   응답: {"modes": [{"path":[[x,z]…], "w":.., "sigma":[…]}]}
+    배치 요청(스펙 §3):
+      {"tracks":[{"id","hist":[[x,z]…8]}], "robot":{x,z}, "stopR","slowR",
+       "horizon","safeKsig","safeTau"}
+      → {"tracks":[{"id","modes":[{path,w,sigma}],"risk":{tEntryStop,tEntrySlow,riskMass,dMin}}],
+         "worst":{id,…}|null}
+    글로벌 트랙 요청:
+      {"tracks":[{"id","history":[{"t","x","z"}],"stale"}], "robot":{x,z}}
+      → 트랙별 학습형 예측 또는 Kalman fallback.
+    하위호환: {"hist":[[x,z]…8]} → {"modes":[…]}. 좌표는 씬 AU(모델 학습 단위와 동일).
     """
     try:
         body = await req.json()
-        if "tracks" in body:
+        tracks = body.get("tracks")
+        is_global_request = "tracks" in body and (
+            any(isinstance(track, dict) and "history" in track for track in tracks or [])
+            or ("stopR" not in body and "slowR" not in body)
+        )
+        if is_global_request:
             try:
                 from backend.prediction_contract import predict_global_tracks, resample_history
             except ImportError:
                 from prediction_contract import predict_global_tracks, resample_history
-            tracks = body["tracks"]
             needs_model = any(
                 not bool(track.get("stale"))
                 and resample_history(track.get("history", [])) is not None
-                for track in tracks
+                for track in tracks or []
             )
             predictor = _get_predictor() if needs_model else None
             return {
                 "tracks": predict_global_tracks(
-                    tracks,
+                    tracks or [],
                     predictor=predictor,
                     robot=body.get("robot"),
                 )
@@ -520,11 +599,7 @@ async def predict(req: Request):
                 status_code=503,
                 content={"error": _PREDICTOR_ERR or "predictor 미로드"},
             )
-        hist = [(float(x), float(z)) for x, z in body["hist"]]
-        modes = p.predict_modes(hist)
-        return {"modes": [{"path": [[round(x, 4), round(z, 4)] for (x, z) in m["path"]],
-                           "w": round(m["w"], 4),
-                           "sigma": [round(s, 4) for s in m["sigma"]]} for m in modes]}
+        return _predict_response(body, p)
     except Exception as e:                # noqa: BLE001
         return JSONResponse(status_code=500, content={"error": str(e)})
 

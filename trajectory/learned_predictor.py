@@ -63,6 +63,40 @@ def build_net(h=64, k=K, pred=PRED):
     return TrajNet()
 
 
+def build_transformer_net(h=64, k=K, pred=PRED, layers=2, heads=4):
+    """검증된 구조 비교(옵션 B) — LSTM 백본을 self-attention Transformer 인코더로 교체.
+    head·출력 계약은 build_net 과 **완전히 동일**(paths/logits/logsig) → LearnedPredictor·
+    mtp_loss 를 그대로 재사용한다. 관측 8스텝에 위치 인코딩을 더해 인코딩하고 마지막
+    관측 토큰으로 미래를 뽑는다(ego 정규화상 마지막 관측 = 원점, '현재'를 질의점으로)."""
+    import torch
+    import torch.nn as nn
+
+    class TrajTransformer(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.k, self.pred = k, pred
+            self.inp = nn.Linear(2, h)
+            self.pos = nn.Parameter(torch.zeros(1, 64, h))     # 위치 인코딩(최대 64스텝, OBS=8 사용)
+            enc_layer = nn.TransformerEncoderLayer(d_model=h, nhead=heads, dim_feedforward=h * 4,
+                                                   batch_first=True, dropout=0.0)
+            self.enc = nn.TransformerEncoder(enc_layer, num_layers=layers)
+            self.head = nn.Sequential(nn.Linear(h, h), nn.ReLU(),
+                                      nn.Linear(h, k * pred * 2 + k + k * pred))
+
+        def forward(self, x):                                  # x (B,OBS,2)
+            t = x.shape[1]
+            z = self.inp(x) + self.pos[:, :t, :]
+            z = self.enc(z)                                    # (B,OBS,h)
+            o = self.head(z[:, -1, :])                         # 마지막 관측 토큰 = '현재'
+            b = o.shape[0]
+            paths = o[:, :k * pred * 2].reshape(b, k, pred, 2)
+            logits = o[:, k * pred * 2:k * pred * 2 + k]
+            logsig = o[:, k * pred * 2 + k:].reshape(b, k, pred)
+            return paths, logits, logsig
+
+    return TrajTransformer()
+
+
 def mtp_loss(paths, logits, logsig, gt):
     """best-of-K 회귀(가우시안 NLL) + 모드 분류(CE). gt (B,PRED,2)."""
     import torch
