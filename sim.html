@@ -526,7 +526,8 @@
     같은 모델을 돌려 우측 패널에 띄웁니다. 클립은 브라우저 밖으로 나가지 않습니다.<br>
     <code>demo_clips/</code> 에 <code>normal · smoke · fire</code> (mp4·webm·mov·m4v) 를 넣으면
     자동으로 잡습니다. <code>best.onnx</code> 도 같이 넣으면 <b>모델까지 자동으로 붙습니다</b>.<br>
-    영상 뒷부분에 불이 나오면 <code>?vidstart=fire:38</code>, 한 토막만 틀려면 <code>?vidend=fire:46</code>.</div>
+    영상 뒷부분에 불이 나오면 <code>?vidstart=fire:38</code>, 한 토막만 틀려면 <code>?vidend=fire:46</code>.<br>
+    모델 클래스가 우리 6종과 다르면 <code>?labels=fire,smoke</code> 처럼 모델 순서대로 적어 주세요.</div>
   <div class="row"><span>① 정상</span><input id="vidFileNormal" type="file" accept="video/*" style="flex:1;font-size:11px"></div>
   <div class="row"><span>② 연기</span><input id="vidFileSmoke" type="file" accept="video/*" style="flex:1;font-size:11px"></div>
   <div class="row"><span>③ 화재</span><input id="vidFileFire" type="file" accept="video/*" style="flex:1;font-size:11px"></div>
@@ -8962,7 +8963,23 @@ const ONNX = {
   conf: 0.25, iou: 0.45, ep: null, inName: null, outName: null, lastMs: 0,
   canvas: null, ctx: null,
   isDummy: false,          // 더미 모델이면 true — 화면이 "검출된다"고 거짓말하지 않게 한다
+  nc: null,                // 모델이 실제로 내는 클래스 수 (출력에서 읽는다)
+  labelsSrc: "GT",         // "GT" | "URL" — 라벨을 어디서 가져왔는지
 };
+
+/* 라벨을 URL로 갈아끼운다: `?labels=fire,smoke`
+   **왜 필요한가.** ONNX 출력에는 클래스 *이름*이 없다. 번호(0,1,2…)만 온다.
+   이름은 우리가 붙이는데 기본값이 이 시뮬의 GT 6종이다. 화재팀이 Roboflow에서
+   fire/smoke **2종**만 학습해 오면 번호 0=fire·1=smoke인데 우리 목록은 0=person·1=fire이라
+   **불이 person으로 찍힌다.** 박스는 멀쩡해 보여서 아무도 못 알아챈다
+   (2026-08-25 시험 모델 `_eval/onnx_shape_test/v8_2cls.onnx`로 재현). */
+try {
+  const q = new URLSearchParams(location.search).get("labels");
+  if (q) {
+    const L = q.split(",").map(v => v.trim()).filter(Boolean);
+    if (L.length) { ONNX.labels = L; ONNX.labelsSrc = "URL"; }
+  }
+} catch (e) { /* 잘못 준 값은 무시 — 발표 중에 예외로 멈추면 안 된다 */ }
 async function onnxLoadRuntime() {
   if (ONNX.ort) return ONNX.ort;
   await new Promise((res, rej) => {
@@ -9007,6 +9024,7 @@ async function onnxLoadModel(fileOrBuf, name) {
   if (!sess) throw new Error("세션 생성 실패 (WebGPU·wasm 모두)");
   ONNX.session = sess; ONNX.ep = ep; ONNX.name = name || "model.onnx";
   ONNX.isDummy = onnxLooksDummy(buf, ONNX.name);
+  ONNX.nc = null;                                  // 새 모델이므로 다시 잰다(첫 추론에서 채워진다)
   if (ONNX.isDummy) console.warn("[ONNX] ⚠ 더미 모델이다 — 박스는 입력과 무관한 고정값이다:", ONNX.name);
   ONNX.inName = sess.inputNames[0]; ONNX.outName = sess.outputNames[0];
   // 입력 해상도 자동 감지 — 메타데이터가 없거나 동적(-1)이면 640
@@ -9076,6 +9094,17 @@ function onnxDecode(out, meta) {
   let v5 = ONNX.layout === "v5";
   if (ONNX.layout === "auto") v5 = (C - 5 === nl) && (C - 4 !== nl);
   const clsOff = v5 ? 5 : 4, nc = C - clsOff;
+  /* **모델 클래스 수와 라벨 수가 다르면 이름이 통째로 어긋난다.**
+     예외를 던지지 않는다 — 발표 중에 멈추는 게 더 나쁘다. 대신 화면에 띄운다. */
+  if (ONNX.nc !== nc) {
+    ONNX.nc = nc;
+    if (nc !== nl)
+      console.warn("[ONNX] ⚠ 클래스 수 불일치 — 모델 " + nc + "종 / 라벨 " + nl +
+                   "종(" + ONNX.labels.join(",") + "). 이름이 어긋난다. " +
+                   "?labels=fire,smoke 처럼 모델 순서대로 맞춰라");
+    if (typeof vidNote === "function") vidNote();
+    if (typeof vidStatusLine === "function") vidStatusLine();
+  }
   const res = [];
   for (let i = 0; i < N; i++) {
     let best = 0, bi = 0;
@@ -13097,13 +13126,95 @@ function demoExitView() {
   camera.alpha = -2.60; camera.beta = 1.28; camera.radius = 5.3;
 }
 
+/* ══ 출입문 열림 — 대피 연출 (2026-08-25) ═══════════════════════════════════
+   **왜.** 종전에는 조리원이 문 앞에서 **그냥 사라졌다.** 방 밖에 지오메트리가 없어
+   계속 걷게 두면 허공에 서 있는 그림이 되기 때문인데, 관객 눈에는 "사람이 증발했다"로
+   보인다. 대피 성공이 이 장면의 결론인데 그게 전달되지 않는다.
+
+   **어떻게.** 문이 열리고 → 사람이 문턱을 **지나서** 어두운 안쪽까지 걸어 들어가고 →
+   거기서 숨고 → 문이 닫힌다. 사라지는 순간을 어둠이 가려 주고, 닫히는 문이
+   "나갔다"를 확정한다.
+
+   ⚠️ 걸린 것 3가지 — 전부 **조용히** 실패하는 종류였다.
+
+   1. **`door`는 월드행렬이 고정돼 있다.** 최적화 단계에서 STATIC 정규식(`door` 포함)에
+      걸려 `freezeWorldMatrix()`를 맞는다. 그냥 회전시키면 값은 바뀌는데 **화면은 안
+      움직인다.** 예외도 경고도 없다. → `unfreezeWorldMatrix()`를 먼저 부른다.
+
+   2. **벽에 구멍이 없다.** 문은 남벽에 얹은 상자일 뿐이라 열어도 뒤가 벽이다.
+      → 문 크기의 어두운 상자(`doorVoid`)를 뒤에 둔다. 닫혀 있으면 문이 가리고(문 z가
+        0.02 더 앞), 열리면 복도처럼 깊이가 생긴다. **벽 지오메트리는 안 건드린다** —
+        벽을 자르면 GT 마스크·충돌·조명이 전부 딸려 온다.
+
+   3. **문 상자는 피벗이 한가운데다.** 그대로 돌리면 벽 한복판에서 팽이처럼 돈다.
+      → 경첩 노드를 왼쪽 모서리에 만들고 문·창을 거기 붙인다.
+      ⚠️ 붙이는 순간 `door.position`이 **로컬 좌표로 바뀐다.** 문 x를 읽어 쓰는 곳은
+        `getAbsolutePosition()`으로 고쳐야 한다(demoEvacuate가 그랬다).
+
+   사람이 벽을 통과하는 것은 문제가 없다 — 벽(`wall_`)은 사람 충돌 목록에서 빠져 있고
+   (자동 충돌 생성의 SKIP 목록), 위치를 방 안으로 가두는 코드도 없다(확인함). */
+const DOOR = { hinge:null, void:null, cur:0, target:0, closeAt:0,
+               OPEN: 1.75,        // 약 100° — 벽에 거의 붙을 때까지 열린다
+               MS: 800 };         // 완전히 열리는 데 걸리는 시간
+
+function doorBuild() {
+  if (DOOR.hinge) return true;
+  const d = scene.getMeshByName("door");
+  if (!d) { console.warn("[DOOR] door 메시가 없다 — 문 연출을 건너뛴다"); return false; }
+  const w = scene.getMeshByName("doorWin");
+  d.unfreezeWorldMatrix(); if (w) w.unfreezeWorldMatrix();
+
+  const dp = d.getAbsolutePosition().clone();
+  const HALF = 0.475;                                   // 문 폭 0.95의 절반
+  const h = new BABYLON.TransformNode("doorHinge", scene);
+  h.position.set(dp.x - HALF, 0, dp.z);                 // 경첩 = 문 왼쪽 모서리
+  d.parent = h; d.position.set(HALF, dp.y, 0);
+  if (w) { const wp = w.getAbsolutePosition().clone();
+           w.parent = h; w.position.set(HALF, wp.y, wp.z - dp.z); }
+
+  /* 어두운 출입구. 앞면이 벽보다 0.02m 안쪽이라 벽 위에 그려지고, 닫힌 문(0.04m 안쪽)이
+     그보다 앞이라 평소에는 안 보인다. */
+  const RM = LAYOUT.room;
+  const v = BABYLON.MeshBuilder.CreateBox("doorVoid",
+              { width:0.95, height:2.05, depth:0.62 }, scene);
+  v.position.set(dp.x, 1.025, RM.z1 + 0.29);
+  const m = new BABYLON.StandardMaterial("doorVoidMat", scene);
+  m.diffuseColor  = new BABYLON.Color3(0.02, 0.02, 0.03);
+  m.specularColor = BABYLON.Color3.Black();
+  m.emissiveColor = new BABYLON.Color3(0.012, 0.012, 0.018);   // 완전 검정은 구멍이 아니라 얼룩으로 보인다
+  v.material = m; v.isPickable = false; v.receiveShadows = false;
+  DOOR.void = v; DOOR.hinge = h;
+  return true;
+}
+
+function doorOpen()          { if (doorBuild()) { DOOR.target = DOOR.OPEN; DOOR.closeAt = 0; } }
+function doorClose(delayMs)  { if (DOOR.hinge) DOOR.closeAt = performance.now() + (delayMs || 0); }
+function doorReset() {
+  DOOR.target = 0; DOOR.cur = 0; DOOR.closeAt = 0;
+  if (DOOR.hinge) DOOR.hinge.rotation.y = 0;
+}
+
+/* 프레임률과 무관하게 같은 속도로 돈다 — 등속이라 dt가 흔들려도 걸리는 시간이 같다. */
+function doorTick(dt) {
+  if (!DOOR.hinge) return;
+  if (DOOR.closeAt && performance.now() >= DOOR.closeAt) { DOOR.target = 0; DOOR.closeAt = 0; }
+  const diff = DOOR.target - DOOR.cur;
+  if (Math.abs(diff) < 0.001) return;
+  const step = (DOOR.OPEN / DOOR.MS) * dt;
+  DOOR.cur += Math.sign(diff) * Math.min(step, Math.abs(diff));
+  DOOR.hinge.rotation.y = DOOR.cur;
+}
+
 function demoEvacuate() {
   demoHazardClear();
   demoStandUp();                                // 쓰러진 채로는 문까지 미끄러져 간다
   person.freeze = false;
+  doorOpen();                                   // 걸어가는 동안 열린다 (0.8초)
   const d = scene.getMeshByName("door");
-  const dx = d ? d.position.x : 1.8;
-  const zOut = LAYOUT.room.z1 - 0.45;           // 문틀 바로 안쪽
+  /* ⚠️ `position`이 아니라 `getAbsolutePosition()`이다 — doorBuild가 문을 경첩에 붙이면
+     `position`은 로컬(0.475)이 되어 문이 방 한가운데에 있는 것처럼 읽힌다. */
+  const dx = d ? d.getAbsolutePosition().x : 1.8;
+  const zOut = LAYOUT.room.z1 + 0.18;           // 문턱을 **지나** 어두운 출입구 안쪽
   /* 접근점은 **이미 지나쳤으면 건너뛴다.** 안 그러면 문보다 남쪽에 서 있던 사람이
      북쪽으로 되돌아갔다가 다시 내려온다 — 실측으로 확인한 지그재그다(z 4.52 → 3.8 → 5.3). */
   const zApp = zOut - 1.5;
@@ -13149,7 +13260,8 @@ const DEMO_SCRIPTS = {
        명시돼 있고, 다시 재 보니 **김은 보인다** — 해치 정면에서 가시픽셀 7.83%다.
        뺐던 근거(1.16%)는 전체 화면 평균이라 국소 기둥에는 안 맞는 지표였다.
        ⚠️ 카메라는 종전 시점(솥 근접 자유시점) 그대로다. 해치 정면으로 옮기면 김이
-       3.3배 크게 잡히지만(2.34% → 7.83%) 연출이 바뀌는 판단이라 별도 브랜치로 뺐다. */
+       1.7배 크게 잡히지만(6.22% → 10.48%) 연출이 바뀌는 판단이라 별도 브랜치로 뺐다.
+       종전 시점도 6.22%라 안 보이는 수준이 아니다 — 자막 복원은 이대로도 정당하다. */
     { at:7000,  msg:"② 국솥에서 수증기가 오릅니다 — 조리가 한창입니다",   act: () => { demoSteamUp(); demoKettleView(); vidShowFor("normal"); } },
     { at:15000, msg:"③ 과열된 기름에 불이 붙었습니다",                  act: () => { demoIgnite(); demoKettleView(); vidShowFor("smoke"); } },
     { at:24000, msg:"④ 연기가 자욱합니다 — 카메라가 화재를 놓칩니다",   act: demoWideView },
@@ -13166,7 +13278,8 @@ const DEMO_SCRIPTS = {
        명시돼 있고, 다시 재 보니 **김은 보인다** — 해치 정면에서 가시픽셀 7.83%다.
        뺐던 근거(1.16%)는 전체 화면 평균이라 국소 기둥에는 안 맞는 지표였다.
        ⚠️ 카메라는 종전 시점(솥 근접 자유시점) 그대로다. 해치 정면으로 옮기면 김이
-       3.3배 크게 잡히지만(2.34% → 7.83%) 연출이 바뀌는 판단이라 별도 브랜치로 뺐다. */
+       1.7배 크게 잡히지만(6.22% → 10.48%) 연출이 바뀌는 판단이라 별도 브랜치로 뺐다.
+       종전 시점도 6.22%라 안 보이는 수준이 아니다 — 자막 복원은 이대로도 정당하다. */
     { at:7000,  msg:"② 국솥에서 수증기가 오릅니다 — 조리가 한창입니다",   act: () => { demoSteamUp(); demoKettleView(); vidShowFor("normal"); } },
     { at:15000, msg:"③ 과열된 기름에 불이 붙었습니다",                  act: () => { demoIgnite(); demoKettleView(); vidShowFor("smoke"); } },
     { at:21000, msg:"④ 화재를 즉시 감지했습니다 — 검출 시작",           act: demoDetectOn },
@@ -13218,6 +13331,7 @@ function demoTick(dt) {
       DEMO.evac = null;
       person.mode = "idle"; person.path = [];
       person.node.setEnabled(false);
+      doorClose(700);                           // 나간 뒤 문이 닫힌다 — "나갔다"를 확정한다
       demoSay("⑤ 조리원이 밖으로 빠져나갔습니다 — 대피 완료");
     }
   }
@@ -13269,6 +13383,7 @@ function demoReset(quiet) {
   /* 진화 페이드가 돌던 중이면 끊는다 — 위에서 이미 setFire(false)를 불렀으므로
      안개는 정식 복원돼 있다. 남겨 두면 복원된 밀도를 페이드가 다시 덮어쓴다. */
   DEMO.fade = null; DEMO.evac = null; DEMO.follow = null;
+  doorReset();                                  // 문을 닫힌 상태로
   if (VID.open) { VID.detect = false; const vb = $("vidDetectBtn"); if (vb) vb.textContent = "검출 시작"; vidOpen(false); }
   person.node.setEnabled(true);                 // 대피로 감췄던 경우 되돌린다
   person.freeze = false;
@@ -13302,6 +13417,7 @@ function demoReset(quiet) {
     const now = performance.now();
     const dt = Math.min(now - last, 60);
     last = now;
+    doorTick(dt);
     demoTick(dt);
     vidTick(dt);
     shotTick(dt);
@@ -13464,6 +13580,20 @@ function vidBuild() {
   VID.el = w.querySelector("#vidEl");
   VID.ov = w.querySelector("#vidOv");
   w.querySelector("#vidClose").addEventListener("click", () => vidOpen(false));
+  /* 영상이 안 열리면 **화면에 말해 준다.** 종전에는 검은 화면만 나오고 아무 설명이 없었다.
+     화재팀 클립은 생성 모델(veo·seedance) 출력이라 코덱이 뭘로 나올지 우리가 못 정한다 —
+     크롬이 못 여는 형식(HEVC 등)이면 발표 자리에서 "왜 안 나오지"로 시간을 버린다. */
+  VID.el.addEventListener("error", function () {
+    const e = VID.el.error;
+    const why = !e ? "알 수 없음"
+              : e.code === 4 ? "형식·코덱을 브라우저가 못 엽니다 (H.264 mp4로 다시 받으세요)"
+              : e.code === 3 ? "디코딩 실패 — 파일이 손상됐을 수 있습니다"
+              : e.code === 2 ? "네트워크 오류"
+              : "재생 중단됨";
+    VID.err = (VID_LABEL[VID.cur] || VID.cur || "클립") + " 열기 실패 — " + why;
+    console.warn("[VID] " + VID.err, e && e.code);
+    vidStatusLine();
+  });
   // 한 클립이 끝나면 다음 클립으로 — 정상 → 연기 → 화재 순서가 곧 이야기다
   VID.el.addEventListener("ended", () => vidNext());
   /* 지정한 끝 위치에 닿아도 같은 처리를 한다. timeupdate는 초당 4회쯤 오는데
@@ -13615,6 +13745,10 @@ function vidPlay(slot) {
   if (!VID.clips[slot]) return false;
   vidBuild();
   VID.cur = slot;
+  /* 이전 클립의 오류 문구가 남으면 안 된다. 상태줄은 매 프레임 갱신되지만
+     **렌더 루프에 기대지 않고** 여기서 한 번 직접 지운다 — 탭이 유휴면 루프가 멈춘다. */
+  VID.err = null;
+  if (typeof vidStatusLine === "function") vidStatusLine();
   VID.el.src = VID.clips[slot];
   vidSeekStart(slot);
   const p = VID.el.play();
@@ -13701,10 +13835,11 @@ function vidStatusLine() {
   if (!st) return;
   if (VID.err) { st.textContent = "⚠ " + VID.err; return; }
   if (!VID.detect) { st.textContent = VID.cur ? (VID_LABEL[VID.cur] + " — 검출 꺼짐") : "대기"; return; }
-  st.textContent = (ONNX.isDummy ? "⚠더미 · " : "") +
+  const mismatch = ONNX.nc !== null && ONNX.nc !== ONNX.labels.length;
+  st.textContent = (ONNX.isDummy ? "⚠더미 · " : "") + (mismatch ? "⚠라벨불일치 · " : "") +
                    (ONNX.name || "model") + " · " + (VID.boxes ? VID.boxes.length : 0) + "개 검출 · " +
                    VID.ms.toFixed(0) + "ms · " + VID.hz + "Hz";
-  st.style.color = ONNX.isDummy ? "#f0a020" : "";
+  st.style.color = (ONNX.isDummy || mismatch) ? "#f0a020" : "";
 }
 
 function vidNote() {
@@ -13714,7 +13849,10 @@ function vidNote() {
      종전 안내문은 클립만 말해서 **발표 직전에 뭐가 빠졌는지 알 수 없었다.** */
   const model = !ONNX.session ? "⚠ 모델 없음"
               : ONNX.isDummy   ? "⚠ 더미 모델 — 실제 검출이 아닙니다"
-              : "모델 " + (ONNX.name || "로드됨");
+              : (ONNX.nc !== null && ONNX.nc !== ONNX.labels.length)
+                ? "⚠ 모델 " + ONNX.nc + "종 vs 라벨 " + ONNX.labels.length + "종 — 이름이 어긋납니다"
+              : "모델 " + (ONNX.name || "로드됨") +
+                (ONNX.labelsSrc === "URL" ? " · 라벨 " + ONNX.labels.join("/") : "");
   /* 같은 파일을 여러 칸에 건 경우를 **이름까지 찍어서** 알린다. "3종"만 보고
      준비가 끝났다고 판단하는 것이 이 안내문의 가장 위험한 실패다. */
   const dup = vidDupSlots();
@@ -13724,7 +13862,8 @@ function vidNote() {
   n.textContent = (have.length
     ? "클립 " + have.length + "종: " + have.map(k => VID_LABEL[k]).join(" · ")
     : "클립 없음 — 파일을 고르거나 demo_clips/ 에 넣으세요") + "  ·  " + model + dupMsg;
-  n.style.color = (ONNX.isDummy || dup.length) ? "#f0a020" : "";
+  const mism = ONNX.nc !== null && ONNX.nc !== ONNX.labels.length;
+  n.style.color = (ONNX.isDummy || dup.length || mism) ? "#f0a020" : "";
 }
 
 /* demo_clips/ 자동 탐지. 없으면 조용히 넘어간다 — 있어야 정상인 폴더가 아니다.
@@ -13830,7 +13969,11 @@ window.__sim.vidOpen = vidOpen;
 window.__sim.vidShowFor = vidShowFor;
 window.__sim.VID_START = VID_START;          // 클립별 시작 위치(초) — 콘솔에서 조정
 window.__sim.VID_END   = VID_END;            // 클립별 끝 위치(초) — 0이면 파일 끝까지
-window.__sim.vidMakeSeekable = vidMakeSeekable;  // 콘솔에서 구간을 바꾼 뒤 다시 부른다
+window.__sim.vidMakeSeekable = vidMakeSeekable;
+window.__sim.DOOR = DOOR;                    // 문 상태
+window.__sim.doorOpen = doorOpen;            // 문만 따로 열어 보기
+window.__sim.doorClose = doorClose;
+window.__sim.doorReset = doorReset;  // 콘솔에서 구간을 바꾼 뒤 다시 부른다
 window.__sim.vidProbe = vidProbe;            // 파일을 나중에 넣었을 때 다시 훑기
 window.__sim.vidProbeModel = vidProbeModel;
 window.__sim.vidBestSlot = vidBestSlot;
