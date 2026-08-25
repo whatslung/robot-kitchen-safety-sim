@@ -51,7 +51,7 @@ __pycache__/
 *.pyc
 .coverage
 coverage.xml
-.pytest-verification/
+.pytest-verification*/
 .venv/
 venv/
 

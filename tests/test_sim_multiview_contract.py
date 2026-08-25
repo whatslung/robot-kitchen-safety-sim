@@ -40,6 +40,8 @@ def test_multiview_scheduler_is_weighted_single_flight_with_stale_rejection():
     assert "payload.seq <= MV_SCHED.lastAppliedSeq" in source
     assert "receivedAt - capturedAt > MV_MAX_RESPONSE_AGE_MS" in source
     assert "track.age_ms || 0) + transitAge" in source
+    assert "const projectedX = track.x + vx * age_ms / 1000" in source
+    assert "const projectedZ = track.z + vz * age_ms / 1000" in source
     assert "MV_SCHED.dropped++" in source
 
 

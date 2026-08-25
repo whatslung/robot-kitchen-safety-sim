@@ -172,6 +172,16 @@ def _worst_images(samples, confidence, iou_threshold, limit=20):
     return sorted(rows, key=lambda row: (row["fn"], row["fp"]), reverse=True)[:limit]
 
 
+def _inference_settings(args):
+    return {
+        "device": args.device,
+        "imgsz": args.imgsz,
+        "batch": args.batch,
+        "min_confidence": args.min_confidence,
+        "nms_iou": args.nms_iou,
+    }
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
@@ -212,8 +222,7 @@ def main():
         "model": str(model_path),
         "dataset": str(args.dataset.resolve()),
         "images": len(samples),
-        "device": args.device,
-        "imgsz": args.imgsz,
+        **_inference_settings(args),
         "person_class_ids": person_classes,
         "match_iou": args.match_iou,
         "fixed_thresholds": fixed,

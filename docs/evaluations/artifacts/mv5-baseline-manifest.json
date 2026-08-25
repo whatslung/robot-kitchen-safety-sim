@@ -1,0 +1,100 @@
+{
+  "schema": 1,
+  "dataset_id": "mv5-baseline-20260826",
+  "purpose": "preliminary detector go/no-go diagnostic; not a reproducible benchmark",
+  "sim_source_revision": "776ad33594311f5afc676390b93cfd47609dfede",
+  "capture": {
+    "method": "one-off in-app browser automation",
+    "resolution": [960, 720],
+    "format": "PNG",
+    "cameras": ["mvNW", "mvNE", "mvSW", "mvSE", "mvCenter"],
+    "synchronized_scenes": 10,
+    "environment_randomization": {
+      "0000-0005": "enabled",
+      "0006-0009": "disabled to reduce render time; person, pose, fire, and sensor changes retained"
+    },
+    "seed_recorded": false,
+    "seed_limitation": "The initial browser harness used Math.random and did not persist its seed or exact person count. Pixel-identical regeneration is therefore not possible from this repository alone. The checksums identify the exact evaluated corpus if it is transferred separately. A seeded scene manifest is mandatory before any performance claim."
+  },
+  "corpus": {
+    "images": 50,
+    "labels": 50,
+    "files": 100,
+    "bytes": 82261131,
+    "person_ground_truth": 35,
+    "dataset_sha256": "5bd12bb032b4d5d156321bc205b89a9eb62fc47c47fc0b6d689be26dde46870f",
+    "digest_recipe": "For every file sorted by forward-slash relative path, compute SHA-256 and byte size; hash the UTF-8 LF-joined rows '<relative_path>\\t<sha256>\\t<bytes>'. Scene digests use the same recipe for that scene's five images and five labels."
+  },
+  "scenes": [
+    {
+      "scene_id": "0000",
+      "seed": null,
+      "environment_randomization": "enabled",
+      "person_gt": {"mvNW": 0, "mvNE": 1, "mvSW": 0, "mvSE": 2, "mvCenter": 2},
+      "files_sha256": "baf32ae18e8407970ccb00d1b648029ad138c7a64bbabae15cd10fbb15591cdc"
+    },
+    {
+      "scene_id": "0001",
+      "seed": null,
+      "environment_randomization": "enabled",
+      "person_gt": {"mvNW": 0, "mvNE": 0, "mvSW": 0, "mvSE": 0, "mvCenter": 1},
+      "files_sha256": "5ffbfcdf0c96cf15f6d3a2032d5f3c803f34fd8508babf29359032791dcce780"
+    },
+    {
+      "scene_id": "0002",
+      "seed": null,
+      "environment_randomization": "enabled",
+      "person_gt": {"mvNW": 0, "mvNE": 1, "mvSW": 0, "mvSE": 3, "mvCenter": 2},
+      "files_sha256": "a0115facffaa83362ffbaf57fd1c918f908a8f8f03d409bd40f4763fe73889ed"
+    },
+    {
+      "scene_id": "0003",
+      "seed": null,
+      "environment_randomization": "enabled",
+      "person_gt": {"mvNW": 0, "mvNE": 0, "mvSW": 0, "mvSE": 0, "mvCenter": 0},
+      "files_sha256": "3408b9091350f297fc0ac13adf15d4284bf630c14a895517f27f13ee64bb6a78"
+    },
+    {
+      "scene_id": "0004",
+      "seed": null,
+      "environment_randomization": "enabled",
+      "person_gt": {"mvNW": 0, "mvNE": 0, "mvSW": 0, "mvSE": 2, "mvCenter": 1},
+      "files_sha256": "db018fc17b2351eee426a876c86197164cdd6edc3e151fa325ff19663f7c3931"
+    },
+    {
+      "scene_id": "0005",
+      "seed": null,
+      "environment_randomization": "enabled",
+      "person_gt": {"mvNW": 2, "mvNE": 0, "mvSW": 1, "mvSE": 0, "mvCenter": 1},
+      "files_sha256": "22e27266b22f00d7513627efebf7284d06b861f539361999ffbcac8f0bea8d03"
+    },
+    {
+      "scene_id": "0006",
+      "seed": null,
+      "environment_randomization": "disabled",
+      "person_gt": {"mvNW": 0, "mvNE": 1, "mvSW": 0, "mvSE": 2, "mvCenter": 2},
+      "files_sha256": "118a87ef2d634f1ff33b16df921125f6e93563c02fd03813e3f759af558d8436"
+    },
+    {
+      "scene_id": "0007",
+      "seed": null,
+      "environment_randomization": "disabled",
+      "person_gt": {"mvNW": 0, "mvNE": 0, "mvSW": 0, "mvSE": 0, "mvCenter": 0},
+      "files_sha256": "0fb9f3d106f96cb7e2137368063c528dd7b06db6594c41c2589247ab8fc03801"
+    },
+    {
+      "scene_id": "0008",
+      "seed": null,
+      "environment_randomization": "disabled",
+      "person_gt": {"mvNW": 1, "mvNE": 0, "mvSW": 0, "mvSE": 2, "mvCenter": 3},
+      "files_sha256": "71ac805a76dcff7c604238411e6e4cba2576e03ca4db785897323f57614d3a1f"
+    },
+    {
+      "scene_id": "0009",
+      "seed": null,
+      "environment_randomization": "disabled",
+      "person_gt": {"mvNW": 2, "mvNE": 0, "mvSW": 0, "mvSE": 1, "mvCenter": 2},
+      "files_sha256": "4fda238613002410ba60243a75bd15396e12005171e1de0f1a413445cba9e789"
+    }
+  ]
+}

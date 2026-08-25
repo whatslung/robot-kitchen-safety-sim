@@ -20,14 +20,24 @@ precision `0.174`, recall `0.114`로 여전히 부족하다. 따라서 이 PR의
 - GT: 이미지별 YOLO person 박스 35개
 - 매칭: confidence 내림차순 one-to-one greedy, IoU ≥ 0.5
 - 장치: CPU
+- 추론 인자: `batch=8`, `min_confidence=0.01`, `nms_iou=0.7`
 - 기존 모델: `chanubc/robot-kitchen-nadir-yolo11s/best.pt`
 - 비교 모델: stock COCO `yolo11s.pt`
 - 실행 코드: `train/eval_multiview_detector.py`
+- 증거: [데이터 체크섬·장면 매니페스트](artifacts/mv5-baseline-manifest.json),
+  [배포 모델 평가 JSON](artifacts/mv5-deploy-detector-report.json),
+  [stock 모델 평가 JSON](artifacts/mv5-stock-yolo11s-report.json)
 
 이 데이터는 빠른 go/no-go용 1차 표본이다. 앞 6개 장면에는 환경 설비 랜덤화가 포함되고,
 뒤 4개 장면은 렌더 시간 단축을 위해 설비 배치 지터만 끈 상태다. 사람 위치·포즈·인원,
 화재와 센서 변화는 유지했다. 최종 성능 인용에는 pose를 고정한 200장면 이상의 별도
 val/test 세트를 사용해야 한다.
+
+최초 브라우저 캡처 하네스가 `Math.random` seed와 장면별 실제 인원 수를 저장하지 않은
+한계도 있다. 따라서 저장소만으로 pixel-identical 재생성할 수 없으며 이 수치를 재현 가능한
+성능 벤치마크로 인용하면 안 된다. 대신 매니페스트에 원본 100개 이미지·라벨을 식별하는
+전체/장면별 SHA-256을 남겼다. 다음 정식 baseline은 seed, 사람 수, pose, 환경 설정을 장면별로
+저장하고 scene 단위 split 전에 매니페스트를 고정한다.
 
 ## 전체 결과
 
@@ -56,8 +66,8 @@ Stock YOLO11s의 운영 confidence `0.25` 결과다.
 | `mvCenter` | 14 | 3 | 0.429 | 0.214 |
 
 기존 나디르 파인튜닝 모델은 같은 threshold에서 모든 카메라의 TP가 0이었다. 중앙 보조뷰가
-사람 크기와 정면 형상 면에서 가장 유리하다는 설계 의도는 확인됐지만, 현재 4개 코너뷰의
-분포는 불균형하다.
+상대적으로 더 많은 TP를 낸 예비 신호는 있지만, 10장면의 작고 불균형한 표본만으로 카메라
+설계의 우위를 확인했다고 해석할 수 없다. 현재 4개 코너뷰의 GT 분포도 불균형하다.
 
 GT 가시성만 본 10장면의 person-positive 장면 수는 `mvNW=3`, `mvNE=3`, `mvSW=1`,
 `mvSE=6`, `mvCenter=8`이었다. 코너 4개 중 하나라도 person GT가 있던 장면은 7/10,
@@ -83,14 +93,17 @@ coverage 수치로 인용할 수는 없지만, detector 학습 전에 카메라 
 uv run --group serve python train/eval_multiview_detector.py `
   --dataset dataset/mv5-baseline-20260826 `
   --output training/mv5_detector_baseline.json `
-  --device cpu --batch 8
+  --device cpu --imgsz 640 --batch 8 `
+  --min-confidence 0.01 --nms-iou 0.7 --match-iou 0.5
 
 uv run --group serve python train/eval_multiview_detector.py `
   --dataset dataset/mv5-baseline-20260826 `
   --model yolo11s.pt `
   --output training/mv5_detector_stock_baseline.json `
-  --device cpu --batch 8
+  --device cpu --imgsz 640 --batch 8 `
+  --min-confidence 0.01 --nms-iou 0.7 --match-iou 0.5
 ```
 
-`dataset/`, `training/`, 다운로드한 `.pt`는 저장소의 기존 `.gitignore` 규칙에 따라 로컬
-평가 산출물로만 유지한다.
+`dataset/`, `training/`, 다운로드한 `.pt`는 저장소의 기존 `.gitignore` 규칙에 따라 로컬에만
+유지한다. 절대 경로와 중복 상세를 제거한 평가 JSON 및 원본 식별용 체크섬 매니페스트는 위
+`docs/evaluations/artifacts/`에 커밋했다.

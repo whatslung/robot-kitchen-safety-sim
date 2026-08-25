@@ -9402,10 +9402,14 @@ function mvHandleGlobalResponse(payload, cameraId, capturedAt) {
     if (!Number.isFinite(id) || !Number.isFinite(track.x) || !Number.isFinite(track.z)) continue;
     const age_ms = Math.max(0, Number(track.age_ms || 0) + transitAge);
     const stale = !!track.stale || age_ms > MV_COAST_MS;
+    const vx = Number.isFinite(Number(track.vx)) ? Number(track.vx) : 0;
+    const vz = Number.isFinite(Number(track.vz)) ? Number(track.vz) : 0;
+    const projectedX = track.x + vx * age_ms / 1000;
+    const projectedZ = track.z + vz * age_ms / 1000;
     nextTracks[id] = {
-      pos:new V3(track.x, 0, track.z), t:receivedAt - age_ms,
+      pos:new V3(projectedX, 0, projectedZ), t:receivedAt,
       hist:Array.isArray(track.history) ? track.history.map(row => ({t:row.t,x:row.x,z:row.z})) : [],
-      vWorld:{x:track.vx || 0,z:track.vz || 0}, sources:track.sources || [],
+      vWorld:{x:vx,z:vz}, sources:track.sources || [],
       stale, age_ms,
     };
     adjustedTracks.push(Object.assign({}, track, { age_ms, stale }));

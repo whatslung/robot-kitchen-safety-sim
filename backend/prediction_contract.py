@@ -114,7 +114,55 @@ def _format_lstm_modes(raw_modes: Sequence[dict[str, Any]]) -> list[dict[str, An
     return formatted
 
 
-def _constant_velocity_mode(track: dict[str, Any]) -> list[dict[str, Any]]:
+def _sample_with_linear_extrapolation(
+    times: Sequence[float], values: Sequence[float], target: float
+) -> float:
+    if target <= times[-1]:
+        return float(np.interp(target, times, values))
+    dt = times[-1] - times[-2]
+    slope = (values[-1] - values[-2]) / dt if dt > 1e-6 else 0.0
+    return float(values[-1] + slope * (target - times[-1]))
+
+
+def _shift_lstm_modes_to_receive_time(
+    modes: Sequence[dict[str, Any]],
+    age_seconds: float,
+    history_anchor: tuple[float, float],
+    state_anchor: tuple[float, float],
+) -> list[dict[str, Any]]:
+    """Express capture-time model paths relative to the response receive time."""
+
+    offset_x = state_anchor[0] - history_anchor[0]
+    offset_z = state_anchor[1] - history_anchor[1]
+    shifted: list[dict[str, Any]] = []
+    for mode in modes:
+        source_path = mode["path"]
+        source_sigma = mode["sigma"]
+        times = [0.0, *[float(row[0]) for row in source_path]]
+        xs = [state_anchor[0], *[float(row[1]) + offset_x for row in source_path]]
+        zs = [state_anchor[1], *[float(row[2]) + offset_z for row in source_path]]
+        sigmas = [float(source_sigma[0]), *[float(value) for value in source_sigma]]
+        path: list[list[float]] = []
+        sigma: list[float] = []
+        for index in range(1, PREDICTION_STEPS + 1):
+            relative_time = index * STEP_SECONDS
+            capture_time = age_seconds + relative_time
+            path.append(
+                [
+                    round(relative_time, 4),
+                    round(_sample_with_linear_extrapolation(times, xs, capture_time), 4),
+                    round(_sample_with_linear_extrapolation(times, zs, capture_time), 4),
+                ]
+            )
+            uncertainty = _sample_with_linear_extrapolation(times, sigmas, capture_time)
+            sigma.append(round(max(0.01, uncertainty), 4))
+        shifted.append({"prob": mode["prob"], "path": path, "sigma": sigma})
+    return shifted
+
+
+def _constant_velocity_mode(
+    track: dict[str, Any], age_seconds: float = 0.0
+) -> list[dict[str, Any]]:
     rows = _history_rows(track.get("history", []))
     state_x = _finite_float(track.get("x"), math.nan)
     state_z = _finite_float(track.get("z"), math.nan)
@@ -145,6 +193,8 @@ def _constant_velocity_mode(track: dict[str, Any]) -> list[dict[str, Any]]:
         scale = 3.0 / speed
         vx *= scale
         vz *= scale
+    x += vx * max(0.0, age_seconds)
+    z += vz * max(0.0, age_seconds)
     path = [
         [
             round(index * STEP_SECONDS, 4),
@@ -207,11 +257,22 @@ def predict_global_tracks(
                 }
             )
             continue
+        age_seconds = age_ms / 1000.0
         source = "kalman"
-        modes = _constant_velocity_mode(track)
+        modes = _constant_velocity_mode(track, age_seconds)
         if track_id in raw_by_id:
             try:
                 modes = _format_lstm_modes(raw_by_id[track_id])
+                history_anchor = sampled_by_id[track_id][-1]
+                state_x = _finite_float(track.get("x"), math.nan)
+                state_z = _finite_float(track.get("z"), math.nan)
+                state_anchor = (
+                    state_x if math.isfinite(state_x) else history_anchor[0],
+                    state_z if math.isfinite(state_z) else history_anchor[1],
+                )
+                modes = _shift_lstm_modes_to_receive_time(
+                    modes, age_seconds, history_anchor, state_anchor
+                )
                 source = "lstm"
             except (KeyError, TypeError, ValueError, OverflowError):
                 pass

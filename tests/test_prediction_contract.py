@@ -65,6 +65,25 @@ def test_batch_prediction_orders_ids_and_formats_three_lstm_modes():
         assert result["modes"][0]["path"][0][0] == 0.4
 
 
+def test_lstm_path_is_shifted_from_capture_time_to_receive_time():
+    results = predict_global_tracks(
+        [
+            {
+                "id": 3,
+                "history": _long_history(),
+                "age_ms": 400,
+                "stale": False,
+            }
+        ],
+        predictor=FakePredictor(),
+        robot={"x": 0, "z": 0, "stop_radius": 1, "slow_radius": 2},
+    )
+
+    assert results[0]["source"] == "lstm"
+    # At receipt, the old t=0.8 prediction is now t=0.4 in the future.
+    assert results[0]["modes"][0]["path"][0] == [0.4, 0.9, 0.0]
+
+
 def test_two_observations_use_finite_constant_velocity_fallback():
     results = predict_global_tracks(
         [
@@ -120,7 +139,8 @@ def test_fallback_prefers_filtered_global_kalman_state():
     )
 
     assert results[0]["source"] == "kalman"
-    assert results[0]["modes"][0]["path"][0] == [0.4, 1.2, 1.9]
+    # 30 ms of transit is applied before the 400 ms prediction horizon.
+    assert results[0]["modes"][0]["path"][0] == [0.4, 1.215, 1.8925]
 
 
 def test_stale_track_is_returned_without_active_prediction():

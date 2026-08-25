@@ -1,5 +1,6 @@
 import importlib.util
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -76,3 +77,21 @@ def test_explicit_model_name_is_not_replaced_by_default_hub_weights():
 def test_missing_ground_truth_label_fails_closed():
     with pytest.raises(FileNotFoundError):
         MODULE._read_person_labels(Path("definitely-missing-person-label.txt"))
+
+
+def test_report_records_all_inference_settings():
+    args = SimpleNamespace(
+        device="cpu",
+        imgsz=640,
+        batch=8,
+        min_confidence=0.01,
+        nms_iou=0.7,
+    )
+
+    assert MODULE._inference_settings(args) == {
+        "device": "cpu",
+        "imgsz": 640,
+        "batch": 8,
+        "min_confidence": 0.01,
+        "nms_iou": 0.7,
+    }
