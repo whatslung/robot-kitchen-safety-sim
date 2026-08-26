@@ -8070,9 +8070,23 @@ function datasetDiversify() {
     const b = 0.10 + Math.random() * 0.55;                 // 바닥 밝기 0.10(어둠)~0.65
     floor.material.albedoColor = new C3(b * 1.06, b, b * 0.9);
   }
+  /* 실제 조리실 복장 팔레트 — 채도 낮고 대비 다양(밝은 위생복↔어두운 앞치마·평상복).
+     saturated 랜덤색(보라·녹색)은 실사 사람과 안 닮아 real 전이를 해쳐 폐기(2026-08-26). */
+  const CLOTH = [
+    [0.88, 0.88, 0.90], [0.80, 0.80, 0.78],           // 흰/미색 위생복
+    [0.16, 0.20, 0.34], [0.12, 0.16, 0.26],           // 감청·남색
+    [0.13, 0.13, 0.15], [0.22, 0.22, 0.24],           // 검정·진회색
+    [0.45, 0.46, 0.48], [0.60, 0.60, 0.62],           // 회색
+    [0.40, 0.28, 0.18], [0.30, 0.34, 0.22],           // 갈색·카키
+    [0.45, 0.16, 0.16], [0.20, 0.32, 0.28],           // 진적·청록(앞치마)
+  ];
   const people = [anchors.person.node, ...EXTRAS.map(e => e.root)];
   for (const pn of people) {
-    const c = new C3(0.05 + Math.random() * 0.9, 0.05 + Math.random() * 0.9, 0.05 + Math.random() * 0.9);
+    const base = CLOTH[(Math.random() * CLOTH.length) | 0];
+    const j = () => (Math.random() - 0.5) * 0.08;      // 개체별 미세 명암 지터
+    const c = new C3(Math.min(1, Math.max(0, base[0] + j())),
+                     Math.min(1, Math.max(0, base[1] + j())),
+                     Math.min(1, Math.max(0, base[2] + j())));
     for (const m of pn.getChildMeshes()) {
       if (m.material && /Cook_Top|Cook_Hood|Cook_Pant/.test(m.material.name)) {
         // 인스턴스당 1회만 clone(원본 공유 재질 훼손·매 프레임 누수 방지). 이후엔 색만 갱신.
