@@ -859,6 +859,46 @@ const ASSETS = {
     hinge:[-0.660,0,0.945], grip:[0.020,0,1.120]
   }
 };
+/* ══ 로봇 통째 이동 (지지대+돔+팔) — 2026-08-26 ═══════════════════════════
+   문제: 카트의 바스켓이 어깨에서 1.648m — 팔 길이(upper+fore = 1.70m)의 **97%**다.
+   지그 높이 1.463이 어깨(1.10)보다 위라 3D 거리는 1.687m(99%) → 사실상 완전신전이라
+   IK가 자세를 못 고르고 포크가 지그를 빗나간다.
+
+   ⚠️ **LAYOUT.robot.base만 옮기면 안 된다** — 한 번 그렇게 했다가 팔만 옆으로 가고
+   받침은 제자리에 남았다(사용자 확인 "지대는 옮겨진게 안보이고 팔은 팔대로 망가지고").
+   이유: robot_pedestal.glb·팔 세그먼트 GLB는 전부 ASSETS.pivots 자리에 놓인 뒤
+   setParent(월드 보존)로 앵커에 묶인다. 앵커만 옮기면 그 차이를 로컬 오프셋이
+   흡수해 메시는 그대로 남는다.
+   → **피벗 자체를 옮긴다.** LAYOUT.robot.base도 pivots.s에서 파생되므로 하나만
+   고치면 받침·돔·팔·앵커가 전부 같이 간다.
+
+   피벗은 블렌더 좌표이고 B2()가 world.x = −a[0], world.z = −a[1] 로 바꾼다.
+   따라서 월드로 (+0.30, +0.13) 옮기려면 블렌더 값에서 그만큼 **빼면** 된다.
+   적용값: 월드 (−0.30, −0.30) → 어깨 (−1.40, +0.515)  [지시: x·z 둘 다 줄인다]
+   ⚠️ 이 방향은 카트에서 멀어진다 — 아래 수치는 반드시 같이 본다:
+       어깨 → 솥  1.369 → 1.492m (팔 1.70m의 88%)
+       어깨 → 카트 1.648 → **2.044m (120%) — 도달 불가**
+   이 자리에서는 바스켓 파지가 성립하지 않는다. 카트를 로봇 쪽으로 당기거나
+   ?reach= 로 팔을 늘려야 한다. 되돌리려면 이 블록만 지운다.
+   grip(바스켓)·hinge(뚜껑) 피벗은 로봇이 아니므로 건드리지 않는다. */
+(function moveRobotRig(worldDX, worldDZ) {
+  ["base", "j1", "s", "e", "w"].forEach(k => {
+    ASSETS.pivots[k][0] -= worldDX;   // blender x  (world.x = −x)
+    ASSETS.pivots[k][1] -= worldDZ;   // blender y  (world.z = −y)
+  });
+})(-0.30, -0.30);
+
+/* ══ 카트(바스켓 거치대) 당김 — 2026-08-26 ═══════════════════════════════════
+   로봇을 (−0.30,−0.30) 옮기고 나니 어깨(−1.40, 0.51) → 카트 바스켓(−0.50, 2.35)이
+   **2.048m = 팔(1.70m)의 120%** 라 아예 닿지 않았다. 카트는 원래 굴러다니는 물건이고
+   UI에도 '카트 밀기/원위치'가 있으므로 **카트를 로봇 쪽으로 당긴다.**
+   목표: 어깨→바스켓 수평 1.48m → 손목 3D 1.35m = 팔의 79%.
+   완전신전(97~120%)이 아니라 **팔꿈치가 제대로 굽는 자세**가 나오는 구간이다.
+       바스켓 (−0.50, 2.35) → (−0.75, 1.84)   즉 델타 (−0.25, −0.51)
+   바스켓·카트·시퀀스 좌표가 **한 상수에서 같이 움직여야** 따로 놀지 않는다
+   (지지대만 옮겼다가 받침·덕트가 남았던 실수를 반복하지 않기 위함). */
+const CART_PULL = { x: -0.25, z: -0.51 };
+
 const BXS = -1, BZS = -1;  // Blender→Babylon 수평 부호 — 실측 검증: bab=(-x, z, -y) (Kiosk/Cart 대조 2026-08-08)
 const B2 = a => new V3(BXS*a[0], a[2], BZS*a[1]);
 
@@ -1003,6 +1043,21 @@ if (REACH.k !== 1) {
   LAYOUT.targets.stirW    = new V3(cx - F.stirR, sy, cz);
   LAYOUT.targets.stirN    = new V3(cx, sy, cz + F.stirR);
   LAYOUT.targets.stirS    = new V3(cx, sy, cz - F.stirR);
+})();
+
+/* ══ 바스켓 거치 방향 — 포크 진입각과 맞춘다 (2026-08-26) ══════════════════════
+   증상: 파지 순간 바스켓이 홱 돈다. 정지 상태 요 0° → 파지 후 −62°.
+   원인: 파지에서 지그를 포크에 앉히려고 **손목 로컬 회전을 항등으로 고정**하는데,
+   그러면 바스켓 요가 손목 요(=J1)를 그대로 물려받는다. 카트 위 바스켓은 요 0°로
+   놓여 있으니 그 차이만큼 한 프레임에 튄다.
+   해결: **거치 상태의 요를 미리 파지 접근각으로 맞춰 둔다.** 실제로도 포크로 집는
+   지그는 로봇을 향하도록 카트를 대 놓는 게 맞다.
+   J1 규약이 θ = atan2(−dz, dx)이므로 베이스 → 파지 접근점 각도를 그대로 쓴다
+   (실측 −61.99°와 일치). 로봇 위치·CART_PULL이 바뀌어도 같이 따라온다. */
+const BK_REST_YAW = (() => {
+  const b = LAYOUT.robot.base;
+  const ax = -0.482 + CART_PULL.x, az = 2.281 + CART_PULL.z;   // 파지 접근 좌표(SEQ와 동일)
+  return Math.atan2(-(az - b.z), ax - b.x);
 })();
 
 /* ══ 엔진 / 씬 ═══════════════════════════════════════════════════════════ */
@@ -5401,10 +5456,14 @@ function fillBasket() {
   merged.isPickable = false;
   merged.receiveShadows = true;
   if (typeof shadows !== "undefined" && shadows) shadows.addShadowCaster(merged);
-  /* 바스켓 로컬 좌표로 옮긴다 — 노드가 y 1.120에 있고 바닥은 월드 0.544다.
-     로봇이 바구니를 집으면 basketNode가 손목에 붙으므로 내용물도 같이 따라간다. */
+  /* 바스켓 로컬 좌표로 옮긴다 — 로봇이 바구니를 집으면 basketNode가 손목에 붙으므로
+     내용물도 같이 따라간다.
+     ⚠️ 종전 식 `0.544 - getAbsolutePosition().y`는 **홈이 솥 안(y 1.120)이라는 전제**였다.
+     적재 사이클(2026-08-25)이 홈을 카트(y 1.463)로 옮기자 음식이 바닥보다 0.34m 아래에
+     박혀 "빈 바구니 + 솥에 뜬 음식"이 됐다. 바닥은 노드 −0.576(GLB 계층 고정값)이므로
+     로컬 상수로 못박는다 — 홈이 어디든 내용물은 바구니 안이다. */
   merged.parent = basketNode;
-  merged.position.y = 0.544 - basketNode.getAbsolutePosition().y + 0.004;
+  merged.position.y = -0.572;   // 바닥(−0.576) + 0.004
   return N;
 }
 
@@ -5640,9 +5699,14 @@ async function loadAssets() {
   /* 시작 위치 = **카트 위**(2026-08-25). 종전엔 솥 안(로드된 그 자리)이 홈이라 로봇이
      꺼내는 것부터 시작했다. 이제 적재 사이클이 카트에서 집어 솥에 넣으므로, 홈도 카트로.
      좌표는 후반부 카트 안착과 동일 (-0.50, 1.463, 2.35). */
-  basketNode.position = new V3(-0.50, 1.463, ISLAND ? 2.35 : 2.10);
-  basketNode.__home = basketNode.position.clone();     // 파지 시퀀스 리스타트용 원위치
+  basketNode.position = new V3(-0.50 + CART_PULL.x, 1.463, (ISLAND ? 2.35 : 2.10) + CART_PULL.z);
+  basketNode.rotation.y = BK_REST_YAW;      // 지그가 로봇(포크)을 향하도록 거치
+  basketNode.__home = basketNode.position.clone();
+  basketNode.__homeYaw = BK_REST_YAW;     // 파지 시퀀스 리스타트용 원위치
   fillBasket();                                        // 튀김 바스켓에 내용물을 담는다
+  /* 바스켓 모양은 main 원본 그대로 둔다 — basket.glb 케이지(림·리브16·바닥)뿐이고
+     손잡이 지오메트리는 붙이지 않는다 (2026-08-26 사용자 지시: "바스켓 모양 main에서
+     가져와, 다른거 가져오지말고 바스켓만"). 절차적 손잡이를 얹었다가 되돌렸다. */
   robotGlb.base  = await pivoted("robot_pedestal.glb", "rgBase",   ASSETS.pivots.base);
   robotGlb.j1    = await pivoted("robot_j1.glb",       "rgJ1",     ASSETS.pivots.j1);
   robotGlb.upper = await pivoted("robot_upper.glb",    "rgUpper",  ASSETS.pivots.s);
@@ -5696,6 +5760,39 @@ async function loadAssets() {
     console.log("[REACH] GLB 세그먼트 ×" + REACH.k.toFixed(3) +
                 " · ROBOT_GUARD.reach → " + ROBOT_GUARD.reach.toFixed(2) + "m");
   }
+  /* ══ 밑동 축 정렬 — 구(어깨)와 팔 밑동이 어긋나는 문제 (2026-08-26) ═══════════
+     실측(정렬 전, 월드 z):
+        anchor.robot.j1/j2 (회전축)          0.515
+        ArmShoulderShell  (구, rgUpper)      0.515   ← 축 위에 정상
+        ArmJ1             (밑동 원기둥,rgJ1) 0.495   ← **2cm 빗나감**
+        PedTop·ArmBaseRing (받침, rgBase)    0.495   ← 같이 빗나감
+     원인은 피벗 데이터다 — base a[1] −0.795 vs j1/s a[1] −0.815 (2cm 차이).
+     그래서 구는 축 위에 있는데 그 아래 밑동 원기둥과 받침만 옆으로 밀려 보인다.
+     축 위에 있어야 하는 건 **회전하는 밑동**이므로 rgJ1·rgBase를 축으로 당긴다.
+     ⚠️ 로컬 position에 더하지 않는다 — GLB 루트에 반전 스케일이 있어 방향이 뒤집힌다
+     (FloorDuct에서 겪음). **월드 좌표(setAbsolutePosition)로 옮긴다.**
+     기구학(앵커·링크)은 건드리지 않는다 — 껍데기만 축에 맞추는 보정이다. */
+  (function alignBaseToAxis() {
+    const axis = JOINTS[0].node;                     // anchor.robot.j1 = 요 회전축
+    if (!axis) return;
+    axis.computeWorldMatrix(true);
+    const A = axis.getAbsolutePosition();
+    const fix = (node, refName) => {
+      const ref = scene.getMeshByName(refName);
+      if (!node || !ref) return null;
+      ref.computeWorldMatrix(true); node.computeWorldMatrix(true);
+      const R = ref.getAbsolutePosition(), N = node.getAbsolutePosition();
+      const dx = A.x - R.x, dz = A.z - R.z;
+      if (Math.abs(dx) < 1e-4 && Math.abs(dz) < 1e-4) return 0;
+      node.setAbsolutePosition(new V3(N.x + dx, N.y, N.z + dz));
+      node.computeWorldMatrix(true);
+      return Math.hypot(dx, dz);
+    };
+    const d1 = fix(robotGlb.j1,   "ArmJ1");          // 밑동 원기둥 → 축
+    const d0 = fix(robotGlb.base, "RobotPedestal");  // 받침 → 축
+    console.log("[ALIGN] 밑동 축 정렬 — rgJ1 " + (d1 === null ? "skip" : d1.toFixed(3) + "m") +
+                " · rgBase " + (d0 === null ? "skip" : d0.toFixed(3) + "m"));
+  })();
   // 바스켓·뚜껑은 정지 상태 유지 (시나리오 단계에서 부착/개폐)
   // 환경 프로브 재캡처 — GLB는 프로브 1회 캡처 이후 도착하므로 리스트에 넣고 다시 찍는다
   scene.meshes.forEach(m => { if (probe.renderList.indexOf(m) < 0) probe.renderList.push(m); });
@@ -5721,7 +5818,8 @@ async function loadAssets() {
      조각나 사람이 카트 옆으로 걸어갈 수가 없었다(실측: 99초를 걸어도 도착 실패).
      카트를 빼면 그 사이가 넓어지고, 팔이 통로 위를 지나 접근 자체가 가능해진다.
      z=2.35가 기본 팔 길이의 한계다 — 2.55는 안착 오차 32mm로 못 닿는다(실측). */
-  cartShift.position = new V3(-0.48, 0, ISLAND ? 0.95 : 0.70);   // 카트 중심 → z 2.35 / 2.10
+  // 카트 본체도 바스켓과 **같은 델타**로 당긴다 — 따로 두면 바스켓이 카트 밖에 뜬다
+  cartShift.position = new V3(-0.48 + CART_PULL.x, 0, (ISLAND ? 0.95 : 0.70) + CART_PULL.z);
   if (ISLAND) {
     const cf = COLL_FOOTPRINTS.find(f => Math.abs(f[0] + 0.50) < 0.01 && Math.abs(f[1] - 2.10) < 0.01);
     if (cf) cf[1] = 2.35;                        // 충돌 박스도 같이 — 안 하면 유령 벽이 남는다
@@ -8604,7 +8702,12 @@ const ROBOT_GUARD = {
   //   로봇 제 몸이었다. 팔은 항상 제 받침대 위에 있으므로 특정 자세에서 "상완↔PedTop"으로
   //   가드가 걸려 관절이 lastGood으로 되돌고, IK가 통째로 wedge됐다(실측: 4회 중 1회,
   //   7개 지점 전부 실패·오차 593mm). 자기 부품은 장애물이 아니다.
-  allow: /^(Plinth|Pillar|Oil|Lid|Wheel|Probe|CtrlPanel|Faucet|Bowl|Cart|SpareBasket|Basket|Jig|bk|rg[A-Z]|Robot|[Pp]ed|Arm|Hand|tip|paddle|col_)/,
+  // [Hh]ood = 환기 후드(스커트 1.85m). 팔 1.70m(섬 기본, 2026-08-18 상향) 기준으로 카트↔솥
+  //   이송 포즈의 팔뚝 상단이 스커트 밴드(1.85~2.19)를 스친다. 옛 사이클은 바스켓이 솥에서
+  //   시작해 이 높이를 지날 일이 없었는데, 적재 사이클(카트→솥, 2026-08-25)이 처음 지나면서
+  //   가드가 "하완 ↔ Hood"로 걸려 이송 중 로봇이 얼었다(실측). 후드는 팔 위에 매달린
+  //   구조물이라 Jig·Ped와 같은 "지나가야 하는 것" — 이송 높이도 같이 낮춰 실제 스침은 최소다.
+  allow: /^(Plinth|Pillar|Oil|Lid|Wheel|Probe|CtrlPanel|Faucet|Bowl|Cart|SpareBasket|Basket|Jig|bk|rg[A-Z]|Robot|[Pp]ed|Arm|Hand|tip|paddle|col_|[Hh]ood)/,
   // 구조·장식·보이지 않는 것 = 검사 제외
   // 구조·장식·바닥 부착물·시각 표시 = 검사 제외.
   // zone1/zone2(안전존 링)와 FloorDuct는 바닥에 깔린 표시물이라 장애물로 잡으면 오작동한다.
@@ -9535,13 +9638,28 @@ const T = LAYOUT.targets;
    ⚠️ cross:true 는 chanwoo 회피의 개입 조건이다 — 통로를 지나는 두 이송 스텝에 붙인다. */
 const SEQ_FRY = [
   // ── 전반부: 카트에서 집어 솥에 넣는다 ──
-  { k:"ikOff", off:[0,0,0], at:[-0.50, 2.35], atY:1.863, ms:2260, msg:"카트로 이동 — 통로 횡단", cross:true },
-  { k:"ikOff", off:[0,0,0], at:[-0.50, 2.35], atY:1.463, ms:700,  msg:"바스켓 파지", grab:true },
-  { k:"ikOff", off:[0,0,0], at:[0, 0],        atY:1.35,  ms:2260, msg:"솥으로 이송 — 통로 횡단", cross:true },
-  { k:"ikOff", off:[0,0,0], at:[0, 0],        atY:1.05,  ms:800,  msg:"솥에 투입", oil:true },
-  { k:"ikOff", off:[0,0.30,0], at:[0, 0],     atY:1.35,  ms:700,  msg:"로봇 물러남 — 조리 시작" },
+  /* ⚠️ 높이 규약 대전환 (2026-08-26) — atY는 "교반봉 끝(손목−0.54)"의 목표 높이다. 그런데
+     집게는 손목 높이(≈atY+0.54)라, 예전 atY로는 집게가 바스켓보다 0.5m 위에 떠서 허공을
+     쥐었다. 이제 **집게가 실제로 바스켓 테두리(카트 위 1.12)에 내려가 닿게** atY를 낮춘다.
+     파지 후 바스켓은 손목에 물려 바닥이 손목−0.24 = atY+0.30 → 솥 투입 0.45면 바닥 0.75(기름면). */
+  /* ⚠️ atY = effector(교반봉 끝 paddleTip) 절대 높이. 손목 국소로 paddleTip은 (0.215,−0.540,0),
+     **3갈래 포크 물림점은 (0.267,−0.107,0.049)** — 즉 포크가 봉 끝보다 0.433m 위다.
+     바스켓을 포크에 강체로 물리면(지그 JigTop = bkNode 원점) 손목 수평 자세에서:
+         포크·지그 = atY + 0.433   ·   바스켓 테두리 = atY + 0.093   ·   바닥 = atY − 0.147
+     카트 거치 지그 높이 1.463 → **파지·안착 atY = 1.463 − 0.433 = 1.030** (2026-08-26). */
+  /* at은 effector(교반봉 끝) 목표인데 **포크는 그 축에서 옆으로 물려 있다** —
+     실측 포크−지그 = (−0.049, 0, +0.052) = 0.071m. 그만큼 반대로 밀어
+     포크가 지그 중심에 오게 한다: (−0.50+0.049, 2.35−0.052) = (−0.451, 2.298). */
+  { k:"ikOff", at:[-0.482 + CART_PULL.x, 2.281 + CART_PULL.z], atY:1.20,  ms:2000, msg:"카트 상공으로 이동 — 통로 횡단", cross:true, lvl:true },
+  { k:"ikOff", at:[-0.482 + CART_PULL.x, 2.281 + CART_PULL.z], atY:1.030, ms:700,  msg:"포크 진입 — 바스켓 지그에 맞춤", lvl:true },
+  { k:"ikOff", at:[-0.482 + CART_PULL.x, 2.281 + CART_PULL.z], atY:1.30,  ms:800,  msg:"지그 물어 들어올림 (생 재료)", grab:true, fresh:true },
+  { k:"ikOff", at:[0, 0],        atY:1.30,  ms:2260, msg:"솥으로 이송 — 통로 횡단", cross:true },
+  // 기름면 0.75 — 바닥(atY−0.147)이 잠기도록 atY 0.77 (바닥 0.623)
+  { k:"ikOff", at:[0, 0],        atY:0.77,  ms:900,  msg:"솥에 투입 — 기름에 담금", oil:true },
+  { k:"wait",  ms:4500,                     msg:"🍤 튀기는 중 — 노릇하게 익힘", oil:true },
+  { k:"ikOff", at:[0, 0],        atY:1.30,  ms:900,  msg:"바스켓 1차 인양 — 기름 배출", oil:false },
   // ── 후반부: 익은 것을 꺼내 카트로 (기존) ──
-  { k:"ikOff", off:[0, 0.46, 0],    ms:1100, msg:"바스켓 인양 — 기름 배출", grab:true, oil:false },
+  { k:"ikOff", at:[0, 0],        atY:1.34,  ms:1100, msg:"바스켓 인양 — 기름 배출", oil:false },
   { k:"shake", ms:800, n:3,         msg:"기름 털기" },
   /* 카트가 통로로 나가면서 이송 거리가 길어졌다 — 중간 경유를 통로 쪽으로 더 뺀다.
      이 구간이 **팔이 사람 다니는 바닥 위를 지나는 구간**이고, 그래서 이 연구가
@@ -9550,10 +9668,11 @@ const SEQ_FRY = [
      팔이 사람 위를 지나는 유일한 구간이라 가장 위험하다. 협동 운전 속도 0.50 m/s로 낮춘다
      (이동거리 1.13m ÷ 0.50 = 2.26s). 이 값과 SAFE.NOM_STOP은 **같이 움직인다** —
      되돌리면 정지링을 3.10 → 3.89m로 올려야 한다. */
-  { k:"ikOff", off:[-0.24, 0.02, 1.10], ms:2260, msg:"카트로 이송 — 통로 횡단 (감속 구간)", cross:true },
-  // 카트가 섬 배치에서 z 2.35로 물러나므로 정렬 좌표도 따라간다
-  { k:"ikOff", off:[0,-0.06, 0], at:[-0.465, ISLAND ? 2.33 : 2.08], ms:800, msg:"카트 상공 정렬" },
-  { k:"ikOff", off:[0,-0.31, 0], at:[-0.465, ISLAND ? 2.33 : 2.08], ms:700, msg:"카트에 안착" },
+  // 복귀 좌표 = 카트 거치 위치 그대로 (봉 끝 = 테두리라 at이 곧 바스켓 자리다)
+  // 복귀도 같은 포크 오프셋 보정 좌표 — 집었던 자리에 정확히 되돌려 놓는다
+  { k:"ikOff", at:[-0.482 + CART_PULL.x, (ISLAND ? 2.281 : 2.031) + CART_PULL.z], atY:1.30,  ms:2260, msg:"카트로 이송 — 통로 횡단 (감속 구간)", cross:true },
+  { k:"ikOff", at:[-0.482 + CART_PULL.x, (ISLAND ? 2.281 : 2.031) + CART_PULL.z], atY:1.15,  ms:800, msg:"카트 상공 정렬" },
+  { k:"ikOff", at:[-0.482 + CART_PULL.x, (ISLAND ? 2.281 : 2.031) + CART_PULL.z], atY:1.030, ms:700, msg:"카트에 안착 — 하강" },
   { k:"wait",  ms:350,              msg:"바스켓 거치", drop:true },
   { k:"home",  ms:1100,             msg:"홈 자세 복귀" },
 ];
@@ -9594,17 +9713,32 @@ function startStep(i) {
   state.dur = s.ms;
   if (s.msg) setStatus("[" + (i+1) + "/" + SEQ.length + "] " + s.msg);
   if (s.oil !== undefined) state.inOil = s.oil;
-  // 바스켓 파지/거치 — 파지 시 홈 위치로 스냅 후 손목(J5)에 부착, 거치 시 카트 상단에 안착
+  if (s.fresh) { state.cook = 0; state.burn = 0; }   // 새 생재료 배치 — 카트에서 집을 때 생으로 리셋
+  // 바스켓 파지/거치 — 파지 시 손목에 **강체 결합**(지그를 포크에 앉힘), 거치 시 카트 상단에 안착
   if (s.grab && basketNode) {
-    // 있는 자리에서 그대로 집는다 — 월드 변환 보존.
-    // 예전에는 여기서 __home(솥 안)으로 되돌려 1.4m 순간이동이 화면에 보였다.
-    // 사이클 재실행용 원위치 복귀는 ↺리셋으로 옮겼다(resetBasket).
+    /* ══ 3갈래 포크 ↔ 바스켓 지그 물림 (2026-08-26) ═══════════════════════
+       이 로봇의 파지 도구는 집게도 교반봉도 아니라 **손목 아래 3갈래 포크**다:
+         HandForkUL (j5국소 0.273,−0.078,−0.002) · HandForkUR (0.268,−0.080,+0.102)
+         HandForkL  (0.260,−0.163,+0.048)   ← 위 둘 사이 정중앙 아래
+       바스켓에도 짝이 되는 **걸이 지그**가 처음부터 있다(basket.glb 원본):
+         JigTop  = bkNode 원점(0,0,0)의 판 0.133×0.022×0.176
+         JigLeg ×2 = 대각으로 내려가 테두리(−0.34)를 잡는 다리
+       즉 bkNode 원점이 곧 걸이점이고(ASSETS.pivots.grip), 포크 삼각형 한가운데에
+       이 판이 물려 들어올려지는 구조다. 세 갈래의 무게중심 (0.267,−0.107,0.049)에
+       판을 앉힌다.
+       **강체 결합이어야 한다** — 수평 유지(진자)로 띄우면 포크가 회전할 때 지그가
+       따라 돌지 않아 "봉 사이에 걸린" 그림이 안 나온다(사용자 지적). main도 같은 이유로
+       setParent(J5)만 했다. 회전은 손목 수평 보정이 대신 잡아 준다. */
     basketNode.setParent(JOINTS[4].node);
+    basketNode.rotationQuaternion = BABYLON.Quaternion.Identity();
+    basketNode.rotation.set(0, 0, 0);
+    basketNode.position = new V3(0.267, -0.107, 0.049);
+    state.basketHeld = true;
   }
   if (s.drop && basketNode) {
-    // 월드 변환을 보존한 채 손에서 분리한다. 회전을 Identity로 강제하면
-    // 들고 있던 요(측정값 -35°)가 한 프레임에 0°로 튀어 바스켓이 홱 돌아 보인다.
-    // 운반 중 자세는 이미 수평(yaw-only)이므로 그대로 두는 편이 물리적으로도 맞다.
+    // 걸이 파지 해제 — 카트 링 위에 안착. 요(바 방향)는 들고 있던 그대로 둔다:
+    // 케이지는 회전대칭이라 어색하지 않고, 0°로 강제하면 한 프레임에 홱 돌아 보인다.
+    state.basketHeld = false;
     basketNode.setParent(null);
     /* 안착 높이 **1.23 → 1.463** (2026-08-18). 종전 주석은 "림 플레어가 카트 링(0.878)
        위에 걸침 — 관통 없음"이라고 적혀 있었는데 **반대였다.** 실측:
@@ -9617,7 +9751,7 @@ function startStep(i) {
        **바스켓(∅1.045)이 카트 링(∅0.748)보다 0.30m 크다.** 링 안에 들어가는 게 아니라
        링 위에 걸쳐 얹힌다. 실제 튀김 바스켓을 카트에 걸치는 방식과 같아 그대로 둔다.
        링 안에 쏙 들어가는 그림을 원하면 카트 GLB를 ∅1.05 이상으로 바꿔야 한다. */
-    basketNode.position = new V3(-0.50, 1.463, ISLAND ? 2.35 : 2.10);
+    basketNode.position = new V3(-0.50 + CART_PULL.x, 1.463, (ISLAND ? 2.35 : 2.10) + CART_PULL.z);
   }
   if (s.k === "ik") {
     state.from = JOINTS.map(j => j.value);
@@ -9629,8 +9763,9 @@ function startStep(i) {
     const tgt = new V3(s.at ? s.at[0] : ep.x + s.off[0],
                        (s.atY !== undefined) ? s.atY : ep.y + s.off[1],
                        s.at ? s.at[1] : ep.z + s.off[2]);
-    // 파지 중엔 수평 손목 제약 폐형해 — 목표 추종과 수평 유지가 충돌하지 않음
-    state.to = (basketNode && basketNode.parent) ? ikLevelAngles(tgt) : ikAngles(tgt).angles;
+    // 파지 중·파지 접근(lvl) 스텝은 수평 손목(ikLevelAngles) — 포크가 바에 정렬된 채 접근/운반.
+    // 접근을 일반 IK로 하면 포크가 바에서 40cm+ 떨어진 채 파지돼 바스켓이 순간이동한다(2026-08-26 실측 0.68m).
+    state.to = ((basketNode && state.basketHeld) || s.lvl) ? ikLevelAngles(tgt) : ikAngles(tgt).angles;
   } else if (s.k === "home") {
     state.from = JOINTS.map(j => j.value);
     state.to = JOINTS.map(j => j.home);
@@ -9812,22 +9947,14 @@ function stepUpdate(dt) {
   } else if (s.k === "stir") {
     return stepStir(s, t, dt);
   }
-  // ── 짐 운반 물리 2중 보정 ──
-  // (1) 손목 수평 보정: 파지 중 J4 = -(J2+J3) → 툴(포크)이 항상 수평(실기 짐 운반 표준 자세).
-  //     포크와 그립바가 함께 수평이므로 상대 회전에 의한 관통이 원천 차단된다.
-  if (basketNode && basketNode.parent && s.k !== "shake") {
+  // ── 짐 운반: 바스켓은 포크에 물린 채 손목과 함께 움직인다(강체) ──
+  // 위치를 매 프레임 다시 잡지 않는다 — 파지 때 지그가 포크에 앉았고 부모가 손목이라
+  // 팔이 어떻게 움직이든 물린 상태가 그대로 유지된다. 여기서는 **손목만 수평으로** 잡아
+  // 포크가 기울어 지그가 빠지는 그림이 안 나오게 한다(실기 짐 운반 자세와 같다).
+  if (state.basketHeld && basketNode && s.k !== "shake") {
     JOINTS[3].value = clamp(-(JOINTS[1].value + JOINTS[2].value), JOINTS[3].min, JOINTS[3].max);
-    JOINTS[4].value = 0;   // 캐리 중 롤 금지 — 포크가 그립바 주위로 비틀리는 것 방지
+    JOINTS[4].value = 0;   // 캐리 중 롤 금지 — 포크가 지그 주위로 비틀리는 것 방지
     applyJoint(JOINTS[3]); applyJoint(JOINTS[4]); refreshChain();
-  }
-  // (2) 바스켓 요-추종 수평화: 매달린 짐은 피치·롤은 중력이 잡고 요는 캐리어를 따른다.
-  //     부모 월드 회전에서 요만 남긴 자세를 목표로 로컬 회전을 설정.
-  if (basketNode && basketNode.parent) {
-    const pq = new BABYLON.Quaternion();
-    basketNode.parent.getWorldMatrix().decompose(undefined, pq, undefined);
-    const ey = pq.toEulerAngles();
-    const yawOnly = BABYLON.Quaternion.RotationYawPitchRoll(ey.y, 0, 0);
-    basketNode.rotationQuaternion = BABYLON.Quaternion.Inverse(pq).multiply(yawOnly);
   }
   if (t >= 1) startStep(state.seqIdx + 1);
 }
@@ -9920,7 +10047,7 @@ function updateCooking(dt) {
                effector().getAbsolutePosition().z - LAYOUT.fryer.pos.z) < LAYOUT.fryer.r;
   steamPuffTick(dt);                                 // 김 대량 방출(투입·배출) 타이머
   if (boiling) {
-    if (state.cook < 1) state.cook = clamp(state.cook + dt/1000 * 0.055 * rate, 0, 1);
+    if (state.inOil && state.cook < 1) state.cook = clamp(state.cook + dt/1000 * 0.26 * rate, 0, 1);
     // 고온 + 교반 없음 → 눌음 / 교반 중 → 회복
     if (state.stirring && bladeIn) state.burn = clamp(state.burn - dt/1000 * 0.10, 0, 1);
     /* 눌음은 **다 익은 뒤에** 시작한다 — cook>0.9 (2026-08-25). 종전 0.25는 익는 도중부터
@@ -10215,7 +10342,14 @@ $("autoLoop").addEventListener("change", e => {
 });
 $("autoBtn").addEventListener("click", () => {
   state.auto = true; state.inOil = false; state.cycles = 0;
+  state.cook = 0; state.burn = 0;                  // 새 사이클은 생 재료로 시작
   JOINTS.forEach(j => { j.value = j.home; applyJoint(j); }); refreshChain();
+  /* ⚠️ 바스켓을 **카트 원위치로 되돌린다** (2026-08-26 버그픽스).
+     종전엔 basketHeld 플래그만 껐다. 그래서 직전 실행이 솥 안/공중에서 끊겼으면
+     (정지 버튼, 사고 시나리오, 사이클 도중 재시작) 바스켓이 **그 자리에 남은 채**
+     사이클이 시작됐다 — 사용자 보고 "자동작업 누르면 바스켓이 갑자기 솥 안으로 이동".
+     연속 작업 루프는 이미 resetBasket()을 부르는데 이 버튼 경로만 빠져 있었다. */
+  if (typeof resetBasket === "function") resetBasket();
   startStep(0);
 });
 $("stopBtn").addEventListener("click", () => { state.auto = false; setStatus("정지"); });
@@ -10224,14 +10358,17 @@ $("homeBtn").addEventListener("click", () => {
   JOINTS.forEach(j => { j.value = j.home; applyJoint(j); });
   refreshChain(); syncJointUI(); setStatus("홈 자세");
 });
-/* 바스켓 원위치(솥 안) 복귀 — 파지 시 자동 복귀를 여기로 옮겼다.
-   자동 복귀는 카트 위 바스켓이 집는 순간 솥으로 순간이동해 화면에 튀었다. */
+/* 바스켓 원위치 복귀 — 원위치는 **카트 위**(__home = 생성 시 좌표)다.
+   예전 주석은 "솥 안"이라고 돼 있었는데, 적재 사이클이 카트에서 출발하도록 바뀐 뒤로
+   틀린 설명이다(2026-08-26 정정). 자동 작업·연속 사이클·리셋이 모두 이걸 부른다. */
 function resetBasket() {
   if (!basketNode) return;
+  state.basketHeld = false;
   basketNode.setParent(null);
   if (basketNode.__home) basketNode.position.copyFrom(basketNode.__home);
-  basketNode.rotationQuaternion = BABYLON.Quaternion.Identity();
-  basketNode.rotation.set(0, 0, 0);
+  // 방향도 거치 기준으로 되돌린다 — 0°로 두면 다음 파지에서 다시 홱 돈다
+  basketNode.rotationQuaternion = null;
+  basketNode.rotation.set(0, basketNode.__homeYaw || 0, 0);
 }
 $("resetBtn").addEventListener("click", () => {
   state.auto = false; state.cook = 0; state.burn = 0; state.inOil = false;
@@ -11276,12 +11413,9 @@ function accReset() {
     person.node.position.copyFrom(ACC.saved.person); person.node.rotation.y = ACC.saved.rotY;
     if (cs && ACC.saved.cart) cs.position.copyFrom(ACC.saved.cart);
   }
-  if (basketNode) {   // 바스켓 원위치(카트 위) 복귀
-    basketNode.setParent(null);
-    basketNode.position = new V3(-0.50, 1.23, ISLAND ? 2.35 : 2.10);
-    basketNode.rotationQuaternion = BABYLON.Quaternion.Identity();
-    basketNode.rotation.set(0,0,0);
-  }
+  // 바스켓 원위치(카트 위) 복귀 — resetBasket이 __home(생성 좌표)을 쓰므로 그걸 재사용한다.
+  // 종전엔 y를 1.23으로 직접 박아 뒀는데 카트 링 상단은 1.463이라 바스켓이 링에 파묻혔다.
+  if (typeof resetBasket === "function") resetBasket();
   state.auto = false;
   setStatus("사고 시나리오 되돌림 — 초기 상태");
 }
@@ -11300,6 +11434,7 @@ function accUpdate(dt) {
     }
     if (ACC.beat === 4 && basketNode) {                              // 바스켓 기울어짐·낙하
       const p = basketNode.getAbsolutePosition();
+      state.basketHeld = false;
       basketNode.setParent(null);
       basketNode.position = new V3(p.x, 0.34, p.z);
       basketNode.rotationQuaternion = null;
