@@ -6,21 +6,21 @@
  * 사선에서만 터졌다.
  *
  * 해결: 색별 4-연결 성분을 구해 작고 고립된 성분을 버린다.
- *   - 성분 크기 ≥ max(MIN_COMP, FRAC × 그 색의 최대 성분)  인 것만 유지
- *     · FRAC: 가림에 쪼개진 실제 물체의 큰 조각들은 (최대 성분 대비 충분히 크므로) 모두 살린다
- *     · MIN_COMP: 최대 성분 자체가 이보다 작으면 = 실제 물체 없이 노이즈뿐 → 전부 버려 드롭
+ *   - 성분 크기 ≥ MIN_COMP 인 것만 유지
+ *     · 절대 크기 기준이라 큰 몸통과 작은 팔처럼 가림 뒤 조각 크기가 달라도 보존한다
+ *     · 최대 성분 자체가 MIN_COMP보다 작으면 = 실제 물체 없이 노이즈뿐 → 전부 버려 드롭
  *   - 유지 픽셀합 ≥ minPixels 인 색만 박스로 낸다(거의 가려진 물체 제외 — 종전 n<80 규칙 계승)
  *
  * 브라우저(sim.html)와 Node 테스트 양쪽에서 같은 코드를 쓴다(<script src> + require/import 하이브리드).
  */
 (function (root) {
   /* idx: Int32Array(w*h). 값 = key(>=0) 또는 -1(배경).
-   * opt.minComp(기본 30) · opt.frac(기본 0.15) · opt.minPixels(기본 80).
+   * opt.minComp(기본 30) · opt.minPixels(기본 80) · opt.maxGap(선택, px).
    * 반환: Map<key, {minX,maxX,minY,maxY,n}>  (필터 후 유지 픽셀 기준). */
   function labelBoxesFiltered(idx, w, h, opt) {
     const MIN_COMP = opt && opt.minComp != null ? opt.minComp : 30;
-    const FRAC = opt && opt.frac != null ? opt.frac : 0.15;
     const NMIN = opt && opt.minPixels != null ? opt.minPixels : 80;
+    const MAX_GAP = opt && opt.maxGap != null ? opt.maxGap : null;
     const N = w * h;
 
     // ── 4-연결 성분 라벨링 (union-find). 같은 key 이고 상/좌 이웃과 붙으면 합친다.
@@ -63,12 +63,27 @@
     // ── key 별 필터 + 박스 합치기.
     const out = new Map();
     for (const [k, comps] of byKey) {
-      let mx = 0;
-      for (const c of comps) if (c.n > mx) mx = c.n;
-      const thr = Math.max(MIN_COMP, FRAC * mx);
+      let kept = comps.filter(c => c.n >= MIN_COMP);
+      if (MAX_GAP != null && kept.length > 1) {
+        kept.sort((a, b) => b.n - a.n);
+        const selected = [kept[0]], pending = kept.slice(1);
+        const gap = (a, b) => Math.max(
+          a.maxX < b.minX ? b.minX - a.maxX : (b.maxX < a.minX ? a.minX - b.maxX : 0),
+          a.maxY < b.minY ? b.minY - a.maxY : (b.maxY < a.minY ? a.minY - b.maxY : 0),
+        );
+        let changed = true;
+        while (changed) {
+          changed = false;
+          for (let i = pending.length - 1; i >= 0; i--) {
+            if (selected.some(c => gap(c, pending[i]) <= MAX_GAP)) {
+              selected.push(pending[i]); pending.splice(i, 1); changed = true;
+            }
+          }
+        }
+        kept = selected;
+      }
       let box = null, n = 0;
-      for (const c of comps) {
-        if (c.n < thr) continue;                    // 작거나 고립된 stray 성분 제거
+      for (const c of kept) {
         n += c.n;
         if (!box) box = { minX: c.minX, maxX: c.maxX, minY: c.minY, maxY: c.maxY };
         else {
@@ -81,7 +96,34 @@
     return out;
   }
 
-  const api = { labelBoxesFiltered };
+  /* 픽셀 → 팔레트 index (정확색 ±tol) 또는 -1. classifyByNearest(최근접·상한없음)와 달리
+   * 어느 색과도 tol 밖이면 -1 로 떨군다 → 화재/연기 혼합 픽셀이 person 색으로 오분류돼
+   * 박스를 부풀리는 일을 원천 차단. palette: [key,[r,g,b]]. 결과는 labelBoxesFiltered 에 넣는다.
+   * (색은 서로 ≥MINSEP 라 tol 안에 최대 하나 — 가장 가까운 하나를 고른다.) */
+  function classifyExact(px, w, h, palette, tol) {
+    const resolvedTol = tol == null ? 26 : tol;
+    const tol2 = resolvedTol * resolvedTol;
+    const cols = palette.map(e => e[1]);
+    const out = new Int32Array(w * h).fill(-1);
+    const cache = new Map();
+    for (let i = 0, pi = 0; i < px.length; i += 4, pi++) {
+      const code = (px[i] << 16) | (px[i + 1] << 8) | px[i + 2];
+      let ki = cache.get(code);
+      if (ki === undefined) {
+        ki = -1; let best = tol2;
+        for (let c = 0; c < cols.length; c++) {
+          const dr = px[i] - cols[c][0], dg = px[i + 1] - cols[c][1], db = px[i + 2] - cols[c][2];
+          const d = dr * dr + dg * dg + db * db;
+          if (d <= best) { best = d; ki = c; }
+        }
+        cache.set(code, ki);
+      }
+      out[pi] = ki;
+    }
+    return out;
+  }
+
+  const api = { labelBoxesFiltered, classifyExact };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;   // Node (require/import)
-  if (root) root.labelBoxesFiltered = labelBoxesFiltered;                      // 브라우저 전역
+  if (root) { root.labelBoxesFiltered = labelBoxesFiltered; root.classifyExact = classifyExact; }   // 브라우저 전역
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : null));

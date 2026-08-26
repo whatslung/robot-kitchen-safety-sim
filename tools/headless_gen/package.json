@@ -1,1 +1,1 @@
-{"name":"headless-gen","private":true,"type":"commonjs","dependencies":{"playwright-core":"^1.55.0"}}
+{"name":"headless-gen","private":true,"type":"commonjs","dependencies":{"playwright-core":"1.62.1"}}

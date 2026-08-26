@@ -7660,6 +7660,26 @@ async function groundTruthImpl(camId, opt) {
        (순수 로직·회귀 테스트: gtboxes.js · tests/browser/instance-box-filter.test.mjs) */
     const filtered = labelBoxesFiltered(cls, iw, ih, {});
     for (const [ki, b] of filtered) instBoxes.set(byColor[ki][0], b);
+
+    /* ★ 2026-08-26 — person 박스는 **정확색(±tol) 분류 + 연결성분 필터**로 다시 뽑는다.
+       화재/연기 씬에서 최근접색(classifyByNearest·상한없음)이 혼합 픽셀을 person 색으로
+       오분류해 CC 필터가 먼 성분까지 union → 박스가 프레임 가로 전체로 부풀었다(눈으로 확인
+       2026-08-26). person 인스턴스 색은 서로·배경과 ≥MINSEP(base 예약) 떨어져 있어, 정확색
+       ±tol 로만 모으면 화재·연기·설비 픽셀(색거리 먼)은 애초에 -1 로 떨어져 부풀림이 불가능.
+       (계측: 정확색 픽셀 수는 사람마다 0 아니면 실제 실루엣 픽셀뿐 — 먼 stray 없음 확인.
+        3D 투영영역 게이트도 시도했으나 스킨드 메시 world bbox가 randomizeScene 후 stale이라
+        보이는 사람을 드롭 → 폐기. 정확색만으로 충분.)
+       (순수 로직·회귀: gtboxes.js classifyExact/labelBoxesFiltered · tests/browser/person-box-region.test.mjs) */
+    const pPal = [...instIndex.entries()].filter(([k]) => k.slice(0, 7) === "person_")
+                                         .map(([k, idx]) => [k, INST_PALETTE[idx]]);
+    if (pPal.length) {
+      const pcls = classifyExact(ip, iw, ih, pPal, 26);
+      /* person 색이 정확히 일치한 성분은 큰 설비에 멀리 갈려 보여도 같은 인스턴스다.
+         거리 제한 없이 보존해 실제 가림 조각이 라벨에서 빠지지 않게 한다. */
+      const pboxes = labelBoxesFiltered(pcls, iw, ih, {});
+      for (const [k] of pPal) instBoxes.delete(k);                 // 기존 최근접색 person 박스 폐기
+      for (const [ki, b] of pboxes) instBoxes.set(pPal[ki][0], b); // 정확색 박스로 대체
+    }
   }
   const instances = [];
   for (const [k, idx] of instIndex.entries()) {

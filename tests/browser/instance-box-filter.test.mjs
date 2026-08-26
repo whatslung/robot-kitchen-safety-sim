@@ -52,6 +52,18 @@ test('가림에 쪼개진 한 물체의 큰 조각들은 모두 유지 (박스�
   assert.equal(b.n, 800);
 });
 
+test('가림으로 크기가 달라진 두 사람 조각도 모두 유지한다', () => {
+  const w = 100, h = 40, g = grid(w, h);
+  g.fill(0, 5, 5, 54, 24);     // 몸통 50×20 = 1000px
+  g.fill(0, 70, 5, 79, 14);    // 가림 뒤 보이는 팔 10×10 = 100px
+  const boxes = labelBoxesFiltered(g.idx, w, h, { minPixels: 80 });
+  const b = boxes.get(0);
+  assert.ok(b);
+  assert.deepEqual([b.minX, b.minY, b.maxX, b.maxY], [5, 5, 79, 24],
+    '절대 크기 기준을 넘는 작은 조각도 사람 박스에 포함해야 한다');
+  assert.equal(b.n, 1100);
+});
+
 test('실제 blob 없이 흩어진 노이즈뿐인 인스턴스는 드롭된다', () => {
   const w = 100, h = 100, g = grid(w, h);
   // 최대 성분이 4px 인 작은 얼룩 수십 개 (near-bg 팔레트색이 어두운 픽셀을 훔친 경우)
@@ -68,6 +80,28 @@ test('필터 후 유지 픽셀이 minPixels 미만이면 드롭 (거의 가려�
   g.fill(0, 10, 10, 16, 16);   // 7×7 = 49px 하나짜리 blob
   const boxes = labelBoxesFiltered(g.idx, w, h, { minComp: 30, minPixels: 80 });
   assert.equal(boxes.get(0), undefined, '49px < 80 이면 드롭');
+});
+
+test('maxGap: 멀리 떨어진 같은-key 큰 성분은 합치지 않는다 (person 부풀림 차단)', () => {
+  const w = 200, h = 100, g = grid(w, h);
+  g.fill(0, 20, 20, 45, 70);    // 주 blob 26×51 ≈ 1326px (한 사람)
+  g.fill(0, 150, 20, 170, 60);  // 멀리 떨어진 같은 색 큰 성분 21×41 ≈ 861px (다른 곳)
+  // maxGap 없으면 둘을 union → 폭 20~170 으로 부풀음
+  const wide = labelBoxesFiltered(g.idx, w, h, {});
+  assert.equal(wide.get(0).maxX, 170, 'maxGap 없으면 먼 성분까지 union(부풀림)');
+  // maxGap=30 이면 주 blob 만 (150-45=105px 간격 > 30)
+  const b = labelBoxesFiltered(g.idx, w, h, { maxGap: 30 }).get(0);
+  assert.deepEqual([b.minX, b.minY, b.maxX, b.maxY], [20, 20, 45, 70],
+    '멀리 떨어진 성분은 제외 → 주 blob 만 타이트');
+});
+
+test('maxGap: 가림에 쪼개진 가까운 조각은 여전히 합친다', () => {
+  const w = 100, h = 100, g = grid(w, h);
+  g.fill(0, 40, 10, 59, 29);    // 상단 조각
+  g.fill(0, 40, 35, 59, 54);    // 하단 조각 (사이 5px 간격 < maxGap)
+  const b = labelBoxesFiltered(g.idx, w, h, { maxGap: 30 }).get(0);
+  assert.deepEqual([b.minX, b.minY, b.maxX, b.maxY], [40, 10, 59, 54],
+    '가까운 두 조각(간격5)은 maxGap30 안 → 합쳐진다');
 });
 
 test('서로 다른 key 는 독립적으로 필터·박스된다', () => {
