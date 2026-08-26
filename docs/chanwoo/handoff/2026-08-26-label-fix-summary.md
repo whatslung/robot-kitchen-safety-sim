@@ -1,8 +1,9 @@
 # 사선 CCTV person 라벨 수정 → sim 검출·융합 — 전체 정리 (2026-08-26)
 
 > **한 줄 요약:** sim 화재/연기 씬에서 person 라벨이 부풀거나 사람을 놓치던 문제를
-> **정확색 분류 + maxGap**으로 근본 수정했고, 그 라벨로 검출기를 다시 학습해
-> **6캠 융합 recall 0.938**(트래킹 실사용 수준)을 확인했다.
+> **정확색 분류 + 연결성분 필터**로 근본 수정했다. 같은 날 별도 로컬 실행에서
+> **6캠 중 어느 카메라든 검출한 비율 0.938**을 관찰했지만, 이는 전역 ID 융합이나
+> ByteTrack recall이 아니며 입력·가중치 hash가 보존되지 않은 예비 결과다.
 >
 > 이 문서는 지표·트러블슈팅·검증 이미지(라벨 오류)를 한데 모은 요약본이다.
 > 상세 기술 경위는 [`2026-08-26-oblique-label-fix-and-sim2real.md`](2026-08-26-oblique-label-fix-and-sim2real.md).
@@ -56,15 +57,16 @@ person 박스가 `classifyByNearest`(**최근접 색, 거리 상한 없음**)로
    person 인스턴스 색은 서로·배경과 충분히 멀리(≥MINSEP) 예약돼 있어, **화재·연기·설비
    픽셀은 애초에 제외 → 부풀림이 구조적으로 불가능**.
 2. **연결성분 필터(기존 `labelBoxesFiltered`):** 작고 고립된 잡티 제거.
-3. **maxGap 게이팅:** 한 사람 색이 멀리 두 덩어리로 나와도 **폭의 10%보다 멀면 합치지 않는다**
-   (가림에 갈린 가까운 조각은 유지). 잔여 부풀림 제거.
+3. **person 조각 보존:** 정확색으로 확인된 person 경로는 `relativeMin: 0`으로 작은 팔·다리 조각도
+   보존하고 `maxGap`은 적용하지 않는다. 거리 제한은 큰 설비에 가려 멀리 갈린 실제 사람 조각을
+   버릴 수 있어 최종 코드에서 제외했다.
 
 아래는 이 방식의 입력→출력(화재 씬): **사람 메시만 색칠 → 그 픽셀의 박스**. 설비·카트는 검정이라
 사람으로 라벨될 수 없다:
 
 ![object-mask 입력→출력](img/03-objmask-io.png)
 
-> 순수 로직은 [`gtboxes.js`](../../../gtboxes.js)(classifyExact, labelBoxesFiltered의 maxGap),
+> 순수 로직은 [`gtboxes.js`](../../../gtboxes.js)(classifyExact, labelBoxesFiltered),
 > 회귀 테스트 [`tests/browser/`](../../../tests/browser/) **14개 GREEN**(TDD).
 > (3D 투영영역 게이트도 시도했으나 스킨드 메시 bounding box가 씬 갱신 후 stale이라 보이는 사람을
 >  드롭 → 폐기. 정확색만으로 충분.)
@@ -75,20 +77,20 @@ person 박스가 `classifyByNearest`(**최근접 색, 거리 상한 없음**)로
 
 ![수정 후 — 타이트·사람 위·부풀림 0](img/02-after-fixed.png)
 
-**수정 후 (화재 12프레임):** 모든 박스가 타이트하고 사람 위에 정확, 부풀림 0.
+**수정 후 (화재 12프레임 로컬 표본):** 모든 박스가 타이트하고 사람 위에 정확, 부풀림 0.
 
-| 라벨 품질 지표 (화재 12프레임) | 수정 전(최근접색) | **수정 후(정확색+maxGap)** |
+| 라벨 품질 지표 (화재 12프레임) | 수정 전(최근접색) | **수정 후(정확색+연결성분)** |
 |---|---|---|
 | person/frame (recall 대리) | 1.58 | **2.33 (+47%p)** |
 | 부풀림 비율 (area>0.1) | 간헐(최악 가로 전체) | **0%** |
 | 박스 최대 면적(정규) | (간헐 0.67) | **0.042 (타이트)** |
 
-> 참고: 정확색만(maxGap 전)에선 부풀림이 3.6% 남았고, **maxGap을 더해 0%**가 됐다
-> (중간 단계 이미지 [`05-exactcolor-nomaxgap.png`](img/05-exactcolor-nomaxgap.png)).
+> 위 수치는 당시 로컬 표본에서 얻은 예비 결과다. 최종 person 경로는 `maxGap`을 쓰지 않는다.
+> 중간 비교 이미지는 [`05-exactcolor-nomaxgap.png`](img/05-exactcolor-nomaxgap.png)에 남겼다.
 
 ---
 
-## 4. sim 검출 학습 + 멀티캠 융합 (핵심 지표)
+## 4. sim 검출 학습 + 어느-카메라든 검출 비율 (로컬 예비 지표)
 
 수정 라벨로 깨끗한 데이터셋(660장=110샘플×6캠, 장면 단위 train 564 / val 96 분리) 재생성 후 학습.
 
@@ -102,17 +104,17 @@ person 박스가 `classifyByNearest`(**최근접 색, 거리 상한 없음**)로
   (회색·무질감·작은·사선 사람)이 정한다. 라벨 수정은 **잘못 학습을 막는 정확성의 전제**.
 - 전체 6클래스 val recall은 0.72 — person이 가장 어려운 클래스.
 
-### 멀티캠 융합 유효 recall (14장면·person 32; 어느 캠이든 1대라도 검출하면 성공)
+### 어느-카메라든 검출 비율 (14장면·person 32; 어느 캠이든 1대라도 검출하면 성공)
 | 검출기 | conf | 단일캠 | 4캠(코너) | **6캠** | 기하 커버리지 |
 |---|---|---|---|---|---|
 | 옛 검출기(참고) | 0.25 | 0.125 | 0.310 | 0.414 | 1.000 |
 | 11n @960 | 0.10 | 0.403 | 0.781 | 0.844 | 1.000 |
 | **11s @1280** | **0.10** | 0.473 | 0.875 | **0.938** | 1.000 |
 
-- **6캠 융합 recall 0.938** — 32명 중 30명을 최소 1대가 검출. **트래킹 실사용 수준.**
-- **라벨 수정 → 큰 모델·고해상** 누적 효과: 옛 검출기 6캠 0.41 → **0.94 (2.3배)**.
-- **기하 커버리지 100%**(모든 사람을 최소 1대가 봄) → 놓친 2명은 ByteTrack의 시간적 연결로
-  프레임 넘겨 복구 가능. 즉 실효 트래킹 recall은 더 높다.
+- **어느-카메라든 검출한 비율 0.938** — 32명 중 30명을 최소 1대가 검출했다.
+- 옛 검출기 대비 모델 크기·해상도·confidence와 라벨이 함께 바뀌었으므로 전체 차이를 라벨
+  수정 하나의 효과로 돌릴 수 없다.
+- 이 값은 BEV 전역 ID 융합 정확도, ByteTrack의 시간축 recall, false positive를 측정하지 않는다.
 - ⚠️ **한계:** 표본 32명(14장면)으로 작다. 30/32와 28/32 차이는 1~2명이라 신뢰구간이 넓다.
   경향은 분명하나 **확정하려면 더 큰 장면 세트로 재측정** 필요.
 
@@ -126,7 +128,7 @@ person 박스가 `classifyByNearest`(**최근접 색, 거리 상한 없음**)로
 | 2 | person-only 흰색 렌더가 **전부 검정** | `gtOff()`(후처리 차단)가 함수 내부 지역이라 외부 스크립트가 못 부름 → 렌즈 DoF·sensorGrain이 렌더를 검게 | 검증은 **파이프라인 내부**에서만 가능하다고 결론, 외부 흰색렌더 검증 폐기 |
 | 3 | 자동 지표가 "팬텀 0"이라 **오보** | 부풀린 박스의 중심이 사람 근처라 중심-거리 지표를 통과 | **이미지 직접 확인**으로 전환(핵심 교훈) |
 | 4 | 3D 투영영역 게이트가 **보이는 사람을 드롭** | 스킨드 메시 world bbox가 `randomizeScene` 후 stale | 투영 폐기, **정확색 분류**로 대체 |
-| 5 | 정확색인데도 **간헐 부풀림 3.6%** | 한 사람 색이 먼 두 덩어리 → CC가 union | **maxGap**(먼 성분 병합 금지) 추가 → 0% |
+| 5 | 정확색 뒤에도 박스 정책 선택이 필요 | 거리 제한은 실제 가림 조각을 버릴 수 있음 | 최종 person 경로는 `relativeMin:0`, `maxGap` 미사용 |
 | 6 | 학습이 `torch 없음`으로 실패 | bare `python`엔 미설치 | `.venv/Scripts/python.exe`(ultralytics+CUDA) 사용 |
 | 7 | 데이터 생성 ~40→87초/샘플로 느려짐 | GT 다중패스 + 상태 누적 | 30샘플마다 리로드로 완주(느리지만 안정) |
 
@@ -136,8 +138,10 @@ person 박스가 `classifyByNearest`(**최근접 색, 거리 상한 없음**)로
 
 ## 6. 결론 · 역할 분담 · 한계
 
-- **당신 질문의 답:** sim에서 검출→트래킹 ID 부여 **가능**하다 — 6캠 융합 recall **0.938**.
-- **라벨 수정이 결정적:** 옛 검출기 융합 0.41 → 0.94. 다만 **단일캠 상한은 외형**이 정한다.
+- **확인한 범위:** 6개 카메라 중 하나라도 사람을 검출할 가능성은 높아질 수 있다. 전역 ID와
+  시간축 트래킹 성능은 별도 end-to-end 평가가 필요하다.
+- **라벨 수정은 학습 정확성의 전제다.** 다만 단일캠 성능은 sim 외형과 모델·해상도·threshold의
+  영향도 함께 받는다.
 - **역할 분담(외형 갭 때문):**
   - **실배포 사람 검출 = 실사 데이터**(chef1 사선 조리실 CCTV, recall 0.97). 회색 sim은 실사로 전이 안 됨.
   - **sim = ①** sim 내부 검출→트래킹→ID→융합→예측 데모/검증  **②** GT 트랙으로 궤적·안전 예측 검증
@@ -153,19 +157,13 @@ person 박스가 `classifyByNearest`(**최근접 색, 거리 상한 없음**)로
 python /tmp/serve_threaded.py 8123        # worktree 루트에서
 node tools/headless_gen/gen.cjs <out_dir> <samples>
 
-# 2) 학습(장면 단위 split) + 단일캠 평가
-.venv/Scripts/python.exe scratch_train_simfixed.py <imgsz> <model.pt> [batch]
-
-# 3) 융합 GT 캡처 + 융합 recall
-node tools/headless_gen/capture_fusion.cjs <out_dir> <scenes>
-.venv/Scripts/python.exe scratch_fusion_fixed.py <weights.pt> <conf> <imgsz>
-
-# 테스트(순수 로직)
+# 2) 테스트(순수 로직)
 node --test tests/browser/instance-box-filter.test.mjs tests/browser/person-box-region.test.mjs
 ```
 
-- **코드:** `gtboxes.js`(classifyExact·labelBoxesFiltered+maxGap), `sim.html`(person 라벨 경로),
+- **코드:** `gtboxes.js`(classifyExact·labelBoxesFiltered), `sim.html`(person 라벨 경로),
   `tests/browser/*.test.mjs`(14 GREEN).
-- **데이터/가중치:** `dataset/sim-fixed-6cam`, `training/simfixed_*` — **gitignore**(재생성).
+- **데이터/가중치:** 당시 로컬 `dataset/sim-fixed-6cam`, `training/simfixed_*`는 gitignore이며
+  실행 스크립트·hash까지 보존되지 않아 이 문서만으로 재현할 수 없다.
 - **검증 이미지:** 이 문서 `img/` 폴더.
 - ⚠️ chef1 다운로드에 쓴 Roboflow API 키가 대화에 노출됨 — **재발급 권장.**
