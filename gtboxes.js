@@ -6,8 +6,9 @@
  * 사선에서만 터졌다.
  *
  * 해결: 색별 4-연결 성분을 구해 작고 고립된 성분을 버린다.
- *   - 성분 크기 ≥ MIN_COMP 인 것만 유지
- *     · 절대 크기 기준이라 큰 몸통과 작은 팔처럼 가림 뒤 조각 크기가 달라도 보존한다
+ *   - 기본은 성분 크기 ≥ max(MIN_COMP, relativeMin × 최대 성분) 인 것만 유지
+ *     · 최근접색을 쓰는 일반 클래스는 상대 기준으로 큰 stray까지 제거한다
+ *     · 정확색 person은 relativeMin=0으로 큰 몸통과 작은 팔처럼 크기가 다른 조각도 보존한다
  *     · 최대 성분 자체가 MIN_COMP보다 작으면 = 실제 물체 없이 노이즈뿐 → 전부 버려 드롭
  *   - 유지 픽셀합 ≥ minPixels 인 색만 박스로 낸다(거의 가려진 물체 제외 — 종전 n<80 규칙 계승)
  *
@@ -15,10 +16,12 @@
  */
 (function (root) {
   /* idx: Int32Array(w*h). 값 = key(>=0) 또는 -1(배경).
-   * opt.minComp(기본 30) · opt.minPixels(기본 80) · opt.maxGap(선택, px).
+   * opt.minComp(기본 30) · opt.relativeMin(기본 0.15) · opt.minPixels(기본 80)
+   * · opt.maxGap(선택, px).
    * 반환: Map<key, {minX,maxX,minY,maxY,n}>  (필터 후 유지 픽셀 기준). */
   function labelBoxesFiltered(idx, w, h, opt) {
     const MIN_COMP = opt && opt.minComp != null ? opt.minComp : 30;
+    const RELATIVE_MIN = opt && opt.relativeMin != null ? opt.relativeMin : 0.15;
     const NMIN = opt && opt.minPixels != null ? opt.minPixels : 80;
     const MAX_GAP = opt && opt.maxGap != null ? opt.maxGap : null;
     const N = w * h;
@@ -63,7 +66,10 @@
     // ── key 별 필터 + 박스 합치기.
     const out = new Map();
     for (const [k, comps] of byKey) {
-      let kept = comps.filter(c => c.n >= MIN_COMP);
+      let largest = 0;
+      for (const component of comps) if (component.n > largest) largest = component.n;
+      const threshold = Math.max(MIN_COMP, RELATIVE_MIN * largest);
+      let kept = comps.filter(c => c.n >= threshold);
       if (MAX_GAP != null && kept.length > 1) {
         kept.sort((a, b) => b.n - a.n);
         const selected = [kept[0]], pending = kept.slice(1);

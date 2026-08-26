@@ -90,6 +90,78 @@ test('기존 산출물이 있는 출력 폴더는 manifest를 덮어쓰기 전�
   }
 });
 
+test('장면은 임시 디렉터리에서 완성한 뒤 한 번에 공개한다', () => {
+  assert.equal(typeof helpers.beginSceneTransaction, 'function');
+  assert.equal(typeof helpers.publishSceneTransaction, 'function');
+  assert.equal(typeof helpers.finishSceneTransaction, 'function');
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'headless-gen-scene-'));
+  try {
+    const transaction = helpers.beginSceneTransaction(outDir, '0007');
+    helpers.writeCaptureAtomic({
+      outDir: transaction.stageDir,
+      base: 'cvN_0007',
+      rgbDataUrl: 'data:image/png;base64,YWJj',
+      labelText: '0 0.5 0.5 0.1 0.2\n',
+      colors: 700,
+      minColors: 500,
+    });
+    assert.equal(fs.existsSync(path.join(outDir, 'scenes', '0007')), false,
+      '장면 완성 전에는 최종 경로에 보이면 안 된다');
+    const prefix = helpers.publishSceneTransaction(transaction);
+    assert.equal(prefix, 'scenes/0007');
+    assert.equal(fs.existsSync(path.join(outDir, 'scenes', '0007', 'images', 'cvN_0007.png')), true);
+    assert.equal(fs.existsSync(transaction.markerFile), true,
+      'manifest 확정 전까지 중단 표식이 남아야 한다');
+    helpers.finishSceneTransaction(transaction);
+    assert.equal(fs.existsSync(transaction.markerFile), false);
+  } finally {
+    fs.rmSync(outDir, { recursive: true, force: true });
+  }
+});
+
+test('실패한 장면 rollback은 임시·공개 파일과 중단 표식을 모두 제거한다', () => {
+  assert.equal(typeof helpers.rollbackSceneTransaction, 'function');
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'headless-gen-scene-fail-'));
+  try {
+    const transaction = helpers.beginSceneTransaction(outDir, '0002');
+    fs.writeFileSync(path.join(transaction.stageDir, 'partial.txt'), 'partial');
+    helpers.publishSceneTransaction(transaction);
+    helpers.rollbackSceneTransaction(transaction);
+    assert.equal(fs.existsSync(transaction.stageDir), false);
+    assert.equal(fs.existsSync(transaction.finalDir), false);
+    assert.equal(fs.existsSync(transaction.markerFile), false);
+  } finally {
+    fs.rmSync(outDir, { recursive: true, force: true });
+  }
+});
+
+test('실제 장면 절차는 중간 카메라 실패 시 manifest와 모든 장면 파일을 되돌린다', async () => {
+  assert.equal(typeof helpers.runSceneTransaction, 'function');
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'headless-gen-scene-flow-fail-'));
+  const manifest = { scenes: [] };
+  try {
+    await assert.rejects(() => helpers.runSceneTransaction({
+      outDir,
+      sceneName: '0003',
+      build: async stageDir => {
+        for (const camera of ['cvNW', 'cvNE', 'cvSE']) {
+          if (camera === 'cvSE') throw new Error('third camera failed');
+          fs.mkdirSync(path.join(stageDir, 'images'), { recursive: true });
+          fs.writeFileSync(path.join(stageDir, 'images', `${camera}.png`), camera);
+        }
+        return { index: 3 };
+      },
+      commit: record => { manifest.scenes.push(record); },
+    }), /third camera failed/);
+    assert.deepEqual(manifest.scenes, []);
+    assert.equal(fs.existsSync(path.join(outDir, 'scenes', '0003')), false);
+    assert.equal(fs.existsSync(path.join(outDir, '.incomplete-scene-0003')), false);
+    assert.equal(fs.existsSync(path.join(outDir, '.incomplete-scene-0003.json')), false);
+  } finally {
+    fs.rmSync(outDir, { recursive: true, force: true });
+  }
+});
+
 test('manifest는 임시 파일을 남기지 않고 JSON으로 교체한다', () => {
   assert.equal(typeof helpers.writeJsonAtomic, 'function');
   const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'headless-gen-manifest-'));
@@ -156,6 +228,43 @@ test('입력 파일 fingerprint는 상대경로와 SHA-256을 정렬해 기록�
       { path: 'sim.html', sha256: '507a9a8be3d145a86daa9644b28bf42a8dc0720d8baeabdf0406c393692bf082' },
     ]);
   } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('필수 렌더 입력이 빠지면 조용히 제외하지 않고 파일명을 알려준다', () => {
+  assert.equal(typeof helpers.collectInputFiles, 'function');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'headless-gen-inputs-'));
+  const requiredExceptWasm = [
+    'sim.html', 'gtboxes.js', 'babylon.js', 'babylonjs.loaders.min.js',
+    'HavokPhysics_umd.js', 'character-manifest.json',
+  ];
+  try {
+    for (const file of requiredExceptWasm) fs.writeFileSync(path.join(root, file), file);
+    fs.mkdirSync(path.join(root, 'assets'));
+    assert.throws(() => helpers.collectInputFiles(root), /HavokPhysics\.wasm\.js/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('내장 정적 서버는 지정한 저장소 파일을 query와 무관하게 그대로 제공한다', async () => {
+  assert.equal(typeof helpers.startStaticServer, 'function');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'headless-gen-server-'));
+  fs.writeFileSync(path.join(root, 'sim.html'), '<!doctype html><p>repo copy</p>');
+  const server = await helpers.startStaticServer(root);
+  try {
+    const response = await fetch(`${server.baseUrl}/sim.html?v=verified`);
+    assert.equal(response.status, 200);
+    assert.equal(await response.text(), '<!doctype html><p>repo copy</p>');
+    const missing = await fetch(`${server.baseUrl}/missing.js`);
+    assert.equal(missing.status, 404);
+    const traversal = await fetch(`${server.baseUrl}/%2e%2e%2foutside.txt`);
+    assert.equal(traversal.status, 403);
+    const nul = await fetch(`${server.baseUrl}/bad%00name`);
+    assert.equal(nul.status, 400);
+  } finally {
+    await server.close();
     fs.rmSync(root, { recursive: true, force: true });
   }
 });

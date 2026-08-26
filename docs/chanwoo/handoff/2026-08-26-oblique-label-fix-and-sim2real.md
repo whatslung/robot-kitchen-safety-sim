@@ -55,7 +55,9 @@
 `tools/headless_gen/gen.cjs` — Node+Playwright가 화면 밖 headful 창에서 sim을 렌더해 캡처하고
 파일을 직접 저장(폴더 선택 불필요). 헤드리스는 WebGL 백버퍼가 0이라 실패 → headful+화면밖+
 스로틀해제로 우회. 이 도구는 **분할 전 원본만 생성**하고 `data.yaml`은 만들지 않는다. Git·입력 자산·
-실행 환경·장면 seed·결과 파일 hash는 `manifest.json`에 기록한다. 사용법 `tools/headless_gen/README.md`.
+실행 환경·장면 seed·전체 장면 조건·카메라별 GT 메타·결과 파일 hash는 `manifest.json`에 기록한다.
+생성기가 현재 작업트리 전용 서버와 임시 Chrome 프로필을 직접 만들며, 6카메라 장면은 전부 성공한
+경우에만 한 번에 공개한다. 사용법 `tools/headless_gen/README.md`.
 
 ## 3. sim-to-real 예비 측정 (재현 자료 보강 필요)
 

@@ -44,7 +44,7 @@ test('가림에 쪼개진 한 물체의 큰 조각들은 모두 유지 (박스�
   // 세로로 쌓인 두 큰 조각 (사람이 파이프에 가려 상·하로 갈림). 사이 5px 간격.
   g.fill(0, 40, 10, 59, 29);   // 상단 20×20 = 400px
   g.fill(0, 40, 35, 59, 54);   // 하단 20×20 = 400px
-  const boxes = labelBoxesFiltered(g.idx, w, h, { minPixels: 80 });
+  const boxes = labelBoxesFiltered(g.idx, w, h, { minPixels: 80, relativeMin: 0 });
   const b = boxes.get(0);
   assert.ok(b);
   assert.deepEqual([b.minX, b.minY, b.maxX, b.maxY], [40, 10, 59, 54],
@@ -52,11 +52,20 @@ test('가림에 쪼개진 한 물체의 큰 조각들은 모두 유지 (박스�
   assert.equal(b.n, 800);
 });
 
+test('기본 정책은 큰 물체에서 멀리 떨어진 30px 이상 stray도 제외한다', () => {
+  const w = 100, h = 40, g = grid(w, h);
+  g.fill(0, 5, 5, 54, 24);     // 주 성분 1000px
+  g.fill(0, 80, 5, 87, 9);     // 먼 오분류 40px: minComp는 넘지만 주 성분의 15% 미만
+  const b = labelBoxesFiltered(g.idx, w, h, { minPixels: 80 }).get(0);
+  assert.deepEqual([b.minX, b.minY, b.maxX, b.maxY], [5, 5, 54, 24]);
+  assert.equal(b.n, 1000);
+});
+
 test('가림으로 크기가 달라진 두 사람 조각도 모두 유지한다', () => {
   const w = 100, h = 40, g = grid(w, h);
   g.fill(0, 5, 5, 54, 24);     // 몸통 50×20 = 1000px
   g.fill(0, 70, 5, 79, 14);    // 가림 뒤 보이는 팔 10×10 = 100px
-  const boxes = labelBoxesFiltered(g.idx, w, h, { minPixels: 80 });
+  const boxes = labelBoxesFiltered(g.idx, w, h, { minPixels: 80, relativeMin: 0 });
   const b = boxes.get(0);
   assert.ok(b);
   assert.deepEqual([b.minX, b.minY, b.maxX, b.maxY], [5, 5, 79, 24],
