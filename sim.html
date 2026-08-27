@@ -33,12 +33,17 @@
   /* 우상단은 PiP 자리다(크기가 15~45%로 변한다). 패널 접기 버튼은 우하단 FPS 위로 뺀다. */
   #panelToggle{position:absolute;right:10px;bottom:52px;z-index:30;width:30px;height:30px;
     border-radius:8px;padding:0;font-size:14px;line-height:1;flex:none;opacity:.85}
+  #stageToggle{position:absolute;left:10px;bottom:52px;z-index:30;width:30px;height:30px;
+    border-radius:8px;padding:0;font-size:14px;line-height:1;flex:none;opacity:.85}
   /* 탭 — 13개 섹션을 4개 그룹으로 (팀원용 정리) */
   /* 탭이 6개가 되면서 302px 폭에 한 줄로 안 들어간다("📷 카메라"가 제일 넓어 ~51px,
      6개면 300px를 넘는다). 그냥 wrap만 켜면 **5 + 1**로 접혀 마지막 탭이 혼자 남아
      깨진 것처럼 보인다. 28% 기준으로 **3 + 3**을 만든다 — 접히는 게 의도로 읽힌다. */
-  #tabbar{display:flex;flex-wrap:wrap;gap:4px;margin:10px 0 2px;position:sticky;top:0;z-index:5;
-    background:#0d1117;padding-bottom:6px}
+  /* 패널이 padding:12px 스크롤 컨테이너라 top:0으로 붙이면 위 12px 패딩을 안 덮어
+     스크롤한 헤더 버튼이 그 틈으로 비쳤다(실측 12px 구멍). 좌우로 -12px 흘려 폭을
+     꽉 채우고 top:-12px+padding-top:12px로 패딩 위까지 덮는다. 배경은 패널색과 맞춘다. */
+  #tabbar{display:flex;flex-wrap:wrap;gap:4px;margin:0 -12px 8px;position:sticky;top:-12px;z-index:5;
+    background:#232326;padding:12px 12px 8px}
   #tabbar button{flex:1 1 28%;padding:7px 2px;font-size:11px;background:#161b22;border-color:#21262d;color:#8b949e}
   #tabbar button.on{background:#1f6feb;border-color:#1f6feb;color:#fff;font-weight:600}
   .tabpane{display:none}.tabpane.on{display:block}
@@ -102,7 +107,7 @@
   input[type=range]{flex:1;-webkit-appearance:none;height:4px;background:#30363d;border-radius:2px;outline:none}
   input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;
     background:#58a6ff;cursor:pointer;border:2px solid #0d1117}
-  select{flex:1;background:#21262d;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:5px;font-size:11px;font-family:inherit}
+  select{flex:1;min-width:0;background:#21262d;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:5px;font-size:11px;font-family:inherit}
   .barwrap{height:7px;background:#21262d;border-radius:4px;overflow:hidden;margin:6px 0 4px}
   #cookbar{height:100%;width:0%;background:linear-gradient(90deg,#e3b341,#f0883e);transition:width .25s,background .5s}
   #cooklabel{font-size:11px;color:#8b949e;text-align:center}
@@ -128,8 +133,9 @@
      → "재료 준비(fa…" 로 끊기고 seed까지 통째로 사라졌다).
      폭은 PiP 때문에 46%로 묶어 둔 채(위 주석), 두 줄까지 흘려 쓰고 그 뒤로만 …을 붙인다.
      word-break:keep-all — 한글이 어절 중간에서 접히지 않게. */
-  #status{position:absolute;top:62px;left:14px;background:rgba(13,17,23,.92);
-    border:1px solid #30363d;border-radius:9px;padding:8px 16px;font-size:12.5px;backdrop-filter:blur(14px);
+  #status{position:absolute;top:62px;left:14px;background:rgba(13,17,23,.94);
+    border:1px solid #30363d;box-shadow:inset 3px 0 0 #1f6feb;border-radius:9px;
+    padding:9px 15px;font-size:12.5px;backdrop-filter:blur(14px);transition:opacity .45s ease;
     max-width:46%;overflow:hidden;word-break:keep-all;line-height:1.45;
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
   #hint{margin-top:10px;padding-top:9px;border-top:1px solid #21262d;color:#6e7681;font-size:10.5px;line-height:1.75}
@@ -221,19 +227,14 @@
 
 <div id="menubar">
   <div class="logo"></div><span class="title">교반로봇 안전 셀 — Web Sim</span>
-  <button class="mbtn play" id="mbPlay">▶ 자동 작업</button>
+  <!-- 정지·리셋만 상단에 상시 노출(사고 복구용). 자동작업·카트밀기·원위치·GT는 패널/탭에
+       같은 기능이 있어 상단바에선 숨긴다. 핸들러 보존 위해 지우지 않고 display:none. -->
   <button class="mbtn" id="mbStop">■ 정지</button>
   <button class="mbtn" id="mbReset">↺ 리셋</button>
-  <div class="sep"></div>
-  <!-- 물리 시연 — 패널 "▶ 실행" 탭 안에만 두었더니 탭을 바꾸고 스크롤해야 보였다.
-       기본 탭이 "🚀 시작"이라 사실상 아무도 못 찾는다. 상단바는 항상 보인다. -->
-  <button class="mbtn" id="mbPush" title="조리원이 카트를 로봇 쪽으로 밀고 갑니다 (물리)">카트 밀기</button>
-  <button class="mbtn" id="mbPushReset" title="밀린 카트를 처음 자리로">↩ 카트 원위치</button>
-  <div class="sep"></div>
-  <!-- 라벨과 동작이 달랐다 (2026-08-27). 이 버튼은 gtPreviewBtn을 누른다 = **한 장 미리보기**다.
-       "캡처"라고 써 있어서 데이터셋이 저장되는 줄 알고 누르게 된다. 저장은 📊 데이터 탭의
-       「데이터셋 생성」이다. -->
-  <button class="mbtn" id="mbGT" title="GT 라벨 한 장 미리보기 — 저장이 아닙니다">GT 미리보기</button>
+  <button class="mbtn play" id="mbPlay" style="display:none">▶ 자동 작업</button>
+  <button class="mbtn" id="mbPush" title="조리원이 카트를 로봇 쪽으로 밀고 갑니다 (물리)" style="display:none">카트 밀기</button>
+  <button class="mbtn" id="mbPushReset" title="밀린 카트를 처음 자리로" style="display:none">↩ 카트 원위치</button>
+  <button class="mbtn" id="mbGT" title="GT 라벨 한 장 미리보기 — 저장이 아닙니다" style="display:none">GT 미리보기</button>
   <div class="right">Babylon.js <span id="bver2"></span> · 오프라인</div>
 </div>
 
@@ -245,13 +246,14 @@
   <div id="viewport">
     <canvas id="c" tabindex="0"></canvas>
     <button id="panelToggle" title="패널 접기/펼치기">◧</button>
+    <button id="stageToggle" title="STAGE 패널 펼치기">▸</button>
     <div id="statusbar">
       <div class="cell"><span class="k">로봇</span><span class="v" id="sbRobot"><span class="dot idle"></span>대기</span></div>
       <div class="cell"><span class="k">안전</span><span class="v" id="sbSafe"><span class="dot ok"></span>정상</span></div>
       <div class="cell"><span class="k">사람↔로봇</span><span class="v" id="sbDist">–</span></div>
       <div class="cell"><span class="k">조리실 인원</span><span class="v" id="sbPeople">0명</span></div>
       <div class="cell"><span class="k">화재</span><span class="v" id="sbFire"><span class="dot idle"></span>없음</span></div>
-      <div class="cell"><span class="k">데이터셋</span><span class="v" id="sbData">0장</span></div>
+      <div class="cell" style="display:none"><span class="k">데이터셋</span><span class="v" id="sbData">0장</span></div>
     </div>
     <div id="status">준비 완료 — 자동 작업을 눌러보세요 · 도움말 H</div>
     <!-- 사람↔로봇 거리는 바로 위 관제바(sbDist)에 이미 있다 — 같은 값이 화면 위아래에
@@ -323,7 +325,7 @@
 <div id="panel">
   <button id="helpBtn" title="사용법 도움말 (H)">?</button>
   <h1>급식 교반로봇 시뮬레이터</h1>
-  <p class="sub">교반솥(국솥) 안전 셀 · Babylon.js <span id="bver"></span> · 오프라인 동작</p>
+  <p class="sub">교반솥(국솥) 안전 셀<span id="bver" style="display:none"></span></p>
 
   <div class="btnrow">
     <button id="autoBtn" class="primary">▶ 자동 작업</button>
@@ -351,7 +353,7 @@
   <div class="section">카메라 · 모델 입력</div>
   <div class="row"><span>주 시점</span><select id="viewSel"></select></div>
   <div class="row"><span>PiP</span><select id="pipSel"></select></div>
-  <div class="row"><span>PiP 크기</span><input id="pipSize" type="range" min="15" max="45" step="1" value="30"><b id="pipSizeV">30%</b></div>
+  <div class="row"><span>PiP 크기</span><input id="pipSize" type="range" min="15" max="58" step="1" value="32"><b id="pipSizeV">32%</b></div>
   <div class="note" style="margin:2px 0 6px">주 시점을 바꿔도 <b>PiP는 그대로</b>입니다.
     단, 고른 시점이 <b>PiP에 떠 있던 것이면 둘이 자리를 맞바꿉니다</b>.<br>
     PiP를 <b>클릭</b>하면 PiP만 다음 카메라로, <b>더블클릭</b>하면 주 시점과 교환합니다.</div>
@@ -439,7 +441,7 @@
     <button id="shotRun" class="primary">▶ 샷 리스트 재생</button>
     <button id="shotStop">■ 정지</button>
   </div>
-  <div class="note" id="shotNote">11컷 · 약 44초</div>
+  <div class="hint" id="shotNote">11컷 · 약 44초</div>
 
   <div class="section">감시 카메라 관리 <span class="note" style="font-weight:400">추가 · 이동 · 삭제</span></div>
   <div class="btnrow">
@@ -465,10 +467,8 @@
     <button id="camCopy">설정 복사</button>
     <button id="camFactory">전체 공장 초기화</button>
   </div>
-  <div class="hint">바꾼 위치·각도와 추가한 카메라는 <b>이 브라우저에 자동 저장</b>됩니다(새로고침해도 유지).<br>
-    <b>설정 복사</b>는 현재 카메라 전체를 <code>CAM_DEFS</code> 코드로 복사합니다 — 확정된 값을
-    sim.html에 영구히 박을 때 씁니다.<br>
-    <b>부각</b>은 카메라가 내려다보는 각도입니다(90°=수직, 45°=대각). 실사 CCTV는 보통 30~45°.</div>
+  <div class="hint">바꾼 위치·각도와 추가한 카메라는 <b>이 브라우저에 자동 저장</b>됩니다.<br>
+    <b>부각</b>은 카메라가 내려다보는 각도입니다(90°=수직). 실사 CCTV는 보통 30~45°.</div>
 
   <div class="section">근무 시나리오 <span class="note" style="font-weight:400">직무 배정</span></div>
   <div class="row">
@@ -580,23 +580,18 @@
        ⚠️ 여기 가짜 버튼을 두지 않는다. 눌러도 아무 일 없는 버튼이 발표 자리에 있으면
           안 만든 것보다 나쁘다. -->
   <div class="section">② 사람 동선 감지 <span class="note" style="font-weight:400">발표 시나리오</span></div>
-  <div class="hint" id="demo2Note">chanwoo 작업 중 — 로봇이 사람을 <b>못 피할 때</b>와
-    <b>피할 때</b>를 비교합니다. 병합되면 여기에 버튼이 생깁니다.</div>
+  <div class="hint" id="demo2Note">사람 동선 회피 시연은 준비 중입니다.</div>
 
   <div class="section">사고 시나리오 (연쇄)</div>
   <div class="btnrow">
     <button id="accRun" class="danger">오프닝 연쇄 재생</button>
     <button id="accReset">↩ 사고 되돌리기</button>
   </div>
-  <div class="note" id="accNote">캐스터 미잠금 → 기름 방울 → 미끄러짐 → 카트 충돌 → 바스켓 기울임 → 누운 사람 미검출</div>
+  <div class="hint" id="accNote">캐스터 미잠금 → 기름 방울 → 미끄러짐 → 카트 충돌 → 바스켓 기울임 → 누운 사람 미검출</div>
 
   <div class="section">실영상 패널 <span class="note" style="font-weight:400">검출 검증</span></div>
   <div class="hint">시뮬이 시뮬을 검출하는 그림은 설득력이 없습니다. <b>실제로 찍은 영상</b>에
-    같은 모델을 돌려 우측 패널에 띄웁니다. 클립은 브라우저 밖으로 나가지 않습니다.<br>
-    <code>demo_clips/</code> 에 <code>normal · smoke · fire</code> (mp4·webm·mov·m4v) 를 넣으면
-    자동으로 잡습니다. <code>best.onnx</code> 도 같이 넣으면 <b>모델까지 자동으로 붙습니다</b>.<br>
-    영상 뒷부분에 불이 나오면 <code>?vidstart=fire:38</code>, 한 토막만 틀려면 <code>?vidend=fire:46</code>.<br>
-    모델 클래스가 우리 6종과 다르면 <code>?labels=fire,smoke</code> 처럼 모델 순서대로 적어 주세요.</div>
+    같은 모델을 돌려 검출을 보여줍니다. 클립은 브라우저 밖으로 나가지 않습니다.</div>
   <div class="row"><span>① 정상</span><input id="vidFileNormal" type="file" accept="video/*" style="flex:1;font-size:11px"></div>
   <div class="row"><span>② 연기</span><input id="vidFileSmoke" type="file" accept="video/*" style="flex:1;font-size:11px"></div>
   <div class="row"><span>③ 화재</span><input id="vidFileFire" type="file" accept="video/*" style="flex:1;font-size:11px"></div>
@@ -605,7 +600,7 @@
     <button id="vidPlayBtn">▶ 순서대로 재생</button>
     <button id="vidDetectBtn" class="primary">검출 시작</button>
   </div>
-  <div class="note" id="vidNote">클립 없음 — 파일을 고르거나 demo_clips/ 에 넣으세요</div>
+  <div class="hint" id="vidNote">클립 없음 — ① ② ③ 에서 파일을 고르세요</div>
 
   <div class="section">데이터셋 · Ground Truth</div>
   <div class="row"><span>샘플 수</span><input id="gtCount" type="range" min="1" max="200" step="1" value="20"><b id="gtCountV">20</b></div>
@@ -629,13 +624,12 @@
     <button id="gtGenBtn">데이터셋 생성</button>
   </div>
 
-  <div class="section">궤적 데이터 수집 <span class="note" style="font-weight:400">예측기 학습용 (이슈 #2)</span></div>
+  <div class="section">궤적 데이터 수집 <span class="note" style="font-weight:400">예측기 학습용</span></div>
   <div class="row"><span>scene 수</span><input id="trajScenes" type="range" min="1" max="60" step="1" value="40"><b id="trajScenesV">40</b></div>
   <div class="btnrow">
     <button id="trajRunBtn">궤적 수집 시작</button>
   </div>
-  <div class="hint">1단계 WORKFLOW 동선을 고정 dt로 돌려 추가 인원 궤적을 2.5Hz로 <b>detect_server의 /traj</b>에
-    저장합니다(<b>dataset/trajectories/</b>). 세부 조정은 콘솔 <code>__sim.trajRun({scenes,seed,seconds,jobs})</code>.</div>
+  <div class="hint">WORKFLOW 동선을 고정 간격으로 돌려 추가 인원 궤적을 <b>dataset/trajectories/</b>에 저장합니다.</div>
 
   <div class="section">전문가 기능</div>
   <label class="row" style="cursor:pointer"><input type="checkbox" id="devMode" style="accent-color:#76b900">
@@ -687,7 +681,7 @@
   <div class="section">모델 검증 (Model-in-the-Loop)</div>
   <div class="row"><span>모드</span><select id="milMode">
     <option value="mock">내장 모의 모델 (GT+지연)</option>
-    <option value="http">외부 HTTP 모델 (detect_server.py)</option>
+    <option value="http">외부 HTTP 모델</option>
     <option value="onnx">ONNX 온디바이스 (브라우저 · WebGPU)</option>
     <option value="custom">커스텀 JS (window.__customModel)</option>
   </select></div>
@@ -3114,7 +3108,7 @@ function farthestCam(fromId) {
    CCTV 화면처럼 안 보였다. 높이를 기준으로 잡고 폭을 16:9로 계산한다.
    화면 좌표(px, 좌상단 원점)와 Babylon 뷰포트(0~1, 좌하단 원점)를 함께 돌려준다. */
 /* PiP 크기 — 화면 대비 비율. 슬라이더로 0.15~0.45. 16:9는 유지한다(감시 화면비). */
-let PIP_SCALE = 0.30;
+let PIP_SCALE = 0.32;
 function pipRect() {
   const W = engine.getRenderWidth(), H = engine.getRenderHeight();
   const s = PIP_SCALE;
@@ -7363,6 +7357,9 @@ const QUALITY = {
   apply(name) {
     const p = this.presets[name]; if (!p) return;
     this.name = name; this.cur = p;
+    /* '낮음'에서는 그림자 패스를 통째로 끈다 — 캐스터 1,252개 × 2048맵이 최대 병목이라
+       끄면 프레임이 확 오른다. 평평해 보이지만 '느려서 못 보는 것'보다 낫다. */
+    scene.shadowsEnabled = (name !== "low");
     if (msaaArmed) pipe.samples = p.msaa;
     engine.setHardwareScalingLevel(p.scale);
     const sg = key.getShadowGenerator && key.getShadowGenerator();
@@ -10149,7 +10146,15 @@ const state = {
   seqIdx:0, seqT:0, from:null, to:null, dur:0, inOil:false, msg:"",
   autoLoop:true, cycles:0   // 연속 작업 기본 켜짐 — UI 체크박스와 초기값을 맞춘다
 };
-const setStatus = s => { state.msg = s; $("status").textContent = s;
+let __statusTimer = null, __statusHide = null;
+const setStatus = s => { state.msg = s; const el = $("status");
+                         el.textContent = s; el.style.display = ""; el.style.opacity = "1";
+                         /* 발표 화면에 메시지가 계속 떠 있으면 지저분하다 — 4.5초 뒤 사라진다.
+                            페이드(opacity) 뒤 확실히 display:none 으로 감춘다. 상시 정보(관제바·PiP)는 별개다. */
+                         if (__statusTimer) clearTimeout(__statusTimer);
+                         if (__statusHide)  clearTimeout(__statusHide);
+                         __statusTimer = setTimeout(() => { el.style.opacity = "0"; }, 4500);
+                         __statusHide  = setTimeout(() => { el.style.display = "none"; }, 5000);
                          if (typeof logConsole === "function") logConsole(s); };
 
 function tipPos() { return effector().getAbsolutePosition(); }
@@ -12135,15 +12140,20 @@ scene.registerBeforeRender(() => {
     } else if ($("runLive").style.display !== "none") $("runLive").style.display = "none";
     /* 느리면 한 단계 내린다. **조용히 바꾸지 않고 알린다** — 사용자가 화질이
        왜 바뀌었는지 몰라야 할 이유가 없다. 자동 강등은 세션당 한 번만. */
-    if (!QUALITY.autoDone && ENV_READY) {
+    /* 느리면 한 단계씩 내린다 — high→medium→low 까지 이어서. 종전엔 한 번 내리고
+       autoDone으로 멈춰 medium·6fps에 갇혔다(실측). 단계 사이 4초 쿨다운으로 튐 방지.
+       사용자가 직접 품질을 고르면(autoDone) 그만둔다. low인데도 느리면 원인은
+       고폴리 캐릭터(속눈썹 1.2만·옷주름 2만 삼각형)와 PiP 이중 렌더 — 렌더 설정 밖이다. */
+    if (!QUALITY.autoDone && QUALITY.name !== "low" && ENV_READY
+        && performance.now() - (QUALITY.lastAuto || 0) > 4000) {
       const f = fpsAcc / fpsN;
-      if (f > 0 && f < 32) {
-        QUALITY.autoDone = true;
+      if (f > 0 && f < 30) {
+        QUALITY.lastAuto = performance.now();
         const next = QUALITY.name === "high" ? "medium" : "low";
         QUALITY.apply(next);
         setStatus("프레임이 낮아 화질을 '" + QUALITY.presets[next].label +
                   "'으로 낮췄습니다 (" + f.toFixed(0) + "fps) — 고급 탭에서 되돌릴 수 있습니다");
-      } else if (f >= 45) QUALITY.autoDone = true;   // 충분히 빠르면 더 안 본다
+      }
     }
     if (window.startTabRefresh) startTabRefresh();   // 보일 때만 갱신 (내부에서 판정)
     drawOverlay();                                   // CCTV HUD (REC 점멸·시각)
@@ -12441,7 +12451,7 @@ initPhysics();   // 비동기 — 파일 없으면 물리만 꺼진 채 계속 �
     { id:"show", label:"발표",  secs:["① 화재 감지","② 사람 동선 감지",
                                         "실영상 패널","샷 리스트","사고 시나리오 (연쇄)"] },
     { id:"start", label:"시작", secs:[] },   // 아래 startTabUI()가 내용을 채운다
-    { id:"run",  label:"실행",   secs:["관절 제어","조리 설정","조리 상태","조작 대상","사람 시나리오 · 화재"] },
+    { id:"run",  label:"실행",   secs:["관절 제어","조리 설정","조리 상태","조작 대상","사람 시나리오 · 화재","근무 시나리오","로봇 접촉 사고"] },
     { id:"cam",  label:"카메라", secs:["카메라 · 모델 입력","시점 프리셋","감시 카메라 관리"] },
     /* 데이터 탭은 "데이터를 만든다 → 모델을 검증한다 → 회차를 비교한다" 순서로 읽히게 둔다.
        센서 리얼리즘·조리실 인원은 데이터셋의 다양성을 정하는 손잡이라 고급이 아니라 여기다.
@@ -12498,8 +12508,10 @@ initPhysics();   // 비동기 — 파일 없으면 물리만 꺼진 채 계속 �
   /* 카메라 관리(추가·이동·삭제)는 전문가 기능에서 뺐다. 원하는 각도로 카메라를 놓는 것은
      이 시뮬레이터의 기본 사용법이지 고급 기능이 아닌데, DEV_SECTIONS에 묶여 있어서
      기본 상태에서는 섹션 자체가 안 보였다 — 기능이 있는 줄도 모른다는 지적을 받았다. */
-  const DEV_SECTIONS = ["에셋 임포트 (선택)"];
-  const DEV_IDS = ["orbCap", "devTools", "sensorFine", "mbInspector"];
+  const DEV_SECTIONS = ["에셋 임포트 (선택)", "관절 제어"];
+  const DEV_IDS = ["orbCap", "devTools", "sensorFine", "mbInspector", "runCsvBtn", "vizConsole",
+                   "camX", "camY", "camZ", "camYaw", "camPit", "camFov", "camDip",
+                   "camAim", "camReset", "camCopy", "camFactory"];
   window.applyDevMode = on => {
     for (const name of DEV_SECTIONS) {
       const g = groups.find(x => x.key.startsWith(name));
@@ -12507,8 +12519,15 @@ initPhysics();   // 비동기 — 파일 없으면 물리만 꺼진 채 계속 �
     }
     for (const id of DEV_IDS) {
       const el = document.getElementById(id);
-      if (el) { const box = el.closest(".btnrow") || el; box.style.display = on ? "" : "none"; }
+      if (el) { const box = el.closest(".btnrow, .row") || el; box.style.display = on ? "" : "none"; }
     }
+    /* 발표 화면 정리 — 시작 탭(온보딩용 복제)과 FPS·삼각형 수치는 전문가 기능에서만.
+       STAGE 패널은 devMode가 아니라 좌하단 접기 토글(stageToggle)이 따로 관리한다. */
+    const startBtn = bar.querySelector('button[data-tab="start"]');
+    if (startBtn) startBtn.style.display = on ? "" : "none";
+    const stEl = document.getElementById("stats");   // FPS·삼각형 = 개발용 수치, 발표엔 숨김
+    if (stEl) stEl.style.display = on ? "" : "none";
+    if (!on && panes.start && panes.start.classList.contains("on")) window.showTab("show");
     try { localStorage.setItem("hkr.sim.devMode", on ? "1" : "0"); } catch (e) {}
   };
   window.showTab = id => {
@@ -12674,6 +12693,21 @@ initPhysics();   // 비동기 — 파일 없으면 물리만 꺼진 채 계속 �
     btn.textContent = hidden ? "◨" : "◧";
     setTimeout(() => { engine.resize(); applyCameras(); }, 30);
   });
+})();
+
+/* STAGE 패널 접기/펼치기 — 발표 기본은 접힘(눈·PiP 오클릭 방지), 좌하단 버튼으로 1클릭 펼침 */
+(function stageToggleUI() {
+  const btn = $("stageToggle"), sp = $("stagePanel");
+  if (!btn || !sp) return;
+  let shown = false;                       // 발표 기본: 접힘
+  const apply = () => {
+    sp.style.display = shown ? "" : "none";
+    btn.textContent = shown ? "◂" : "▸";
+    btn.title = shown ? "STAGE 패널 접기" : "STAGE 패널 펼치기";
+    setTimeout(() => { engine.resize(); applyCameras(); }, 30);
+  };
+  apply();
+  btn.addEventListener("click", () => { shown = !shown; apply(); });
 })();
 
 /* 도움말 오버레이 + 단축키 */
@@ -14668,6 +14702,11 @@ function vidBuild() {
 }
 
 function vidOpen(show) {
+  /* 클립이 하나도 없으면 빈 검은 패널을 3D 위에 띄우지 않는다 — main엔 클립이 없어
+     "패널 열기"가 빈 상자만 띄웠다. ① ② ③ 에 파일을 넣으면 다시 열린다. */
+  if (show && typeof vidHave === "function" && !vidHave().length) {
+    setStatus("실영상 클립이 없습니다 — ① ② ③ 에서 파일을 고르세요"); return;
+  }
   vidBuild();
   vidPlace();                                   // 창 크기가 바뀌었을 수 있다
   VID.open = !!show;
@@ -14855,7 +14894,7 @@ function vidShowFor(slot) {
 
 function vidPlaySeq() {
   const have = vidHave();
-  if (!have.length) { setStatus("실영상 클립이 없습니다 — 파일을 고르거나 demo_clips/ 에 넣으세요"); return false; }
+  if (!have.length) { setStatus("실영상 클립이 없습니다 — ① ② ③ 에서 파일을 고르세요"); return false; }
   vidOpen(true);
   return vidPlay(have[0]);
 }
@@ -14933,7 +14972,7 @@ function vidNote() {
     : "";
   n.textContent = (have.length
     ? "클립 " + have.length + "종: " + have.map(k => VID_LABEL[k]).join(" · ")
-    : "클립 없음 — 파일을 고르거나 demo_clips/ 에 넣으세요") + "  ·  " + model + dupMsg;
+    : "클립 없음 — ① ② ③ 에서 파일을 고르세요") + "  ·  " + model + dupMsg;
   const mism = ONNX.nc !== null && ONNX.nc !== ONNX.labels.length;
   n.style.color = (ONNX.isDummy || dup.length || mism) ? "#f0a020" : "";
 }
