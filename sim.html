@@ -708,6 +708,7 @@
 
 <script src="./babylon.js"></script>
 <script src="./babylonjs.loaders.min.js"></script>
+<script src="./gtboxes.js"></script><!-- GT 마스크→bbox: stray 픽셀 강건 필터(연결성분). 테스트: tests/browser/instance-box-filter.test.mjs -->
 <script>
 "use strict";
 /* ────────────────────────────────────────────────────────────────────────
@@ -1709,7 +1710,12 @@ function buildRoom() {
   [[2.55, 0.055, 0], [2.72, 0.045, 1], [2.40, 0.075, 0]].forEach(([py, pd, mi], i) => {
     const pipe = MB.CreateCylinder("ceilPipe", {height:D-0.3, diameter:pd, tessellation:12}, scene);
     pipe.rotation.x = Math.PI/2;
-    pipe.position.set(RM.x1 - 0.55 - i*0.28, py + 0.55, cz);
+    /* ★ 2026-08-25 — 배관을 +X벽에 바짝 붙인다(종전 0.55~1.11m → 0.14~0.24m).
+       동벽 코너캠(cvNE·cvSE)이 벽에서 0.35m 안쪽·천장 근처에서 안쪽(−x)으로 내려다보는데,
+       종전 배관은 카메라 앞 0.2~0.76m에 있어 시야를 가로질렀다(사선 GT 전경 가림).
+       벽에서 0.35m보다 가깝게(카메라보다 뒤로) 옮기면 카메라 시야에서 빠지면서
+       "벽을 따라 흐르는 노출 배관"이라는 현실감은 그대로다 → 동쪽 구역도 학습에 쓸 수 있다. */
+    pipe.position.set(RM.x1 - 0.14 - i*0.05, py + 0.55, cz);
     pipe.material = pipeM[mi]; pipe.isPickable = false;
     for (let k = 0; k < 5; k++) {                    // 행거 밴드
       const hg = MB.CreateBox("pipeHanger", {width:0.02, height:RM.h-(py+0.55), depth:0.02}, scene);
@@ -2258,9 +2264,14 @@ function steamSettle(maxFrames) {
   const target = steam.emitRate * (steam.minLifeTime + steam.maxLifeTime) / 2;
   const sv = steam.updateSpeed;
   steam.updateSpeed = sv * 10;
-  let g = 0;
-  while (Math.abs(steam.particles.length - target) > Math.max(20, target * 0.15) && g++ < (maxFrames || 30))
-    scene.render();
+  if (Number.isFinite(window.__datasetPreparationTimeMs)) {
+    const frames = Math.ceil(steam.maxLifeTime / steam.updateSpeed) + 5;
+    for (let frame = 0; frame < frames; frame++) scene.render();
+  } else {
+    let g = 0;
+    while (Math.abs(steam.particles.length - target) > Math.max(20, target * 0.15) && g++ < (maxFrames || 30))
+      scene.render();
+  }
   steam.updateSpeed = sv;
 }
 
@@ -3305,6 +3316,35 @@ function gtFreezeParticles(on) {
   }
 }
 
+/* 헤드리스 원본 생성기가 6개 카메라를 같은 시점에서 찍도록 장면 시간을 고정한다.
+   render loop 자체는 생성기가 멈추고, 여기서는 수동 scene.render()에서도 애니메이션과
+   파티클이 진행되지 않게 한다. */
+let DATASET_CAPTURE_STATE = null;
+function datasetCaptureFreeze(on) {
+  if (on) {
+    if (DATASET_CAPTURE_STATE) return;
+    DATASET_CAPTURE_STATE = {
+      animations: scene.animationGroups.map(group => ({ group, speedRatio: group.speedRatio })),
+      particles: scene.particleSystems.map(system => ({
+        system, emitRate: system.emitRate, updateSpeed: system.updateSpeed,
+      })),
+    };
+    for (const item of DATASET_CAPTURE_STATE.animations) item.group.speedRatio = 0;
+    for (const item of DATASET_CAPTURE_STATE.particles) {
+      item.system.emitRate = 0; item.system.updateSpeed = 0;
+    }
+    window.__datasetCaptureFrozen = true;
+  } else if (DATASET_CAPTURE_STATE) {
+    for (const item of DATASET_CAPTURE_STATE.animations) item.group.speedRatio = item.speedRatio;
+    for (const item of DATASET_CAPTURE_STATE.particles) {
+      item.system.emitRate = item.emitRate; item.system.updateSpeed = item.updateSpeed;
+    }
+    DATASET_CAPTURE_STATE = null;
+    window.__datasetCaptureFrozen = false;
+  }
+}
+window.datasetCaptureFreeze = datasetCaptureFreeze;
+
 function gtParticleMask(on, colorAt, opts) {
   opts = opts || {};
   if (on) {
@@ -3580,8 +3620,15 @@ function fireSeekTo(sec) {
      정상 속도 머신에서 **연기 분포(평균 높이·반경)를 켜기 전후로 비교**한 뒤 정해야 한다.
      ⚠️ 조기 탈출("더 이상 안 늘면 그만")도 넣어 봤다가 뺐다 — 한 프레임에 붙는 입자가
      워낙 적어 **안 느는 프레임이 정상적으로 섞이는데** 그걸 평형으로 오인해 끊었다. */
-  let guard = 0;
-  while (fsmoke.particles.length < target && guard++ < 400) scene.render();
+  if (Number.isFinite(window.__datasetPreparationTimeMs)) {
+    /* 원본 생성에서는 결과에 따라 반복 횟수를 바꾸지 않는다. 한두 입자의 수명 차이가
+       다음 렌더 횟수와 전체 무작위 수열을 갈라 같은 seed의 이미지가 달라질 수 있다. */
+    const frames = Math.ceil(fsmoke.maxLifeTime / fsmoke.updateSpeed) + 5;
+    for (let frame = 0; frame < frames; frame++) scene.render();
+  } else {
+    let guard = 0;
+    while (fsmoke.particles.length < target && guard++ < 400) scene.render();
+  }
   sv.forEach(x => { x.P.updateSpeed = x.s; });
   FIRE_FOG.t = t;                 // 빨리감기 동안 틱이 밀어 놓은 값을 목표로 되돌린다
   fireFogTick(0);                 // 연무 농도·배출량을 그 시점 값으로 확정
@@ -3592,8 +3639,11 @@ function fireSeekTo(sec) {
     화재 3개가 전부 55~79초로 나와 초기 구간이 비었다.)
    왜 앞을 촘촘히 — 연기가 옅게 낀 구간이 **검출이 가능하면서도 어려운** 지점이라 표본이
    더 필요하다. 완전히 자욱한 프레임은 사실 사람도 못 보고, 배우기도 쉽다. */
+function sceneRandom() {
+  return typeof window.__datasetRandom === "function" ? window.__datasetRandom() : Math.random();
+}
 function fireRandomStage() {
-  return Math.pow(Math.random(), 1.5) * (FIRE_FOG.full / 1000);
+  return Math.pow(sceneRandom(), 1.5) * (FIRE_FOG.full / 1000);
 }
 
 function setFire(on) {
@@ -5596,7 +5646,10 @@ function fillBasket() {
 
 function dressProp(file, holder, idx, inst) {
   const MB = BABYLON.MeshBuilder, put = [];
-  const rnd = (a, b) => a + Math.random() * (b - a);
+  // 비동기 GLB 로드 순서와 무관하게 같은 프롭은 같은 장식을 갖는다.
+  const staticSeed = Number.isSafeInteger(window.__datasetStaticSeed) ? window.__datasetStaticSeed : SEED0;
+  const random = makeRNG((staticSeed ^ Math.imul(idx + 1, 0x9E3779B1)) >>> 0).next;
+  const rnd = (a, b) => a + random() * (b - a);
   /* 부모를 아직 붙이지 않는다 — 아래에서 통째로 병합한 뒤 붙인다.
      붙인 채로 병합하면 holder 변환이 정점에 구워져 두 번 적용된다. */
   const add = (m, x, y, z, mat) => { m.position.set(x, y, z); m.material = mat;
@@ -5628,24 +5681,24 @@ function dressProp(file, holder, idx, inst) {
       const rx = rnd(-0.44, 0.44), rz = rnd(-0.44, 0.44);
       const heap = 1 - Math.min(1, Math.hypot(rx, rz) / 0.45);
       const px = x + rx * w, pz = z + rz * d;
-      const mat = Math.random() < 0.45 ? F.mat : F.bits[(Math.random()*F.bits.length)|0];
+      const mat = random() < 0.45 ? F.mat : F.bits[(random()*F.bits.length)|0];
       let m, h;
       if (F.kind === "greens") {                       // 다진 파·마늘 — 얇게 썬 조각
-        const L = 0.016 + Math.random()*0.026;
-        m = MB.CreateBox("propFoodBit", {width:L, height:0.006, depth:0.009 + Math.random()*0.006}, scene);
+        const L = 0.016 + random()*0.026;
+        m = MB.CreateBox("propFoodBit", {width:L, height:0.006, depth:0.009 + random()*0.006}, scene);
         h = 0.004;
       } else if (F.kind === "tteok") {                 // 떡 — 납작한 타원
-        m = MB.CreateSphere("propFoodBit", {diameter:0.030 + Math.random()*0.014, segments:3}, scene);
+        m = MB.CreateSphere("propFoodBit", {diameter:0.030 + random()*0.014, segments:3}, scene);
         m.scaling.set(1, 0.42, 0.62); h = 0.007;
       } else {                                         // 튀김 — 울퉁불퉁한 덩어리
-        m = MB.CreateSphere("propFoodBit", {diameter:0.028 + Math.random()*0.020, segments:3}, scene);
-        m.scaling.set(1, 0.55 + Math.random()*0.3, 0.7 + Math.random()*0.4); h = 0.010;
+        m = MB.CreateSphere("propFoodBit", {diameter:0.028 + random()*0.020, segments:3}, scene);
+        m.scaling.set(1, 0.55 + random()*0.3, 0.7 + random()*0.4); h = 0.010;
       }
-      m.rotation.set(rnd(-0.4, 0.4), Math.random()*Math.PI, rnd(-0.4, 0.4));
-      add(m, px, y + 0.010 + h + heap * 0.022 * Math.random(), pz, mat);
+      m.rotation.set(rnd(-0.4, 0.4), random()*Math.PI, rnd(-0.4, 0.4));
+      add(m, px, y + 0.010 + h + heap * 0.022 * random(), pz, mat);
     }
   };
-  const fill = (x, y, z, w, d) => fillAs(FOOD[(Math.random()*FOOD.length)|0], x, y, z, w, d);
+  const fill = (x, y, z, w, d) => fillAs(FOOD[(random()*FOOD.length)|0], x, y, z, w, d);
   /* GN 바트 — 참조 현장 랙 프레임 기준. 깊은 스테인리스 팬 + 말린 림.
      바닥판 1 + 벽 4 + 림 1 = 6메시. 담긴 것이 있으면 fill()이 더 붙는다. */
   const gnPan = (x, y, z, w, d, h, food) => {
@@ -5658,7 +5711,7 @@ function dressProp(file, holder, idx, inst) {
   };
   const bottle = (x, y, z) => {                              // 양념·기름 병 (참조 현장 우측 작업대)
     add(MB.CreateCylinder("propBottle", {height:0.20, diameter:0.075, tessellation:10}, scene),
-        x, y + 0.10, z, PROP_MAT.bottle[(Math.random()*PROP_MAT.bottle.length)|0]);
+        x, y + 0.10, z, PROP_MAT.bottle[(random()*PROP_MAT.bottle.length)|0]);
     add(MB.CreateCylinder("propBottleCap", {height:0.03, diameter:0.035, tessellation:8}, scene),
         x, y + 0.215, z, MAT.plastic);
   };
@@ -5666,11 +5719,11 @@ function dressProp(file, holder, idx, inst) {
     const b = add(MB.CreateCylinder("propColander",
       {height:0.115, diameterTop:dia, diameterBottom:dia*0.72, tessellation:20}, scene), x, y+0.058, z, ST);
     b.material = ST;
-    if (Math.random() < 0.7) fill(x, y + 0.085, z, dia*0.7, dia*0.7);
+    if (random() < 0.7) fill(x, y + 0.085, z, dia*0.7, dia*0.7);
     return b;
   };
   const tote = (x, y, z, w, d, h) => {                       // 플라스틱 식자재 통
-    const m = PROP_MAT.tote[(Math.random()*PROP_MAT.tote.length)|0];
+    const m = PROP_MAT.tote[(random()*PROP_MAT.tote.length)|0];
     add(MB.CreateBox("propTote", {width:w, height:h, depth:d}, scene), x, y + h/2, z, m);
     add(MB.CreateBox("propToteRim", {width:w+0.018, height:0.014, depth:d+0.018}, scene), x, y + h, z, m);
   };
@@ -5682,19 +5735,19 @@ function dressProp(file, holder, idx, inst) {
       const y = 0.327 + s * 0.48;
       // 칸을 좌·중·우 3구역으로 나눠 각각 채운다 — 종전에는 1~3개라 선반이 텅 비어 보였다
       for (const bx of [-0.36, 0, 0.36]) {
-        if (Math.random() < 0.18) continue;               // 가끔 빈 자리 (전부 차 있으면 부자연스럽다)
-        const x = bx + rnd(-0.05, 0.05), z = rnd(-0.08, 0.08), t = Math.random();
+        if (random() < 0.18) continue;               // 가끔 빈 자리 (전부 차 있으면 부자연스럽다)
+        const x = bx + rnd(-0.05, 0.05), z = rnd(-0.08, 0.08), t = random();
         if (t < 0.30) {                                   // GN 바트 (담긴 것 있음/없음)
-          gnPan(x, y + 0.014, z, 0.30, 0.24, 0.085, Math.random() < 0.55);
+          gnPan(x, y + 0.014, z, 0.30, 0.24, 0.085, random() < 0.55);
         } else if (t < 0.46) {                            // 바트 적층 — 빈 팬을 포개 둔다
-          const n = 2 + ((Math.random()*3)|0);
+          const n = 2 + ((random()*3)|0);
           for (let q = 0; q < n; q++) gnPan(x, y + 0.014 + q*0.030, z, 0.30, 0.24, 0.055, false);
         } else if (t < 0.62) {
           colander(x, y + 0.014, z, rnd(0.26, 0.34));
         } else if (t < 0.80) {
           tote(x, y + 0.014, z, rnd(0.24,0.30), rnd(0.19,0.24), rnd(0.13,0.18));
         } else {                                          // 대야 적층
-          const n = 1 + ((Math.random()*3)|0);
+          const n = 1 + ((random()*3)|0);
           for (let q = 0; q < n; q++)
             add(MB.CreateCylinder("propBowl",
               {height:0.10, diameterTop:rnd(0.28,0.33), diameterBottom:0.20, tessellation:18}, scene),
@@ -5706,11 +5759,11 @@ function dressProp(file, holder, idx, inst) {
     const TY = 0.850;   // 레이캐스트 실측값. 0.875로 두니 물건이 2.5cm 떠 있었다
     add(MB.CreateBox("propBoard", {width:0.42, height:0.022, depth:0.30}, scene),
         rnd(-0.35, 0.10), TY, rnd(-0.06, 0.06), MAT.plastic);
-    if (Math.random() < 0.75) colander(rnd(0.28, 0.52), TY + 0.011, rnd(-0.12, 0.12), rnd(0.26,0.32));
-    if (Math.random() < 0.7)  gnPan(rnd(-0.15, 0.15), TY + 0.011, rnd(-0.14, 0.14), 0.32, 0.26, 0.085, true);
-    for (let b = 0; b < ((Math.random()*3)|0); b++) bottle(rnd(-0.68,-0.42), TY + 0.011, rnd(-0.18, 0.18));
-    if (Math.random() < 0.45) tote(rnd(0.20,0.60), TY + 0.011, rnd(-0.20,0.20), 0.26, 0.21, 0.15);
-    if (Math.random() < 0.6) {                          // 저울 (복수 참조 현장 계량)
+    if (random() < 0.75) colander(rnd(0.28, 0.52), TY + 0.011, rnd(-0.12, 0.12), rnd(0.26,0.32));
+    if (random() < 0.7)  gnPan(rnd(-0.15, 0.15), TY + 0.011, rnd(-0.14, 0.14), 0.32, 0.26, 0.085, true);
+    for (let b = 0; b < ((random()*3)|0); b++) bottle(rnd(-0.68,-0.42), TY + 0.011, rnd(-0.18, 0.18));
+    if (random() < 0.45) tote(rnd(0.20,0.60), TY + 0.011, rnd(-0.20,0.20), 0.26, 0.21, 0.15);
+    if (random() < 0.6) {                          // 저울 (복수 참조 현장 계량)
       const sx = rnd(-0.60, -0.30);
       add(MB.CreateBox("propScale", {width:0.24, height:0.06, depth:0.20}, scene), sx, 0.89, 0.10, MAT.plastic);
       add(MB.CreateBox("propScalePan", {width:0.22, height:0.012, depth:0.18}, scene), sx, 0.925, 0.10, ST);
@@ -5718,27 +5771,27 @@ function dressProp(file, holder, idx, inst) {
     }
     // 하단 선반(z=0.24)도 비워 두지 않는다 — 실사에서 여기가 가장 잘 차 있다
     for (const bx of [-0.42, 0.06, 0.50]) {
-      if (Math.random() < 0.35) continue;
-      if (Math.random() < 0.5) tote(bx, 0.25, rnd(-0.10,0.10), 0.30, 0.24, 0.17);
-      else { const n = 2 + ((Math.random()*3)|0);
+      if (random() < 0.35) continue;
+      if (random() < 0.5) tote(bx, 0.25, rnd(-0.10,0.10), 0.30, 0.24, 0.17);
+      else { const n = 2 + ((random()*3)|0);
              for (let q=0;q<n;q++) gnPan(bx, 0.25 + q*0.030, 0, 0.30, 0.24, 0.055, false); }
     }
   } else if (file === "env_sink.glb") {    // 싱크 — 물기 담긴 대야·소쿠리
     colander(rnd(-0.55, -0.30), 0.58, 0, rnd(0.26, 0.32));   // 볼 바닥 0.58 (0.63은 5cm 떴다)
-    if (Math.random() < 0.6) colander(rnd(0.20, 0.50), 0.58, rnd(-0.08,0.08), rnd(0.24, 0.30));
-    for (let b = 0; b < ((Math.random()*2)|0); b++) bottle(rnd(-0.7,0.7), 0.85, 0.30);   // 싱크 상판 0.85
+    if (random() < 0.6) colander(rnd(0.20, 0.50), 0.58, rnd(-0.08,0.08), rnd(0.24, 0.30));
+    for (let b = 0; b < ((random()*2)|0); b++) bottle(rnd(-0.7,0.7), 0.85, 0.30);   // 싱크 상판 0.85
   } else if (file === "env_bin.glb") {     // 재료통 — 뚜껑 위에 소쿠리를 얹어 두는 장면이 흔하다
-    if (Math.random() < 0.4) colander(0, 0.68, 0, rnd(0.26, 0.32));   // 실측 0.680 (0.71은 3cm 떠 있었다)
+    if (random() < 0.4) colander(0, 0.68, 0, rnd(0.26, 0.32));   // 실측 0.680 (0.71은 3cm 떠 있었다)
   } else if (file === "env_serve.glb") {   // 배식대 — 상판과 상부 선반 둘 다 찬다 (참조 현장 우측)
     const TY = 0.850;   // 레이캐스트 실측값. 0.875로 두니 물건이 2.5cm 떠 있었다
-    if (Math.random() < 0.8) gnPan(rnd(-0.55, 0.10), TY + 0.011, rnd(-0.10, 0.10), 0.32, 0.26, 0.085, true);
-    if (Math.random() < 0.7) colander(rnd(0.25, 0.65), TY + 0.011, rnd(-0.12, 0.12), rnd(0.26, 0.32));
-    for (let b = 0; b < 1 + ((Math.random()*3)|0); b++) bottle(rnd(-0.75, 0.75), TY + 0.011, rnd(-0.22, 0.05));
+    if (random() < 0.8) gnPan(rnd(-0.55, 0.10), TY + 0.011, rnd(-0.10, 0.10), 0.32, 0.26, 0.085, true);
+    if (random() < 0.7) colander(rnd(0.25, 0.65), TY + 0.011, rnd(-0.12, 0.12), rnd(0.26, 0.32));
+    for (let b = 0; b < 1 + ((random()*3)|0); b++) bottle(rnd(-0.75, 0.75), TY + 0.011, rnd(-0.22, 0.05));
     for (const z of [1.29, 1.67]) {        // 상부 선반 2단
       for (const bx of [-0.5, 0, 0.5]) {
-        if (Math.random() < 0.3) continue;
-        if (Math.random() < 0.55) {
-          const n = 2 + ((Math.random()*3)|0);
+        if (random() < 0.3) continue;
+        if (random() < 0.55) {
+          const n = 2 + ((random()*3)|0);
           for (let q = 0; q < n; q++) gnPan(bx + rnd(-0.06,0.06), z + q*0.030, 0.21, 0.30, 0.24, 0.055, false);
         } else {
           add(MB.CreateCylinder("propBowl",
@@ -5748,7 +5801,7 @@ function dressProp(file, holder, idx, inst) {
       }
     }
   } else if (file === "env_basketcart.glb") {   // 망바구니 3단 — 위 칸에만 내용물
-    if (Math.random() < 0.6) fill(0, 0.70, 0, 0.42, 0.30);
+    if (random() < 0.6) fill(0, 0.70, 0, 0.42, 0.30);
   } else if (file === "env_pancart.glb") {
     /* GLB의 '담긴 재료'는 납작한 슬래브 하나이고, 전부 같은 황금색(#c8a25a)이라
        카트 4대 × 6칸이 **똑같이 샛노란 판 26개**로 보였다.
@@ -5758,7 +5811,7 @@ function dressProp(file, holder, idx, inst) {
     for (const s of slabs) {
       s.computeWorldMatrix(true);
       const b = s.getBoundingInfo().boundingBox;
-      const F = FOOD[(Math.random()*FOOD.length)|0];
+      const F = FOOD[(random()*FOOD.length)|0];
       s.material = F.mat;
       // 슬래브 로컬 중심·크기 → holder 기준 좌표로 (add()가 holder 로컬을 기대한다)
       const wc = b.centerWorld, hw = holder.getWorldMatrix().clone();
@@ -7369,7 +7422,9 @@ function sensorApply() {
       eff.setFloat("grainAmt", SENSOR.grain / 100);
       eff.setFloat("vigAmt", SENSOR.vignette);
       eff.setFloat("expo", SENSOR.expoNow || 1);
-      eff.setFloat("uTime", (performance.now() % 10000) / 1000);
+      const timeMs = Number.isFinite(window.__datasetCaptureTimeMs)
+        ? window.__datasetCaptureTimeMs : performance.now();
+      eff.setFloat("uTime", (timeMs % 10000) / 1000);
     };
     SENSOR.gp[c.name] = gp;
   });
@@ -7509,7 +7564,7 @@ function camIntrinsics(cam, w, h) {
     world_matrix_row_major: Array.from(wm.m).map(v => +v.toFixed(6)),
   };
 }
-/* opts.wait — 셰이더 대기(whenReadyAsync, 상한 1.5s)를 **켠다**. 기본은 끔.
+/* opts.wait — 셰이더 준비 완료를 기다리고 10초 안에 끝나지 않으면 캡처를 실패시킨다. 기본은 끔.
    2026-08-21에 기본값을 뒤집었다. 원래는 모든 패스가 기다렸고 "첫 캡처 검은 프레임 방지"가
    이유였는데, 실측해 보니 **마스크 계열 3종만 안 기다려도 되고 나머지는 필요했다.**
    ⚠️ 처음엔 RGB도 필요 없다고 보고 뺐다가 회귀를 냈다 — 아래 RGB 항목 참고.
@@ -7521,7 +7576,7 @@ function camIntrinsics(cam, w, h) {
    먼저 옛 주석의 진단 두 개는 사실이 아니다:
      · "빈 LinesMesh가 영원히 !isReady" → !isReady인 메시 0개,
        !isReadyForSubMesh인 서브메시도 0개다. 그 메시는 범인이 아니다.
-     · "그래서 상한 1.5s가 매번 만료된다" → 만료되지 않는다. 8회 중 7회 실제로 resolve됐다
+     · "과거 1.5초 soft 상한이 매번 만료된다" → 당시에도 8회 중 7회 실제로 resolve됐다
        (정상 5~16ms · 콜드 캡처 276·351·613ms · 웜 캡처 64~87ms).
    실제 동작은 이렇다. scene.isReady()는 부작용 호출이라 첫 호출이 셰이더 컴파일을 유발하며
    false를 뱉고, 끝나면 true가 된다. Scene._checkIsReady는 rAF가 아니라 setTimeout(...,100)
@@ -7610,10 +7665,19 @@ async function renderWith(cam, setup, teardown, opts) {
   scene.activeCameras = [];
   scene.activeCamera = cam;
   if (setup) setup();
-  // setup이 셰이더 define을 바꾼 패스만 컴파일을 기다린다(현재 깊이맵 2장 = 안개 켜기).
-  // 상한 1.5s — whenReadyAsync가 늦어도 이만큼 벌어 주면 예열 렌더가 제 값을 찍는다.
-  if (opts && opts.wait)
-    await Promise.race([scene.whenReadyAsync(), new Promise(r => setTimeout(r, 1500))]);
+  // setup이 셰이더 define을 바꾼 패스는 실제 준비 완료를 기다린다. 시간만 1.5초 벌고
+  // 준비되지 않은 채 계속하면 같은 장면에서도 일부 메시가 마스크에서 빠질 수 있다.
+  if (opts && opts.wait) {
+    let timer;
+    try {
+      await Promise.race([
+        scene.whenReadyAsync(),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error("GT 재질 준비가 10초 안에 끝나지 않았다")), 10000);
+        }),
+      ]);
+    } finally { clearTimeout(timer); }
+  }
   scene.render(); scene.render(); scene.render();   // 카메라·뷰포트 전환 후 첫 프레임은 포스트체인 재바인딩으로 검게 나옴 — 예열 렌더
   const w = engine.getRenderWidth(), h = engine.getRenderHeight();
   const data = await engine.readPixels(0, 0, w, h);
@@ -7767,8 +7831,8 @@ async function groundTruthImpl(camId, opt) {
      scene.isReady()가 true라 즉시 통과하기 때문이다.
      ⚠️ 한때 "효과 없음"으로 판단해 되돌린 적이 있는데 **브라우저가 옛 sim.html을 캐시**해
      생긴 오판이었다. 이 파일을 고치고 측정할 때는 URL에 ?v=... 를 붙여 캐시를 우회해라. */
-  /* ↑ 셰이더 대기는 renderWith에서 통째로 없앴다(2026-08-21). 근거는 renderWith 주석 참고 —
-     "항상 1.5s 만료" 진단이 틀렸고, 실제 비용은 패스당 60~600ms였다. */
+  /* ↑ 셰이더 대기는 필요한 패스만 renderWith의 opts.wait로 보장한다. 준비 전 촬영을
+     허용하던 1.5초 soft 상한은 제거했고, 실제 비용은 패스당 대체로 60~600ms였다. */
 
   /* 2.1) 연기 농도 패스 — 전 메시를 검정으로 깔고 **연기만 흰색·본래 알파**로 찍는다.
      겹칠수록 밝아지므로 픽셀 밝기가 곧 그 시선의 연기 두께(광학 깊이)가 된다.
@@ -7837,14 +7901,18 @@ async function groundTruthImpl(camId, opt) {
   // 2.5) P3: 인스턴스 마스크 — 개체마다 팔레트 고유색. 사람 여러 명을 개별 분리한다.
   const instIndex = new Map();                       // instKey → 팔레트 idx (등장 순)
   const instMatCache = {};
-  const instMat = key => {
-    if (instMatCache[key]) return instMatCache[key];
+  const reserveInst = key => {
     if (!instIndex.has(key)) {
       // 순환(%)하면 서로 다른 개체가 같은 색을 받아 bbox가 합쳐진다 — 넘치면 조용히 섞지 말고 알린다
       if (instIndex.size >= INST_PALETTE.length)
         console.warn("[GT] 인스턴스 수가 팔레트를 초과:", instIndex.size, "≥", INST_PALETTE.length);
       instIndex.set(key, Math.min(instIndex.size, INST_PALETTE.length - 1));
     }
+    return instIndex.get(key);
+  };
+  const instMat = key => {
+    if (instMatCache[key]) return instMatCache[key];
+    reserveInst(key);
     const c = INST_PALETTE[instIndex.get(key)];
     const m = new BABYLON.StandardMaterial("inst_" + key, scene);
     m.emissiveColor = new C3(c[0]/255, c[1]/255, c[2]/255);
@@ -7857,6 +7925,18 @@ async function groundTruthImpl(camId, opt) {
   const inst = await renderWith(cam, () => {
     gtOff();
     savedMatsI = new Map();
+    /* ★ 2026-08-25 — 검출 대상(person·robot·kettle)을 팔레트 앞자리(base 색)에 먼저 예약.
+       INST_PALETTE의 base 24색은 서로 MINSEP≥24, 그리고 뒤이어 생성되는 격자색도 base와
+       ≥24 떨어지도록 걸러진다. 종전엔 person이 씬 메시 순서상 equip 수십 개 뒤에 등록돼
+       **격자색(24,x,y)**을 받았고, 그 색이 이웃 equip 격자색과 붙어 classifyByNearest가
+       카트·설비 픽셀을 person으로 오분류(카트 위 팬텀 person 박스)하거나 person 픽셀을 옆
+       equip 색으로 끌어가 blob이 줄어 n<80으로 드롭(보이는 사람 미라벨)됐다. 대상 클래스를
+       먼저 등록해 base 색을 주면 equip 색과 색공간에서 확실히 분리돼 오분류가 사라진다.
+       (근본 재구성 = 3D 투영+깊이 가림판정은 별도 후속 작업.) */
+    instMat("person_0");
+    if (typeof EXTRAS !== "undefined")
+      for (let i = 0; i < EXTRAS.length; i++) instMat("person_" + (i + 1));
+    instMat("robot_0"); instMat("kettle_0");
     for (const m of scene.meshes) {
       if (!m.isEnabled() || !m.isVisible || !m.material) continue;   // 위와 같은 이유
       savedMatsI.set(m, m.material);
@@ -7873,11 +7953,12 @@ async function groundTruthImpl(camId, opt) {
   }, () => {
     savedMatsI.forEach((mat, mesh) => { mesh.material = mat; });
     gtOn();
-  });
+    Object.values(instMatCache).forEach(material => material.dispose());
+  }, { wait:true });
 
   /* YOLO 라벨은 **이 인스턴스 마스크**에서 나온다(클래스 마스크는 참고용).
      그러므로 연기 덮기를 여기에도 반드시 적용해야 학습 라벨이 맞는다. */
-  instMat("smoke_0");                                      // 팔레트 슬롯 확보
+  reserveInst("smoke_0");                                  // 팔레트 슬롯만 확보(재질은 만들지 않음)
   // 보호 기준은 위에서 칠해 둔 **클래스 마스크**다 (팔레트 번호 대조는 어긋났다)
   paintSmoke(inst, INST_PALETTE[instIndex.get("smoke_0")], mask.data);
   // 인스턴스별 bbox (가림 반영 — 마스크 픽셀 기준)
@@ -7887,14 +7968,35 @@ async function groundTruthImpl(camId, opt) {
     const byColor = [...instIndex.entries()].map(([k, idx]) => [k, INST_PALETTE[idx]]);
     // 정확 일치 대신 최근접 색 — MSAA 외곽선 픽셀을 우세한 개체로 되돌린다(위 주석)
     const cls = classifyByNearest(ip, iw, ih, byColor);
-    for (let y = 0; y < ih; y++) for (let x = 0; x < iw; x++) {
-      const ki = cls[y*iw + x];
-      if (ki < 0) continue;                              // 배경
-      const k = byColor[ki][0];
-      const bx = instBoxes.get(k) || (instBoxes.set(k, {minX:x, maxX:x, minY:y, maxY:y, n:0}), instBoxes.get(k));
-      if (x < bx.minX) bx.minX = x; if (x > bx.maxX) bx.maxX = x;
-      if (y < bx.minY) bx.minY = y; if (y > bx.maxY) bx.maxY = y;
-      bx.n++;
+    /* ★ 색별 min/max 를 그대로 쓰면 **오분류된 소수 stray 픽셀이 박스를 프레임 전체로 늘린다**
+       (사선 카메라 회귀 2026-08-24: person 박스 area 최대 0.67, 대형 43%). 최근접색 판정은
+       절대 상한이 없어, 겹치는 인스턴스가 많은 사선 뷰에서 MSAA 경계·어두운 픽셀 한 줌을
+       프레임 아무 곳의 인스턴스 색으로 배정했다. 단 1~4개 stray 로도 min/max 가 터진다.
+       나디르(직교)는 겹침·전경 가림이 없어 stray 가 없었다 — 그래서 사선 전용 회귀였다.
+       → 연결성분으로 작고 고립된 stray 성분을 걷어낸 박스를 쓴다. 가림에 쪼개진 실제 사람의
+         큰 조각들은 모두 살아남는다. 유지 픽셀 기준 n≥80 도 필터 안에서 적용된다.
+       (순수 로직·회귀 테스트: gtboxes.js · tests/browser/instance-box-filter.test.mjs) */
+    const filtered = labelBoxesFiltered(cls, iw, ih, {});
+    for (const [ki, b] of filtered) instBoxes.set(byColor[ki][0], b);
+
+    /* ★ 2026-08-26 — person 박스는 **정확색(±tol) 분류 + 연결성분 필터**로 다시 뽑는다.
+       화재/연기 씬에서 최근접색(classifyByNearest·상한없음)이 혼합 픽셀을 person 색으로
+       오분류해 CC 필터가 먼 성분까지 union → 박스가 프레임 가로 전체로 부풀었다(눈으로 확인
+       2026-08-26). person 인스턴스 색은 서로·배경과 ≥MINSEP(base 예약) 떨어져 있어, 정확색
+       ±tol 로만 모으면 화재·연기·설비 픽셀(색거리 먼)은 애초에 -1 로 떨어져 부풀림이 불가능.
+       (계측: 정확색 픽셀 수는 사람마다 0 아니면 실제 실루엣 픽셀뿐 — 먼 stray 없음 확인.
+        3D 투영영역 게이트도 시도했으나 스킨드 메시 world bbox가 randomizeScene 후 stale이라
+        보이는 사람을 드롭 → 폐기. 정확색만으로 충분.)
+       (순수 로직·회귀: gtboxes.js classifyExact/labelBoxesFiltered · tests/browser/person-box-region.test.mjs) */
+    const pPal = [...instIndex.entries()].filter(([k]) => k.slice(0, 7) === "person_")
+                                         .map(([k, idx]) => [k, INST_PALETTE[idx]]);
+    if (pPal.length) {
+      const pcls = classifyExact(ip, iw, ih, pPal, 26);
+      /* person 색이 정확히 일치한 성분은 큰 설비에 멀리 갈려 보여도 같은 인스턴스다.
+         거리 제한 없이 보존해 실제 가림 조각이 라벨에서 빠지지 않게 한다. */
+      const pboxes = labelBoxesFiltered(pcls, iw, ih, { relativeMin: 0 });
+      for (const [k] of pPal) instBoxes.delete(k);                 // 기존 최근접색 person 박스 폐기
+      for (const [ki, b] of pboxes) instBoxes.set(pPal[ki][0], b); // 정확색 박스로 대체
     }
   }
   const instances = [];
@@ -8042,7 +8144,7 @@ async function groundTruthImpl(camId, opt) {
        후보가 된다. images/labels와 같은 base 이름으로 짝지어진다.
        ⚠️ imagesOnly 모드에서는 gt/를 아예 안 쓰므로 이 메타도 안 나온다. */
     scene: {
-      seed: SEED0,
+      seed: Number.isSafeInteger(window.__datasetSceneSeed) ? window.__datasetSceneSeed : SEED0,
       fire: state.fire,
       // 0 = 점화 직후, 1 = 최성기(90s). "옅은 구간에서만 놓치는가"를 가르는 축
       fire_progress: state.fire ? +Math.min(1, FIRE_FOG.t / FIRE_FOG.full).toFixed(4) : 0,
@@ -8078,7 +8180,7 @@ const FOOTPRINTS = [   // [x, z, halfW, halfD] — 사람 배치 금지 구역 (
 ];
 function randFloorPos() {
   for (let t = 0; t < 60; t++) {
-    const x = -2.6 + Math.random()*5.2, z = -2.6 + Math.random()*5.2;
+    const x = -2.6 + sceneRandom()*5.2, z = -2.6 + sceneRandom()*5.2;
     if (!FOOTPRINTS.some(f => Math.abs(x-f[0]) < f[2]+0.25 && Math.abs(z-f[1]) < f[3]+0.25)) return [x, z];
   }
   return [-2, 2];
@@ -8102,51 +8204,68 @@ function randomizeEnvironment() {
   if (!ENV_RAND.enabled) return;
   // ① 벽 마감 — 하단 3종 + 상단 색조. 하단 밴드는 설비에 가려 잘 안 보이므로
   //    상단(면적이 넓다)까지 흔들어야 화면에서 실제로 달라 보인다.
-  const wi = (Math.random() * ENV_RAND.wall.length) | 0;
+  const wi = (sceneRandom() * ENV_RAND.wall.length) | 0;
   const wm = ENV_RAND.wall[wi][1]();
   scene.meshes.forEach(m => { if (/^wall_[NSEW]_lo$/.test(m.name)) m.material = wm; });
   ENV_RAND.last.wall = ENV_RAND.wall[wi][0];
   // 상단 흰 타일 — 흰색~미색~연회색 (실사에서 관찰되는 폭)
-  const up = ["#e8ebee", "#e2e0d8", "#dfe4e6", "#d8dad6", "#eceae4"][(Math.random()*5)|0];
+  const up = ["#e8ebee", "#e2e0d8", "#dfe4e6", "#d8dad6", "#eceae4"][(sceneRandom()*5)|0];
   MAT.tileWhite.albedoColor = C3.FromHexString(up).toLinearSpace();
-  MAT.tileWhite.roughness = 0.26 + Math.random()*0.22;
+  MAT.tileWhite.roughness = 0.26 + sceneRandom()*0.22;
   // 하단 타일 색조도 약간 (검정~짙은회색)
-  MAT.tileDark.albedoColor = C3.FromHexString(
-    ["#ffffff", "#f0f0f2", "#e6e8ea"][(Math.random()*3)|0]).toLinearSpace();
+  const lowerWallColor = ["#ffffff", "#f0f0f2", "#e6e8ea"][(sceneRandom()*3)|0];
+  MAT.tileDark.albedoColor = C3.FromHexString(lowerWallColor).toLinearSpace();
+  ENV_RAND.last.upperWallColor = up;
+  ENV_RAND.last.lowerWallColor = lowerWallColor;
 
   // ①-b 스테인리스 오염도 — 새것처럼 반짝이는 주방은 없다
-  const grime = Math.random();
+  const grime = sceneRandom();
   MAT.steel.roughness  = 0.30 + grime * 0.34;
   MAT.steel.metallic   = 0.82 - grime * 0.22;
   if (MAT.steel2) { MAT.steel2.roughness = 0.40 + grime * 0.30; }
+  ENV_RAND.last.materials = {
+    tileWhiteRoughness: +MAT.tileWhite.roughness.toFixed(6),
+    steelRoughness: +MAT.steel.roughness.toFixed(6),
+    steelMetallic: +MAT.steel.metallic.toFixed(6),
+    steel2Roughness: MAT.steel2 ? +MAT.steel2.roughness.toFixed(6) : null,
+  };
 
   // ② 조명 — 밝기 + 색온도(주광색↔전구색) + 노출
-  const warm = Math.random();
-  key.intensity  = 2.5 + Math.random() * 2.0;
-  hemi.intensity = 0.75 + Math.random() * 0.70;
+  const warm = sceneRandom();
+  key.intensity  = 2.5 + sceneRandom() * 2.0;
+  hemi.intensity = 0.75 + sceneRandom() * 0.70;
   const kc = new C3(1, 0.95 + warm * 0.05, 0.86 + warm * 0.14);
   key.diffuse = kc; hemi.diffuse = kc;
-  scene.imageProcessingConfiguration.exposure = 0.76 + Math.random() * 0.36;
+  scene.imageProcessingConfiguration.exposure = 0.76 + sceneRandom() * 0.36;
   ENV_RAND.last.exposure = +scene.imageProcessingConfiguration.exposure.toFixed(2);
+  ENV_RAND.last.lighting = {
+    warmth: +warm.toFixed(6),
+    keyIntensity: +key.intensity.toFixed(6),
+    hemiIntensity: +hemi.intensity.toFixed(6),
+    diffuse: [kc.r, kc.g, kc.b].map(value => +value.toFixed(6)),
+  };
 
   /* ③ 바닥 — 색조 + 젖음.
      러프니스 맵을 쓰면서부터 scalar는 **맵에 곱해지는 배율**이 됐다(맵 G=0.745).
      그래서 0.2를 넣으면 웅덩이가 아니라 바닥 전체가 거울이 된다 — 범위를 바꾼다.
      0.55(흥건함) ~ 1.0(말랐음). 웅덩이 대비는 맵이 유지한다. */
-  MAT.floor.albedoColor = C3.FromHexString(
-    ENV_RAND.floorTint[(Math.random() * ENV_RAND.floorTint.length) | 0]).toLinearSpace();
+  const floorTint = ENV_RAND.floorTint[(sceneRandom() * ENV_RAND.floorTint.length) | 0];
+  MAT.floor.albedoColor = C3.FromHexString(floorTint).toLinearSpace();
   // 러프니스 맵을 걷어냈으므로 다시 절대값이다 (낮을수록 젖어 보인다)
-  MAT.floor.roughness = 0.34 + Math.random() * 0.36;
+  MAT.floor.roughness = 0.34 + sceneRandom() * 0.36;
   ENV_RAND.last.floorWet = +(1 - (MAT.floor.roughness - 0.34) / 0.36).toFixed(2);
+  ENV_RAND.last.floorTint = floorTint;
+  ENV_RAND.last.floorRoughness = +MAT.floor.roughness.toFixed(6);
 
   // ④ 설비 배치 지터 — 겹치면 되돌린다. 로봇 셀·통로는 건드리지 않는다.
   const holders = scene.transformNodes.filter(n => /^envProp_/.test(n.name));
   // 원위치는 **이름 기준**으로 보관한다. 배열 인덱스로 잡으면 setExtraCount 등으로
   // transformNodes 구성이 바뀔 때 다른 프롭의 원위치로 되돌아갈 수 있다.
-  if (!ENV_RAND.base) {
-    ENV_RAND.base = {};
-    holders.forEach(h => { ENV_RAND.base[h.name] = { p: h.position.clone(), r: h.rotation.y }; });
-  }
+  if (!ENV_RAND.base) ENV_RAND.base = {};
+  /* 이름 기준으로 원위치를 지연 등록한다 — 첫 호출 뒤 로드된 프롭(헤드리스 등에서 GLB가
+     늦게 붙는 경우)도 여기서 잡아, 다음 호출에 b0(원위치)가 undefined로 터지지 않게 한다.
+     새로 잡히는 프롭은 아직 지터 전 기본 위치라 그 값이 곧 원위치다. */
+  holders.forEach(h => { if (!ENV_RAND.base[h.name]) ENV_RAND.base[h.name] = { p: h.position.clone(), r: h.rotation.y }; });
   const CELL = { x0:-2.6, z0:-1.3, x1:0.9, z1:2.5 };      // 로봇 작업권 + 접근 통로 (침범 금지)
   const aabb = h => { let mn=null, mx=null;
     scene.meshes.forEach(m => { if (!m.getTotalVertices || !m.getTotalVertices()) return;
@@ -8164,12 +8283,16 @@ function randomizeEnvironment() {
      튀어나온 비대칭 형상) 조금만 흔들어도 서로 겹친다 — 60회 중 10회 충돌의 원인이었다. */
   const FIXED_LINE = new Set(["envProp_0", "envProp_1"]);
   let moved = 0;
-  holders.forEach(h => {
+  const J = ENV_RAND.propJitter;
+  ENV_RAND.last.propJitter = J;
+  if (J === 0) {
+    holders.forEach(restore);
+  } else holders.forEach(h => {
     if (FIXED_LINE.has(h.name)) return;
-    const b0 = ENV_RAND.base[h.name], J = ENV_RAND.propJitter;
-    h.position.x = b0.p.x + (Math.random()-0.5)*2*J;
-    h.position.z = b0.p.z + (Math.random()-0.5)*2*J;
-    h.rotation.y = b0.r + (Math.random()-0.5)*0.28;
+    const b0 = ENV_RAND.base[h.name];
+    h.position.x = b0.p.x + (sceneRandom()-0.5)*2*J;
+    h.position.z = b0.p.z + (sceneRandom()-0.5)*2*J;
+    h.rotation.y = b0.r + (sceneRandom()-0.5)*0.28;
     h.computeWorldMatrix(true);
     const me = aabb(h);
     let bad = hits(me, CELL);
@@ -8202,17 +8325,17 @@ function randomizeEnvironment() {
    ※ randomizeScene이 EXTRAS를 무작위 위치로 덮어쓰므로 반드시 그 뒤에 호출해야 한다. */
 function placeOccluder() {
   ENV_RAND.last.occluder = null;
-  if (!ENV_RAND.enabled || !EXTRAS.length || Math.random() >= 0.4) return;
+  if (!ENV_RAND.enabled || !EXTRAS.length || sceneRandom() >= 0.4) return;
   const ids = Object.keys(SURV);
-  const cam = SURV[ids[(Math.random()*ids.length)|0]].cam;
+  const cam = SURV[ids[(sceneRandom()*ids.length)|0]].cam;
   const rb = LAYOUT.robot.base;
-  const t = 0.30 + Math.random() * 0.35;                  // 카메라~로봇 사이 30~65% 지점
-  const ox = cam.position.x + (rb.x - cam.position.x) * t + (Math.random()-0.5)*0.5;
-  const oz = cam.position.z + (rb.z - cam.position.z) * t + (Math.random()-0.5)*0.5;
-  const P = EXTRAS[(Math.random()*EXTRAS.length)|0];
+  const t = 0.30 + sceneRandom() * 0.35;                  // 카메라~로봇 사이 30~65% 지점
+  const ox = cam.position.x + (rb.x - cam.position.x) * t + (sceneRandom()-0.5)*0.5;
+  const oz = cam.position.z + (rb.z - cam.position.z) * t + (sceneRandom()-0.5)*0.5;
+  const P = EXTRAS[(sceneRandom()*EXTRAS.length)|0];
   P.root.position.set(ox, 0, oz);
-  P.root.rotation.y = Math.random() * Math.PI * 2;
-  P.mode = Math.random() < 0.3 ? "crouch" : "idle";
+  P.root.rotation.y = sceneRandom() * Math.PI * 2;
+  P.mode = sceneRandom() < 0.3 ? "crouch" : "idle";
   ENV_RAND.last.occluder = [+ox.toFixed(2), +oz.toFixed(2)];
 }
 
@@ -8221,28 +8344,28 @@ function randomizeScene() {
   const [px, pz] = randFloorPos();
   person.mode = "idle"; person.path = []; person.freeze = true;
   person.node.position.set(px, 0, pz);
-  person.node.rotation.y = Math.random() * Math.PI * 2;
-  person.crouch = Math.random() < 0.25 ? 1 : 0;
+  person.node.rotation.y = sceneRandom() * Math.PI * 2;
+  person.crouch = sceneRandom() < 0.25 ? 1 : 0;
   // P7: 본체 포즈 랜덤화 — 옛 절차 리그(person.rig)는 폐기된 마네킹이라 무효였다.
   // GLB 액션 7종 중 하나를 임의 프레임에서 적용한다 (idle 편중 방지 가중치).
   if (PERSON.skinned) {
-    const pool = ["idle", "walk", "agree", "sneak_pose", "headShake", "sad_pose"];
-    const pick = pool[(Math.random() * pool.length) | 0];
-    const g = scene.animationGroups.find(a => a.name === pick);
+    const pool = ["idle", "walk", "pickup", "kneel", "crouch", "interact", "idleTalk"]
+      .filter(key => PERSON.ACT[key]);
+    const pick = pool[(sceneRandom() * pool.length) | 0];
+    const g = PERSON.ACT[pick];
     if (g) {
       scene.animationGroups.forEach(a => a.stop());
       g.start(true, 1.0);
-      g.goToFrame(g.from + Math.random() * Math.max(1, g.to - g.from));
     }
   }
-  JOINTS.forEach(j => { j.value = j.min + Math.random()*(j.max - j.min); applyJoint(j); });
+  JOINTS.forEach(j => { j.value = j.min + sceneRandom()*(j.max - j.min); applyJoint(j); });
   refreshChain(); syncJointUI();
   /* 화재 발생 확률 — **0.3 → 0.5로 올렸다.** person·robot·kettle·equipment는 거의 모든
      프레임에 나오는데 fire·smoke는 화재 샘플에서만 나온다. 0.3이면 fire 표본이 나머지의
      1/3도 안 돼 클래스 불균형이 커진다(실측: 2샘플에서 fire 3박스 vs equipment 296박스).
      화재 감지가 이 프로젝트 목적의 절반이므로 절반은 화재 장면이어야 한다.
      sim.html?fire=0.7 처럼 회차별로 조절할 수 있게 열어 둔다. */
-  const wantFire = Math.random() < FIRE_P;
+  const wantFire = sceneRandom() < FIRE_P;
   setFire(wantFire);
   /* 화재 표본은 **진행 단계를 여기서 뽑는다.** 안 하면 직전 샘플 상태가 그대로 이어져
      초기 발화(연기 25개)와 최성기(연기 3548개) 두 극단만 나오고, 정작 필요한
@@ -8252,33 +8375,38 @@ function randomizeScene() {
   /* 김 세기 — 실사 김은 조리 종류·시점에 따라 0~대량까지 변한다(C-2, 참조프레임 확인).
      15%는 투입·배출급 대량 방출 표본 — "김이 연기 규모에 접근하는" 어려운 음성 표본이
      난제를 데이터에 존재하게 만든다. temp가 170 고정이므로 배율 k가 유일한 손잡이다. */
-  STEAM.k = (0.2 + Math.random() * 1.8) * (Math.random() < 0.15 ? 3 : 1);
+  STEAM.k = (0.2 + sceneRandom() * 1.8) * (sceneRandom() < 0.15 ? 3 : 1);
   steamSettle();
-  // 센서 특성 랜덤화 — 카메라 개체차·설치환경 차이를 데이터에 반영
-  SENSOR.grain = 2 + Math.random() * 22;
-  SENSOR.distortion = Math.random() * 0.30;
-  SENSOR.chroma = Math.random() * 1.3;
-  SENSOR.blur = Math.random() * 0.9;
-  SENSOR.vignette = 0.1 + Math.random() * 0.6;
-  SENSOR.expJit = Math.random() * 0.45;
-  SENSOR.lowres = Math.random() < 0.5 ? 1 : (Math.random() < 0.5 ? 0 : 2);
+  /* 센서 특성 랜덤화 — 카메라 개체차·설치환경 차이를 데이터에 반영.
+     ⚠️ 2026-08-25 범위 완화: 종전 범위(grain 2~24·blur 0~0.9·lowres 88%)는 **night 프리셋도
+     넘어서** 프레임 대부분이 학습 불가능할 만큼 뭉개졌다(실측 grain 중앙 10.3·p90 23·저해상 88%,
+     선명 프레임 12%뿐). 학습 데이터는 쉬움→어려움을 고루 덮어야 검출기가 앵커를 잡는다.
+     현실적 CCTV(cctv 프리셋 근처)를 중심으로, 선명 꼬리(lowres 0 ≈ 45%)를 확보한다.
+     최악 케이스는 드물게 남겨 다양성은 유지. */
+  SENSOR.grain = sceneRandom() * 12;
+  SENSOR.distortion = sceneRandom() * 0.18;
+  SENSOR.chroma = sceneRandom() * 0.8;
+  SENSOR.blur = sceneRandom() * 0.5;
+  SENSOR.vignette = 0.1 + sceneRandom() * 0.5;
+  SENSOR.expJit = sceneRandom() * 0.3;
+  SENSOR.lowres = (() => { const r = sceneRandom(); return r < 0.45 ? 0 : (r < 0.85 ? 1 : 2); })();
   SENSOR.on = true; sensorApply(); if (window.sensorUIsync) sensorUIsync();
   // 인원 배치·자세 랜덤화 — 각 개체를 금지구역 밖으로 재배치, 일부는 쭈그린 자세
   EXTRAS.forEach(P => {
     const [ex, ez] = randFloorPos();
     P.root.position.set(ex, 0, ez);
-    P.root.rotation.y = Math.random() * Math.PI * 2;
-    P.mode = Math.random() < 0.25 ? "crouch" : "walk";
-    P.pi = (Math.random() * P.path.length) | 0;
+    P.root.rotation.y = sceneRandom() * Math.PI * 2;
+    P.mode = sceneRandom() < 0.25 ? "crouch" : "walk";
+    P.pi = (sceneRandom() * P.path.length) | 0;
   });
   for (const id in SURV) {   // 카메라 지터 — 도메인 랜덤화
     const d = SURV[id].def;
-    SURV[id].cam.position.set(d.pos.x + (Math.random()-0.5)*0.24,
-                              d.pos.y + (Math.random()-0.5)*0.16,
-                              d.pos.z + (Math.random()-0.5)*0.24);
-    SURV[id].cam.setTarget(new V3(d.tgt.x + (Math.random()-0.5)*0.2,
-                                  d.tgt.y + (Math.random()-0.5)*0.1,
-                                  d.tgt.z + (Math.random()-0.5)*0.2));
+    SURV[id].cam.position.set(d.pos.x + (sceneRandom()-0.5)*0.24,
+                              d.pos.y + (sceneRandom()-0.5)*0.16,
+                              d.pos.z + (sceneRandom()-0.5)*0.24);
+    SURV[id].cam.setTarget(new V3(d.tgt.x + (sceneRandom()-0.5)*0.2,
+                                  d.tgt.y + (sceneRandom()-0.5)*0.1,
+                                  d.tgt.z + (sceneRandom()-0.5)*0.2));
   }
   placeOccluder();     // EXTRAS 재배치 뒤에 호출해야 덮어쓰이지 않는다
 }
@@ -8362,7 +8490,9 @@ async function generateDataset(n) {
       for (let f = 0; f < 4; f++) scene.render();        // 파티클·포즈 안정화
       for (const id of cams) {
         if (DATAGEN.abort) break;
-        const gt = await groundTruth(id);
+        /* imagesOnly면 깊이맵 2장을 건너뛴다 — gt/를 안 쓰는데 depth 패스가 캡처의
+           절반(약 7s→2s)을 먹기 때문. 학습(RGB+라벨)에는 영향 없다. */
+        const gt = await groundTruth(id, { noDepth: DATAGEN.imagesOnly });
         const base = id + "_" + String(i).padStart(4, "0");
         await write("images", base + ".png", gt.rgb);
         DATAGEN.saved++;                                   // 상태바 데이터셋 카운트
@@ -11630,14 +11760,20 @@ function updateStatusBar() {
 }
 
 scene.registerBeforeRender(() => {
-  const now = performance.now();
-  const dt = Math.min(now - last, 60);
-  last = now;
+  if (window.__datasetCaptureFrozen === true) return;
+  const preparingDataset = Number.isFinite(window.__datasetPreparationTimeMs);
+  const now = preparingDataset
+    ? (window.__datasetPreparationTimeMs += 1000 / 60)
+    : performance.now();
+  const dt = preparingDataset ? 1000 / 60 : Math.min(now - last, 60);
+  if (!preparingDataset) last = now;
   applyKeys(dt);
   ceilAutoTick();            // 자유 시점 천장 자동 숨김 — 카메라 포즈로 매 프레임 판정
   stepUpdate(dt);
   updateCooking(dt);
-  fireFogTick(dt);           // 화재 연무 — 발화 후 경과에 따라 방 전체 농도를 올린다
+  // 데이터셋 준비 렌더는 입자를 정상 상태로 채우기 위한 것이며 화재 시계를 진행시키지 않는다.
+  // fireSeekTo가 선택한 시점은 실제 캡처 조건으로 그대로 보존한다.
+  if (!preparingDataset) fireFogTick(dt);
   smokeConfineTick();        // 연기가 후드·천장을 뚫고 나가지 않게 가둔다
   steamVentTick();           // 김은 후드에서 빨려 사라진다(C-2) — 옆으로 밀면 연기와 같아져 금지
   personUpdate(dt);
@@ -12445,6 +12581,7 @@ async function spawnExtraPerson(i) {
     // ReferenceError: uni is not defined 로 추가 인원 스폰이 통째로 실패했다.
     // → 데이터셋 생성이 1명이라도 스폰되는 순간 크래시. 참조 제거.
     gear, shell: uni_shell, bones: bmap, height: H, uniform: null, wearCap, wearMask,
+    animationGroups: [...keep], skeletons: r.skeletons.slice(),
     ACT, role: "far", stations: null, dwellT: 0, acting: null, lastD: undefined, stallT: 0,
     wfStep: null,                 // 직무 사이클 진행도 (WF 모드) — 키로 되짚으면 왕복이 죽는다
     /* 인원마다 독립 시드 — 전역 시드에서 파생시키되 간격을 크게 벌린다.
@@ -13321,6 +13458,16 @@ async function setExtraCount(n) {
     const P = EXTRAS.pop();
     if (P.gear) [P.gear.cap, P.gear.band, P.gear.msk, P.gear.ap].forEach(m => m.dispose());
     if (P.shell) Object.values(P.shell).forEach(m => m.dispose());
+    // GLB 루트 메시만 지우면 Scene에 AnimationGroup과 Skeleton이 계속 남는다.
+    // 장면을 반복 생성할수록 모든 과거 애니메이션까지 순회하게 되므로 가져온 자원을 함께 정리한다.
+    for (const group of new Set(P.animationGroups || Object.values(P.ACT || {}))) {
+      group.stop();
+      group.dispose();
+    }
+    for (const skeleton of new Set(P.skeletons || (P.skinned?.skeleton ? [P.skinned.skeleton] : []))) {
+      skeleton.dispose();
+    }
+    // P.root(extraRoot)가 holder의 부모다. 최상위부터 지워야 TransformNode도 남지 않는다.
     P.root.dispose(false, true);
   }
   // spawn이 null이면(캐릭터 제외 상태) 반드시 탈출한다 — 안 그러면 무한루프로 탭이 굳는다(실측)
