@@ -28,6 +28,12 @@ def test_safety_governor_and_maneuver_arbitration_are_wired():
     assert "SafetyMotion.chooseManeuver" in text
     assert "targetFactor" in text
     assert "appliedFactor" in text
+    assert "sceneClearance >= SCALE.au(SAFE.C)" in text
+    assert "SCALE.m(PERSON_R)" in text
+    assert 'const sequenceFactor = s.k === "wait" ? 1 : SAFE.appliedFactor' in text
+    assert 'const plannable = s && (s.k === "ik" || s.k === "ikOff" || s.k === "home")' in text
+    assert "AVOID.plannedMotion = plannable" in text
+    assert "AVOID.pathFactor" in text
 
 
 def test_contact_monitor_unifies_main_and_extra_people_with_swept_links():
@@ -53,4 +59,5 @@ def test_status_bar_shows_selected_mode_and_applied_speed():
     assert 'SAFE_LIFT:"안전 자세"' in text
     assert "if (PHYS.estop)" in text
     assert '"비상정지 · 속도 0%"' in text
-    assert 'const activeMode = SAFE.stopped ? "STOP"' in text
+    assert 'const activeMode = AVOID.mode !== "PROCEED" ? AVOID.mode' in text
+    assert ': (SAFE.stopped ? "STOP"' in text

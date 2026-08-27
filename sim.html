@@ -10469,7 +10469,7 @@ function startStep(i) {
 const AVOID = {
   on:true, mode:"PROCEED", eff:"PROCEED", rate:1, reason:"",
   targetFactor:1, appliedFactor:1, since:performance.now(), minHoldMs:300,
-  startT:0.06, samples:12, lift:null,
+  startT:0.06, samples:12, lift:null, plannedMotion:false, pathFactor:1,
 };
 
 function safetyPoint(v, yOffset) {
@@ -10513,7 +10513,7 @@ function plannedMinimumBaseDistance(windowSec) {
   let closest = Infinity;
   for (const P of plannedPeopleOccupancy(times)) for (const p of P.points) {
     closest = Math.min(closest,
-      SCALE.m(Math.hypot(p.x - LAYOUT.robot.base.x, p.z - LAYOUT.robot.base.z)) - PERSON_R);
+      SCALE.m(Math.hypot(p.x - LAYOUT.robot.base.x, p.z - LAYOUT.robot.base.z)) - SCALE.m(PERSON_R));
   }
   return closest;
 }
@@ -10563,16 +10563,20 @@ function candidateArmSamples(target, count, checkEnvironment) {
 
 function scoreArmCandidate(target, occupancy, checkEnvironment) {
   const candidate = candidateArmSamples(target, AVOID.samples, checkEnvironment);
-  const clearance = candidate.environmentSafe
+  const sceneClearance = candidate.environmentSafe
     ? SafetyMotion.armTrajectoryClearance(candidate.samples, occupancy, ARM_R)
     : Number.NEGATIVE_INFINITY;
-  return { safe:clearance >= SAFE.C, clearance };
+  const clearance = SCALE.m(sceneClearance);
+  return { safe:sceneClearance >= SCALE.au(SAFE.C), clearance };
 }
 
 function avoidDecide(dtMs) {
   const s = SEQ[state.seqIdx], now = performance.now();
+  const plannable = s && (s.k === "ik" || s.k === "ikOff" || s.k === "home");
+  AVOID.plannedMotion = plannable;
+  AVOID.pathFactor = 1;
   AVOID.rate = 1; AVOID.reason = "";
-  if (!AVOID.on || !state.auto || !s || !s.cross || SAFE.blind) {
+  if (!AVOID.on || !state.auto || !s || !plannable || SAFE.blind) {
     AVOID.mode = "PROCEED";
     return;
   }
@@ -10584,6 +10588,10 @@ function avoidDecide(dtMs) {
   for (let i = 0; i < AVOID.samples; i++) times.push(windowSec * i / (AVOID.samples - 1));
   const occupancy = plannedPeopleOccupancy(times);
   const proceed = scoreArmCandidate(state.to, occupancy, false);
+  AVOID.pathFactor = proceed.safe
+    ? (Number.isFinite(proceed.clearance)
+      ? clamp((proceed.clearance - SAFE.C) / 0.50, 0.20, 1) : 1)
+    : 0;
   const danger = !proceed.safe;
   let retract = { safe:false, clearance:Number.NEGATIVE_INFINITY };
   let safeLift = { safe:false, clearance:Number.NEGATIVE_INFINITY };
@@ -10739,7 +10747,8 @@ function stepUpdate(dt) {
   avoidDecide(dt);
   AVOID.targetFactor = AVOID.mode === "RETRACT" ? 0.45
                      : AVOID.mode === "SAFE_LIFT" ? 0.35
-                     : AVOID.mode === "PROCEED" ? SAFE.targetFactor : 0;
+                     : AVOID.mode === "PROCEED"
+                       ? (AVOID.plannedMotion ? AVOID.pathFactor : SAFE.targetFactor) : 0;
   AVOID.appliedFactor = SafetyMotion.approachFactor(
     AVOID.appliedFactor, AVOID.targetFactor, dt / 1000, 2.5, 0.8,
     AVOID.targetFactor === 0,
@@ -10756,8 +10765,9 @@ function stepUpdate(dt) {
     return;
   }
 
-  // 진행·후퇴 모두 같은 가속도 제한 속도를 쓰고, HOLD/STOP은 즉시 0이다.
-  state.seqT = Math.max(0, state.seqT + dt * SAFE.appliedFactor * AVOID.rate);
+  // 비동작 대기는 안전 정지로 얼리지 않는다. 관절 이동에만 속도 제한을 적용한다.
+  const sequenceFactor = s.k === "wait" ? 1 : SAFE.appliedFactor;
+  state.seqT = Math.max(0, state.seqT + dt * sequenceFactor * AVOID.rate);
   const t = clamp(state.seqT / state.dur, 0, 1);
   state.stirring = false;
   if (s.k === "ik" || s.k === "ikOff" || s.k === "home") {
@@ -12340,8 +12350,8 @@ function setCell(id, dot, cls, text) {
 const safetyModeLabels = { PROCEED:"정상 진행", SLOW:"감속", HOLD:"출발 보류",
   RETRACT:"후퇴", SAFE_LIFT:"안전 자세", STOP:"비상정지" };
 function updateStatusBar() {
-  const activeMode = SAFE.stopped ? "STOP"
-                   : (AVOID.mode !== "PROCEED" ? AVOID.mode
+  const activeMode = AVOID.mode !== "PROCEED" ? AVOID.mode
+                   : (SAFE.stopped ? "STOP"
                    : (SAFE.appliedFactor < 0.99 ? "SLOW" : "PROCEED"));
   const speedText = " · 속도 " + Math.round(SAFE.appliedFactor * 100) + "%";
   if (PHYS.estop) {

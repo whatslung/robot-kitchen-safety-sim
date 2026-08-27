@@ -70,6 +70,45 @@ test('sweptSegmentCapsuleContact handles an oblique 3D arm link', () => {
   assert.ok(result.clearance <= 0);
 });
 
+test('sweptSegmentCapsuleContact ignores horizontal overlap at a different height', () => {
+  const segment = {
+    a: { x: -0.5, y: 3, z: 0 },
+    b: { x: 0.5, y: 3, z: 0 },
+  };
+  const result = S.sweptSegmentCapsuleContact({
+    previous: segment,
+    current: segment,
+    linkRadius: 0.05,
+    capsule: {
+      center: { x: 0, y: 1, z: 0 },
+      radius: 0.2,
+      halfHeight: 0.8,
+    },
+  });
+
+  assert.equal(result.hit, false);
+  assert.ok(result.clearance > 0);
+});
+
+test('sweptSegmentCapsuleContact is invariant to horizontal approach angle', () => {
+  const capsule = {
+    center: { x: 0, y: 1, z: 0 }, radius: 0.2, halfHeight: 0.8,
+  };
+  const xSweep = S.sweptSegmentCapsuleContact({
+    previous: { a:{x:-1,y:1,z:0}, b:{x:-0.5,y:1,z:0} },
+    current: { a:{x:0.5,y:1,z:0}, b:{x:1,y:1,z:0} },
+    linkRadius: 0.05, capsule, maxStep: 0.04,
+  });
+  const zSweep = S.sweptSegmentCapsuleContact({
+    previous: { a:{x:0,y:1,z:-1}, b:{x:0,y:1,z:-0.5} },
+    current: { a:{x:0,y:1,z:0.5}, b:{x:0,y:1,z:1} },
+    linkRadius: 0.05, capsule, maxStep: 0.04,
+  });
+
+  assert.equal(xSweep.hit, zSweep.hit);
+  assert.ok(Math.abs(xSweep.clearance - zSweep.clearance) < 1e-12);
+});
+
 test('sweptSegmentCapsuleContact fails closed for malformed geometry', () => {
   const result = S.sweptSegmentCapsuleContact({
     previous: null,
