@@ -66,7 +66,31 @@
   3. 또는 안전 로직을 ~1m 오차·높은 FP 전제로 거칠게.
 - **역할 재확인:** 실배포 사람 검출=실사(chef1 0.97). sim 오블리크 검출=커버리지. 정밀 위치추정=나디르. 예측/안전=GT 트랙(Transformer ADE 0.12m).
 
+## 4.5 안전 검증 — ~1m 위치오차에서 예측 안전이 버티나 (핵심 실무 결과)
+
+위치오차가 학술적 얘기가 아니라 **실제로 예측 안전을 깨는지** 검증. 실 궤적 데이터가 없어(비디오 없음)
+**sim GT 궤적**(`dataset/trajectories`, test)에 오블리크 위치노이즈(축당 σ0.85m → 2D median ~1m,
+측정치와 일치)를 주입 → CV 예측 → 로봇 정지반경(R=3.1m, 라이브 1.6s) 진입 경보. GT+(실제 진입)는
+truth(무노이즈), 경보만 노이즈+마진. `scratch_eval_safety_noise.py`.
+
+| 조건 | recall(놓치면 충돌) | precision(1-헛정지) |
+|---|---|---|
+| 깨끗(노이즈 0) | 0.54 | **0.88** |
+| σ0.85m · 필터off · 마진0 | 0.40 | **0.14** |
+| σ0.85m · 필터ON · 마진1.0 | 0.78 | 0.16 |
+| σ0.85m · 필터ON · 마진1.5 | **0.92** | **0.14** |
+| σ0.85m · 필터ON · 마진2.0 | 0.98 | 0.12 |
+
+- **~1m 노이즈가 precision을 붕괴**(0.88→0.12~0.21). recall은 마진으로 살릴 수 있으나(마진1.5→recall0.92),
+  **그때 precision 0.14 = 로봇 정지 경보의 ~86%가 헛정지** → 운용 불가.
+- 원인: 위치오차(~1m)가 반경(3.1m)의 큰 비율 → "반경 안인가" 판정이 극도로 흔들림. 시간축 필터는 부분 완화만.
+- **결론: 오블리크-온리 ~1m 위치추정으로는 정밀 예측 안전이 성립 안 함.** 실무 선택지:
+  ① 위치오차 축소(나디르/발-접점) → 정밀 예측안전. ② **반응형 안전**(지금 반경 안이면 정지, 선제 포기)
+  ③ 로봇 저속·물리 가드 확대로 ~1m 허용.
+- (CV 예측 기준. 학습형은 recall↑ 여지 있으나 **노이즈→precision 붕괴는 구조적**이라 결론 동일.
+  한계: sim 궤적이라 로직 검증까지 — sim 모션이 실 급식실과 같은지는 별도(실 영상 없어 미검증).)
+
 ## 5. 스크립트 (gitignore 자산: dataset·weights)
 
-`tools/headless_gen/capture_fusion_still.cjs`(+p3d) · `scratch_eval_{fusion_still,footcalib,pose_fusion,triangulate}.py`
-· `train/pose_foot.py`(발목 추출) · `trajectory/{homography,multicam}.py`(순수 함수 재사용).
+`tools/headless_gen/capture_fusion_still.cjs`(+p3d) · `scratch_eval_{fusion_still,footcalib,pose_fusion,triangulate,safety_noise}.py`
+· `train/{pose_foot,eval_traj_safety}.py` · `trajectory/{homography,multicam,risk,sim_traj,evaluator}.py`(순수 함수 재사용).
