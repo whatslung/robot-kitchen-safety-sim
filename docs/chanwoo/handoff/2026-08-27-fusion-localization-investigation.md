@@ -90,6 +90,33 @@ truth(무노이즈), 경보만 노이즈+마진. `scratch_eval_safety_noise.py`.
 - (CV 예측 기준. 학습형은 recall↑ 여지 있으나 **노이즈→precision 붕괴는 구조적**이라 결론 동일.
   한계: sim 궤적이라 로직 검증까지 — sim 모션이 실 급식실과 같은지는 별도(실 영상 없어 미검증).)
 
+## 4.6 위치추정 보강 실측 — 발점(A)이 레버 (2026-08-27)
+
+"발-접점 픽셀 정확도가 병목"이면, 더 나은 발점을 쓰면 얼마나 개선되나 실측. GT 발 본(LeftFoot/
+RightFoot 월드좌표 투영, **검출 노이즈 0 = 상한**)으로 오차 분해. `scratch_eval_footbone.py`.
+
+| 발끝점 | 바닥오차 median | p90 |
+|---|---|---|
+| box 하단중앙(검출기 근사) | 1.35m | 4.85 |
+| 발목 pose(COCO ankle) | 0.99m | — |
+| **GT 발 본(실제 발, 노이즈0=상한)** | **0.37m** | 2.17 |
+| 이상 접점(root 바닥) | 0.09m | 2.07 |
+
+- **발점을 제대로 잡으면 median 1.35→0.37m (~4배).** 병목의 큰 부분이 "박스중앙·발목관절 ≠ 실제 발".
+- 단 p90 2.17m **꼬리(그레인징 각도)는 남음.** 실제 발-keypoint 검출기는 노이즈가 붙어 0.37~0.99m 사이.
+
+**안전으로의 영향** (`scratch_eval_safety_noise.py`, σ=위치오차/축, 필터 ON, R=3.1m, 1.6s):
+
+| 위치오차 수준 | 운영점 | recall | precision |
+|---|---|---|---|
+| 깨끗(노이즈0) | 마진0 | 0.54 | 0.88 |
+| box/발목 σ0.85 | 마진1.5 | 0.92 | 0.14 |
+| **발점 σ0.31** | **마진1.0** | **0.97** | **0.20** |
+
+- 발점 개선 → 더 적은 마진으로 recall↑ + precision 0.14→0.20. **실질 개선이나 고recall 시 precision ~0.20**(헛정지 80%).
+- precision 한계는 위치오차뿐 아니라 **예측기(여기 CV, 약함; 학습형 Transformer 깨끗 recall 0.73)+선제안전 본질 트레이드오프**도 원인.
+- **결론:** A(발점) = 첫 레버(싸고 4배). **A + 학습형 예측기 + 시간축**이면 오블리크 안전이 실용 근처. 정밀 이상은 여전히 나디르(#29 0.92~0.95)/깊이.
+
 ## 5. 스크립트 (gitignore 자산: dataset·weights)
 
 `tools/headless_gen/capture_fusion_still.cjs`(+p3d) · `scratch_eval_{fusion_still,footcalib,pose_fusion,triangulate,safety_noise}.py`
