@@ -117,6 +117,23 @@ RightFoot 월드좌표 투영, **검출 노이즈 0 = 상한**)으로 오차 분
 - precision 한계는 위치오차뿐 아니라 **예측기(여기 CV, 약함; 학습형 Transformer 깨끗 recall 0.73)+선제안전 본질 트레이드오프**도 원인.
 - **결론:** A(발점) = 첫 레버(싸고 4배). **A + 학습형 예측기 + 시간축**이면 오블리크 안전이 실용 근처. 정밀 이상은 여전히 나디르(#29 0.92~0.95)/깊이.
 
+## 4.7 예측기 3-way (CV vs Transformer vs CVAE) — 병목은 예측기가 아님 (2026-08-27)
+
+같은 안전 실험을 **학습형 예측기**로 재측정(`scratch_eval_safety_{tf,cvae}.py`, 전모드 union).
+가중치는 HF 업로드: [human-move-transformer](https://huggingface.co/chanubc/human-move-transformer),
+[human-move-cvae](https://huggingface.co/chanubc/human-move-cvae), [human-move-lstm](https://huggingface.co/chanubc/human-move-lstm).
+
+| 예측기 | 깨끗(σ0) 마진0 recall/prec | σ0.31 마진1.0 | ADE@1.6s |
+|---|---|---|---|
+| CV(등속) | 0.54 / 0.88 | 0.97 / 0.20 | 물리 |
+| **Transformer** | **0.73 / 0.63** | 0.99 / 0.19 | **0.12m** |
+| CVAE | 0.69 / **0.69** | 0.99 / 0.19 | ~ |
+
+- **CVAE ≠ Trajectron++**: 코드 명시 "Trajectron++**식**(다중모드+불확실성)·**≠ Trajectron++ 실행**". 씬그래프·동역학적분 없는 자체 단일-에이전트 이산잠재 CVAE.
+- **최우수 = Transformer**(recall 0.73·ADE 0.12m 최고). CVAE 근소 2위(균형 0.69/0.69 + σ 불확실성 출력→적응 마진). CV는 recall 낮아 안전 부적합.
+- **핵심: 노이즈 하에선 셋 다 precision ~0.2로 수렴** → 예측기 차이는 "깨끗한 위치"에서만. **병목은 예측기가 아니라 위치추정.**
+- **precision 해석:** 낮은 precision = "헛정지"(처리량 손해)이지 "사고" 아님(안전은 recall 우선, 0.9+). 비관 요인(진입률 6.4%·프레임별 독립노이즈·전모드 union·단일프레임 경보) — 최빈모드/N프레임 연속확인/깨끗한 위치추정으로 회복 가능.
+
 ## 5. 스크립트 (gitignore 자산: dataset·weights)
 
 `tools/headless_gen/capture_fusion_still.cjs`(+p3d) · `scratch_eval_{fusion_still,footcalib,pose_fusion,triangulate,safety_noise}.py`
