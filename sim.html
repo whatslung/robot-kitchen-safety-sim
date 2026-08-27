@@ -2706,6 +2706,29 @@ if (ISLAND) (function () {
       pos:new V3(B.x, H45, B.z - H45), tgt:new V3(B.x, 0, B.z),
       fov:LENS_FOV, noCeil:true });
   }
+  /* ── 나디르 안전존 4대 (2×2 직교) — 데모 표시 + 융합/예측 파이프라인 입력 ───────
+     R&D(docs/chanwoo/nadir-zone-fusion.md): 단일 와이드 나디르(cvTop)는 사람이 프레임의
+     0.6%(~59px)로 작아 검출이 약하다(sim recall 0.66). 로봇 베이스 주변을 2×2로 나눠
+     각 카메라가 좁은 존(5.8×4.6m)만 담으면 사람이 1.45%(~107px)로 커져 검출·위치정밀도가
+     크게 오른다(실측: zone recall 0.86 vs wide 0.81, 4캠 융합 0.92, mAP50-95 0.53 vs 0.30).
+     겹침(x 1.8m·z 1.2m)으로 존 경계를 넘는 사람도 옆 존이 잡아 추적이 끊기지 않는다(융합의 토대).
+     직교 투영이라 이미지↔바닥이 선형 — 캘리브레이션 아핀 1회로 5cm 정밀 월드 매핑(5-9).
+     중심 = 로봇 베이스(안전링 3개의 중심). noCeil로 후드/천장 설비를 뺀다.
+     ※ 데모는 4대(2×2)로 깔끔히 보여준다. 프로덕션 최악-커버리지는 6대(2열×3행) 권장 — 사람이
+        한쪽으로 몰리면 4대는 감속링의 26%를 놓친다(문서 5-13·5-14). 데모용 축약 구성이다. */
+  {
+    const B = LAYOUT.robot.base;
+    const NZ = [["nzNW", -2.0, -1.7], ["nzNE", 2.0, -1.7],   // N = −Z(조리라인 쪽), S = +Z(통로 쪽)
+                ["nzSW", -2.0,  1.7], ["nzSE", 2.0,  1.7]];
+    for (const [id, dx, dz] of NZ) {
+      RING_IDS.push(id);
+      RING_NAME[id] = "나디르 안전존 " + id.slice(2);
+      CAM_SHORT_ISLAND[id] = "나디르" + id.slice(2);
+      CAM_DEFS.push({ id, label:"나디르 안전존 " + id.slice(2) + " (탑뷰)",
+        pos:new V3(B.x + dx, 6.0, B.z + dz), tgt:new V3(B.x + dx, 0, B.z + dz + 0.001),
+        fov:LENS_FOV, ortho:{ w:5.8, h:4.6 }, noCeil:true });
+    }
+  }
   /* ── 해치 정면 카메라 — **솥 개구부를 옆에서 정면으로 본다** ────────────────────
      위 8대는 전부 36~44°로 내려다본다. 그래서 **솥 안에서 무엇이 올라오는지**(불꽃·수증기가
      림을 넘는 순간)와 **사람 손이 개구부로 들어가는 장면**을 옆에서 볼 수가 없다.
@@ -6414,6 +6437,25 @@ function customPredictTick(srcPos, now, dtMs) {
    dense PRED.hist(~60Hz)를 모델 학습과 같은 8점×0.4s로 리샘플해 POST하고, K모드를 받아
    최빈 모드는 {path,sigma}(계약), 전체 모드는 밀도 구름용으로 돌려준다. 좌표는 씬 AU(모델 학습 단위와 동일).
    서버가 죽으면 예외 → customPredictTick이 칼만으로 폴백. */
+/* ══ 백엔드 가용성 — 로드 시 1회 판정(무한 폴링 금지) ══════════════════════
+   실행 모드는 페이지를 여는 순간 결정된다:
+     · detect_server(python backend/detect_server.py) = sim + API(/predict·/detect·/nadir) 동시 서빙 → 백엔드 있음
+     · plain http.server = 정적 파일만 → 백엔드 없음 (나중에 안 생김)
+   그래서 GET /health로 **로드 시 딱 한 번** 확인하고 그 판정을 세션 내내 쓴다.
+   없으면 조용히 칼만 폴백하고 **폴링을 멈춘다**(매 틱 POST/health 도배 방지).
+   백엔드를 나중에 켰다면 페이지 새로고침 — 또는 콘솔에서 window.__backendRecheck(). */
+const BACKEND = { ok: null, probing: false };
+function backendProbe(force) {
+  if (BACKEND.probing) return;
+  if (BACKEND.ok !== null && !force) return;         // 이미 판정됨 — 재확인 안 함(모드 고정)
+  BACKEND.probing = true;
+  fetch("/health", { method: "GET" })
+    .then(r => { BACKEND.ok = r.ok; console.log("[backend] " + (r.ok ? "가동 → /predict·/nadir 배선 켬" : "부재 → 칼만 폴백(폴링 중단)")); })
+    .catch(() => { BACKEND.ok = false; console.log("[backend] 부재 → 칼만 폴백(폴링 중단). 백엔드 켰으면 새로고침 또는 __backendRecheck()"); })
+    .finally(() => { BACKEND.probing = false; });
+}
+backendProbe();                                       // 로드 시 1회
+window.__backendRecheck = () => { BACKEND.ok = null; backendProbe(true); };   // 백엔드 나중에 켠 경우 수동 재확인
 function trajResample(hist, now, n = 8, dtMs = 400) {
   const out = [];
   for (let i = 0; i < n; i++) {
@@ -6429,6 +6471,7 @@ function trajResample(hist, now, n = 8, dtMs = 400) {
   return out;
 }
 async function trajPredict(obs) {
+  if (BACKEND.ok !== true) throw new Error("backend 미가동 → 칼만 폴백");   // POST 안 쏨(로드 시 1회 판정)
   const hist = (obs.hist && obs.hist.length) ? obs.hist : [{ t: obs.now, x: obs.pos.x, z: obs.pos.z }];
   const pts = trajResample(hist, obs.now);
   const r = await fetch("/predict", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -6489,6 +6532,7 @@ function mpredObserve(now) {
 }
 function mpredTick(now, dtMs) {
   if (typeof window.__customPredictor !== "function") return;   // 예측기 훅 없으면 배치 안 함
+  if (BACKEND.ok !== true) return;                              // 백엔드 부재 → 배치 예측 생략(칼만 폴백), POST 안 쏨(로드 시 1회 판정)
   MPRED.acc += dtMs;
   if (MPRED.busy || MPRED.acc < 1000 / MPRED.hz) return;
   MPRED.acc = 0;
@@ -7857,17 +7901,27 @@ function camIntrinsics(cam, w, h) {
    **sensorGrain 후처리가 준비 안 된 상태로 남아 2번째 캡처부터 RGB가 단색**이 됐다.
    판정만 바꾸는 이쪽이 렌더 파이프라인을 전혀 건드리지 않아 안전하다. */
 const GT_BG_C = GT_ENV;                 // 배경(환경) 색 — 최근접 후보에 포함
+/* 최근접 매칭 절대 허용치(제곱거리). 최근접 팔레트 색이 이보다 멀면 그 픽셀은
+   "어느 개체도 아님"으로 보고 배경 처리한다.
+   왜 필요한가(2026-08-25 발견): 이 함수는 원래 tol 없이 "무조건 최근접"만 했다.
+   그러면 서로 다른 두 물체(예: 장비 vs 환경) 경계의 MSAA 혼합 픽셀이 하필 그 중간에
+   놓인 제3의 개체 색에 배정돼, 그 개체의 min/max bbox가 엉뚱한 영역까지 번졌다.
+   특히 팔레트의 [128,128,128](회색)처럼 색공간 중앙에 놓인 색을 받은 개체는 온갖
+   애매한 중간톤을 빨아들여 화면 절반짜리 person 박스가 됐다(실측: 200장 중 8장에서
+   케틀·빈 바닥을 person으로 라벨 → 학습 시 오검출 유발). 재렌더 스윕으로 900(=거리 30)이
+   회색 stray를 제거하면서 실제 작은/가려진 사람은 유지하는 값으로 확인됐다
+   (400은 과해서 실제 사람을 놓쳤고, 1600은 느슨해 회색 박스가 남았다). */
+const NEAREST_TOL2 = 900;
 function nearestColorKey(r, g, b, palette) {
-  /* palette: [key, [r,g,b]] 배열. 배경보다 가까운 클래스가 없으면 null(=배경).
-     tol: 완전히 동떨어진 색(후처리 잔재 등)은 버린다. MSAA 혼합은 항상 두 원본
-     사이에 있으므로 최근접 거리가 클 수 없다. */
+  /* palette: [key, [r,g,b]] 배열. 배경보다 가까운 클래스가 없거나(=배경) 최근접
+     거리가 NEAREST_TOL2를 넘으면(=어느 개체도 아님) null을 돌려준다. */
   let bestK = null, bestD = Infinity;
   for (const [k, c] of palette) {
     const d = (r-c[0])*(r-c[0]) + (g-c[1])*(g-c[1]) + (b-c[2])*(b-c[2]);
     if (d < bestD) { bestD = d; bestK = k; }
   }
   const db = (r-GT_BG_C[0])*(r-GT_BG_C[0]) + (g-GT_BG_C[1])*(g-GT_BG_C[1]) + (b-GT_BG_C[2])*(b-GT_BG_C[2]);
-  return db <= bestD ? null : bestK;    // 배경이 더 가까우면 그 픽셀은 배경이다
+  return (bestD > NEAREST_TOL2 || db <= bestD) ? null : bestK;   // 너무 멀거나 배경이 더 가까우면 배경
 }
 /* 이미지 전체를 훑기 전에 **서로 다른 색만 모아 한 번씩** 판정한다.
    마스크는 색이 수십 가지뿐이라(MSAA 단계가 유한하다) 픽셀마다 팔레트를 도는 것보다
@@ -8166,21 +8220,41 @@ async function groundTruthImpl(camId, opt) {
   instMat("smoke_0");                                      // 팔레트 슬롯 확보
   // 보호 기준은 위에서 칠해 둔 **클래스 마스크**다 (팔레트 번호 대조는 어긋났다)
   paintSmoke(inst, INST_PALETTE[instIndex.get("smoke_0")], mask.data);
-  // 인스턴스별 bbox (가림 반영 — 마스크 픽셀 기준)
+  /* 인스턴스별 bbox — 각 개체의 **가장 큰 연결 요소**만 박스로 쓴다 (2026-08-25).
+     최근접 분류는 서로 다른 두 개체 경계의 MSAA 혼합 픽셀을 제3의 개체 색으로 오분류한다.
+     nearestColorKey의 tol만으로는 부족했다 — 예: 파란 장비↔환경 혼합색이 팔레트의
+     navy[24,24,120] 선상에 놓여 tol(거리30)을 통과, 그 개체 박스가 장비 테두리를 따라
+     화면 전체로 번졌다(실측: person 박스가 프레임의 93%). 색거리로는 근본 차단이 안 된다.
+     진짜 사람은 하나의 덩어리(연결 요소)이고 stray는 여기저기 흩어진 얇은 테두리이므로,
+     개체마다 **픽셀이 가장 많은 4-연결 요소**만 취하면 메커니즘과 무관하게 걸러진다.
+     (가림으로 사람이 두 조각 나면 큰 쪽만 잡혀 박스가 약간 작아질 수 있으나, 안전 검출에서
+      과대 오검출보다 그쪽이 낫다.) */
   const instBoxes = new Map();
   {
     const { data:ip, w:iw, h:ih } = inst;
     const byColor = [...instIndex.entries()].map(([k, idx]) => [k, INST_PALETTE[idx]]);
-    // 정확 일치 대신 최근접 색 — MSAA 외곽선 픽셀을 우세한 개체로 되돌린다(위 주석)
     const cls = classifyByNearest(ip, iw, ih, byColor);
-    for (let y = 0; y < ih; y++) for (let x = 0; x < iw; x++) {
-      const ki = cls[y*iw + x];
-      if (ki < 0) continue;                              // 배경
+    const seen = new Uint8Array(iw*ih);
+    const stack = new Int32Array(iw*ih);               // flood fill 스택(재귀 회피)
+    for (let p0 = 0; p0 < iw*ih; p0++) {
+      const ki = cls[p0];
+      if (ki < 0 || seen[p0]) continue;
+      let sp = 0; stack[sp++] = p0; seen[p0] = 1;       // 이 픽셀에서 연결 요소 하나를 훑는다
+      let n = 0, minX = iw, maxX = -1, minY = ih, maxY = -1;
+      while (sp > 0) {
+        const p = stack[--sp];
+        const x = p % iw, y = (p - x) / iw;
+        n++;
+        if (x < minX) minX = x; if (x > maxX) maxX = x;
+        if (y < minY) minY = y; if (y > maxY) maxY = y;
+        if (x > 0    && !seen[p-1]  && cls[p-1]  === ki) { seen[p-1]=1;  stack[sp++]=p-1; }
+        if (x < iw-1 && !seen[p+1]  && cls[p+1]  === ki) { seen[p+1]=1;  stack[sp++]=p+1; }
+        if (y > 0    && !seen[p-iw] && cls[p-iw] === ki) { seen[p-iw]=1; stack[sp++]=p-iw; }
+        if (y < ih-1 && !seen[p+iw] && cls[p+iw] === ki) { seen[p+iw]=1; stack[sp++]=p+iw; }
+      }
       const k = byColor[ki][0];
-      const bx = instBoxes.get(k) || (instBoxes.set(k, {minX:x, maxX:x, minY:y, maxY:y, n:0}), instBoxes.get(k));
-      if (x < bx.minX) bx.minX = x; if (x > bx.maxX) bx.maxX = x;
-      if (y < bx.minY) bx.minY = y; if (y > bx.maxY) bx.maxY = y;
-      bx.n++;
+      const prev = instBoxes.get(k);
+      if (!prev || n > prev.n) instBoxes.set(k, { minX, maxX, minY, maxY, n });  // 개체당 최대 연결요소
     }
   }
   const instances = [];
@@ -8647,6 +8721,63 @@ function randomizeScene(cell) {
                                   d.tgt.z + (Math.random()-0.5)*0.2));
   }
   placeOccluder();     // EXTRAS 재배치 뒤에 호출해야 덮어쓰이지 않는다
+}
+/* ── 데이터셋 다양성 (나디르 person 검출 학습용, 2026-08-26) ────────────────
+   흰옷↔밝은 바닥의 저대비가 검출 하드미스의 주범이었다(실측: sim recall 0.67).
+   프레임마다 사람 옷·모자 색과 바닥 밝기를 흔들어 대비를 다양화한다.
+   ★ GT 라벨은 인스턴스 마스크(emissive 단색 오버라이드)에서 나오므로 이 RGB 색
+     변경에 전혀 영향받지 않는다 — 라벨은 그대로 정확하다.
+   얼굴/피부(Body_MAT)는 건드리지 않는다(Cook_Top·Hood·Pant만). 나디르는 어차피
+   정수리·어깨만 보이므로 옷·모자 색만으로 충분하다.
+   ⚠️ 호출처: 이 함수(및 아래 gtFreeze/gtUnfreeze)는 sim 내장 generateDataset이 아니라
+     **브라우저 콘솔 생성 스니펫**(train/gen_zone_console.js·gen_temporal_console.js)이
+     런타임에 호출한다 — 나디르 데이터셋은 그 스니펫으로 만들었다(문서 §2·재현 스크립트).
+     내장 generateDataset(구 경로)은 이 다양화/프리즈를 쓰지 않는다. */
+function datasetDiversify() {
+  const floor = scene.meshes.find(m => m.name === "floor" && m.material && m.material.albedoColor);
+  if (floor) {
+    const b = 0.10 + Math.random() * 0.55;                 // 바닥 밝기 0.10(어둠)~0.65
+    floor.material.albedoColor = new C3(b * 1.06, b, b * 0.9);
+  }
+  /* 실제 조리실 복장 팔레트 — 채도 낮고 대비 다양(밝은 위생복↔어두운 앞치마·평상복).
+     saturated 랜덤색(보라·녹색)은 실사 사람과 안 닮아 real 전이를 해쳐 폐기(2026-08-26). */
+  const CLOTH = [
+    [0.88, 0.88, 0.90], [0.80, 0.80, 0.78],           // 흰/미색 위생복
+    [0.16, 0.20, 0.34], [0.12, 0.16, 0.26],           // 감청·남색
+    [0.13, 0.13, 0.15], [0.22, 0.22, 0.24],           // 검정·진회색
+    [0.45, 0.46, 0.48], [0.60, 0.60, 0.62],           // 회색
+    [0.40, 0.28, 0.18], [0.30, 0.34, 0.22],           // 갈색·카키
+    [0.45, 0.16, 0.16], [0.20, 0.32, 0.28],           // 진적·청록(앞치마)
+  ];
+  const people = [anchors.person.node, ...EXTRAS.map(e => e.root)];
+  for (const pn of people) {
+    const base = CLOTH[(Math.random() * CLOTH.length) | 0];
+    const j = () => (Math.random() - 0.5) * 0.08;      // 개체별 미세 명암 지터
+    const c = new C3(Math.min(1, Math.max(0, base[0] + j())),
+                     Math.min(1, Math.max(0, base[1] + j())),
+                     Math.min(1, Math.max(0, base[2] + j())));
+    for (const m of pn.getChildMeshes()) {
+      if (m.material && /Cook_Top|Cook_Hood|Cook_Pant/.test(m.material.name)) {
+        // 인스턴스당 1회만 clone(원본 공유 재질 훼손·매 프레임 누수 방지). 이후엔 색만 갱신.
+        if (!/_dv$/.test(m.material.name)) m.material = m.material.clone(m.material.name + "_dv");
+        m.material.albedoColor = c;
+      }
+    }
+  }
+}
+/* 캡처 순간 캐릭터 이동·포즈를 얼린다 — RGB 패스와 마스크 패스가 같은 순간을 보게 해
+   걷는 사람의 박스 어긋남을 없앤다. gtFreeze() → groundTruth() → gtUnfreeze() 로 감싼다.
+   (extrasUpdate 는 registerBeforeRender가 이름으로 호출 → 전역 바인딩 교체가 즉시 먹는다.) */
+let _gtFrozen = null;
+function gtFreeze() {
+  if (_gtFrozen) return;
+  _gtFrozen = extrasUpdate; extrasUpdate = () => {};        // 이동 정지
+  scene.animationGroups.forEach(a => a.pause());            // 포즈 정지
+}
+function gtUnfreeze() {
+  if (!_gtFrozen) return;
+  extrasUpdate = _gtFrozen; _gtFrozen = null;
+  scene.animationGroups.forEach(a => a.play(false));
 }
 function restoreAfterDataset() {
   person.freeze = false; person.crouch = 0;
