@@ -1,0 +1,18 @@
+{
+  "files": {
+    "docs/chanwoo/results/traj-v2-manifest.json": "cda7bbefcdc3b9d5760608bb74805c12fb14ade82f44c2de68b8ce196cff601c",
+    "tests/test_autoresearch_candidate.py": "2c4b527137cec626678b06c6754bb9201c54cb177cffe4d75537a59f06d1d8a0",
+    "tests/test_autoresearch_contract.py": "d74e00665b04fc8b33096c68b61b5d594a821c31df6caf6349dfed37470df7bc",
+    "train/autoresearch_contract.py": "e8aadc3d0e2ebaff0ea1a20b2544bb68ee9a17cb7325215280fabca266d6de18",
+    "train/autoresearch_training.py": "68bcbcc8d949d2215ea28211d9d6cf67f645728cef93273caca42614c9c82c90",
+    "train/autoresearch_worker.py": "1d27798bef1500a4f3a89e9120c02db3705e4ff0ed09c168cea434f7995d02a2",
+    "train/run_autoresearch_experiment.py": "3ac327a9b50fe5f0fac6088290f5d031a2ed14ce65821a28d4d227840041892e",
+    "trajectory/bootstrap.py": "4bcc3ce22ca9e1be429a2c82a2d3a15a5dd1ec6386e173ad3538489ed9b2a990",
+    "trajectory/evaluator.py": "281ac4b5fa075ebec75ec5b0442b15e1ea0012c9a1ac49e46fe5bf9ac2e21df4",
+    "trajectory/learned_predictor.py": "130eeb3087f18c47d7696db3f05b802cf952e1a68b9a85258ddbe870548991bd",
+    "trajectory/risk.py": "7363c4714192be78172d1f05a46073430adcb17fa2be26184c214ddfe727ee27",
+    "trajectory/sim_traj.py": "1c2773a088e4616c642a985c9cdd51d57404b1b753741c8ff90ae3c286218f48",
+    "trajectory/traj_v2.py": "f5a3476c6fef24caddb5c57aa3fa1bb2b4440925862c6a9158f0f02dfe3ee71c"
+  },
+  "schema": 1
+}

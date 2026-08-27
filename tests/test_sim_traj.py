@@ -58,6 +58,22 @@ def test_loader_skips_discarded_nodes(tmp_path):
     assert all(w.node_id == "extra_0" for w in wins)   # 폐기 노드 제외
 
 
+def test_loader_accepts_external_manifest(tmp_path):
+    data = tmp_path / "data"
+    data.mkdir()
+    manifest_dir = tmp_path / "docs"
+    manifest_dir.mkdir()
+    frs = [(0.1 * i, 0.0, "kettle", 2.0, 0.0) for i in range(22)]
+    _write_scene(data, 31, {"extra_0": frs})
+    manifest = manifest_dir / "traj-v2-manifest.json"
+    manifest.write_text(
+        json.dumps({"train": [], "val": ["t_seed31.json"], "test": []}),
+        encoding="utf-8",
+    )
+
+    assert len(load_windows("val", traj_dir=data, manifest_path=manifest)) == 3
+
+
 def test_station_heuristic_matches_straight_line_to_goal():
     # 관측: +x 로 0.5m/s 등속. 목표는 진행방향 먼 곳(구간 내 미도달) → 등속 직진과 GT 일치.
     now, horizon, n = 0.8, 4.8, 12

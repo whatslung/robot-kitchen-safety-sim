@@ -1,0 +1,25 @@
+{
+  "files": {
+    "docs/chanwoo/autoresearch-paired-v2-program.md": "283e5df08d526e233160884a147bcbca511655507a68a92e14601d1a8a7e52c9",
+    "docs/chanwoo/results/traj-v2-manifest.json": "cda7bbefcdc3b9d5760608bb74805c12fb14ade82f44c2de68b8ce196cff601c",
+    "tests/test_paired_autoresearch_contract.py": "51b59ced2e246a9723dcb545a758c1119e226ceca4571550d602f142c0306e70",
+    "tests/test_paired_autoresearch_lock.py": "40d60685c8485634f78986492c07385a99052a1e457da6d3868b958e62c6a1f5",
+    "tests/test_paired_autoresearch_runner.py": "e2c3c3c7b1089ec8bb04707d637c053086962368e3fad1adacf285cfab45736d",
+    "tests/test_paired_autoresearch_training.py": "cb5630f75978505bd5cdb0d298f0eb9039ef235e2de472a37a00980a991a73bf",
+    "tests/test_paired_autoresearch_worker.py": "c7b4e3bf8f758c60679cea66e4be78ba43c4733186768f3da6dda7ec2aaba015",
+    "train/autoresearch_contract.py": "e8aadc3d0e2ebaff0ea1a20b2544bb68ee9a17cb7325215280fabca266d6de18",
+    "train/autoresearch_worker.py": "1d27798bef1500a4f3a89e9120c02db3705e4ff0ed09c168cea434f7995d02a2",
+    "train/lock_paired_autoresearch_contract.py": "7ec962ff07135087145ae4ddad2c2e6f9cd90c67e17e60147749fd36c089ac07",
+    "train/paired_autoresearch_contract.py": "cb38204b9bc77871f2f56e506ea63575c6b3d40af4093d3e07d9aa12821933fd",
+    "train/paired_autoresearch_training.py": "9fbdddaafaa8086420b498847f34cedca3c1dba57306ee0ca25af9a76e983973",
+    "train/paired_autoresearch_worker.py": "fa3382bd4c5e18ada7675443aae4dbbe6434f9b74de415b39fb4c309d30088b4",
+    "train/run_paired_autoresearch.py": "dde4c1cb868a1a7117878cfd153d0d27139d248293aa3e4e0ce258d81a2d04ca",
+    "trajectory/bootstrap.py": "4bcc3ce22ca9e1be429a2c82a2d3a15a5dd1ec6386e173ad3538489ed9b2a990",
+    "trajectory/evaluator.py": "281ac4b5fa075ebec75ec5b0442b15e1ea0012c9a1ac49e46fe5bf9ac2e21df4",
+    "trajectory/learned_predictor.py": "130eeb3087f18c47d7696db3f05b802cf952e1a68b9a85258ddbe870548991bd",
+    "trajectory/risk.py": "7363c4714192be78172d1f05a46073430adcb17fa2be26184c214ddfe727ee27",
+    "trajectory/sim_traj.py": "1c2773a088e4616c642a985c9cdd51d57404b1b753741c8ff90ae3c286218f48",
+    "trajectory/traj_v2.py": "f5a3476c6fef24caddb5c57aa3fa1bb2b4440925862c6a9158f0f02dfe3ee71c"
+  },
+  "schema": 1
+}

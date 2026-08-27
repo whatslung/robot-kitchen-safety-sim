@@ -40,6 +40,7 @@ import io
 import json
 import math
 import os
+import sys
 import time
 import argparse
 from pathlib import Path
@@ -57,6 +58,11 @@ MODE = "dummy"
 # 학습 산출물(training/)은 용량이 커서 git에 없다. 로컬에 없으면 허깅페이스에서 받아온다
 # → 팀원은 아무것도 내려받지 않고 서버만 켜면 된다.
 _ROOT = Path(__file__).resolve().parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+from trajectory.collection import save_trajectory_scene
+
 _MODEL_PATH = os.environ.get(
     "DETECT_MODEL", str(_ROOT / "training" / "island_yolo11s" / "weights" / "best.pt"))
 _HUB_REPO = os.environ.get("DETECT_MODEL_REPO", "chanubc/robot-kitchen-nadir-yolo11s")
@@ -379,22 +385,16 @@ async def shot(req: Request):
 
 @app.post("/traj")
 async def traj(req: Request):
-    """시뮬이 만든 궤적 scene 하나를 dataset/trajectories/<scene_id>.json 에 쓴다.
+    """시뮬이 만든 궤적 scene 하나를 허용된 trajectory dataset에 쓴다.
 
     /dataset·/shot과 같은 규약 — 시뮬이 scene 완결 시 scene JSON 전체를 POST하면 서버가
     받아 쓴다(폴더 선택창 없음, 클릭 0회). dataset/이 gitignore라 궤적도 자동 제외된다.
     요청: {"scene_id":"island_seed7_0000", "schema":1, "seed":7, ..., "nodes":[...]}
     """
     try:
-        body = await req.json()
-        safe = lambda v, d: "".join(c for c in str(v) if c.isalnum() or c in "-_")[:80] or d
-        sid = safe(body.get("scene_id", "scene"), "scene")
-        root = _ROOT / "dataset" / "trajectories"
-        root.mkdir(parents=True, exist_ok=True)
-        (root / (sid + ".json")).write_text(
-            json.dumps(body, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-        n = len(list(root.glob("*.json")))
-        return {"ok": True, "count": n, "dir": str(root)}
+        return save_trajectory_scene(await req.json(), _ROOT)
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"error": str(exc)})
     except Exception as e:                # noqa: BLE001
         return JSONResponse(status_code=500, content={"error": str(e)})
 
