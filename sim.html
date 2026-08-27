@@ -6044,6 +6044,25 @@ function customPredictTick(srcPos, now, dtMs) {
    dense PRED.hist(~60Hz)를 모델 학습과 같은 8점×0.4s로 리샘플해 POST하고, K모드를 받아
    최빈 모드는 {path,sigma}(계약), 전체 모드는 밀도 구름용으로 돌려준다. 좌표는 씬 AU(모델 학습 단위와 동일).
    서버가 죽으면 예외 → customPredictTick이 칼만으로 폴백. */
+/* ══ 백엔드 가용성 — 로드 시 1회 판정(무한 폴링 금지) ══════════════════════
+   실행 모드는 페이지를 여는 순간 결정된다:
+     · detect_server(python backend/detect_server.py) = sim + API(/predict·/detect·/nadir) 동시 서빙 → 백엔드 있음
+     · plain http.server = 정적 파일만 → 백엔드 없음 (나중에 안 생김)
+   그래서 GET /health로 **로드 시 딱 한 번** 확인하고 그 판정을 세션 내내 쓴다.
+   없으면 조용히 칼만 폴백하고 **폴링을 멈춘다**(매 틱 POST/health 도배 방지).
+   백엔드를 나중에 켰다면 페이지 새로고침 — 또는 콘솔에서 window.__backendRecheck(). */
+const BACKEND = { ok: null, probing: false };
+function backendProbe(force) {
+  if (BACKEND.probing) return;
+  if (BACKEND.ok !== null && !force) return;         // 이미 판정됨 — 재확인 안 함(모드 고정)
+  BACKEND.probing = true;
+  fetch("/health", { method: "GET" })
+    .then(r => { BACKEND.ok = r.ok; console.log("[backend] " + (r.ok ? "가동 → /predict·/nadir 배선 켬" : "부재 → 칼만 폴백(폴링 중단)")); })
+    .catch(() => { BACKEND.ok = false; console.log("[backend] 부재 → 칼만 폴백(폴링 중단). 백엔드 켰으면 새로고침 또는 __backendRecheck()"); })
+    .finally(() => { BACKEND.probing = false; });
+}
+backendProbe();                                       // 로드 시 1회
+window.__backendRecheck = () => { BACKEND.ok = null; backendProbe(true); };   // 백엔드 나중에 켠 경우 수동 재확인
 function trajResample(hist, now, n = 8, dtMs = 400) {
   const out = [];
   for (let i = 0; i < n; i++) {
@@ -6059,6 +6078,7 @@ function trajResample(hist, now, n = 8, dtMs = 400) {
   return out;
 }
 async function trajPredict(obs) {
+  if (BACKEND.ok !== true) throw new Error("backend 미가동 → 칼만 폴백");   // POST 안 쏨(로드 시 1회 판정)
   const hist = (obs.hist && obs.hist.length) ? obs.hist : [{ t: obs.now, x: obs.pos.x, z: obs.pos.z }];
   const pts = trajResample(hist, obs.now);
   const r = await fetch("/predict", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -6119,6 +6139,7 @@ function mpredObserve(now) {
 }
 function mpredTick(now, dtMs) {
   if (typeof window.__customPredictor !== "function") return;   // 예측기 훅 없으면 배치 안 함
+  if (BACKEND.ok !== true) return;                              // 백엔드 부재 → 배치 예측 생략(칼만 폴백), POST 안 쏨(로드 시 1회 판정)
   MPRED.acc += dtMs;
   if (MPRED.busy || MPRED.acc < 1000 / MPRED.hz) return;
   MPRED.acc = 0;
