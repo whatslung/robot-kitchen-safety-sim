@@ -81,3 +81,49 @@ test('sweptSegmentCapsuleContact fails closed for malformed geometry', () => {
   assert.equal(result.hit, true);
   assert.equal(result.invalid, true);
 });
+
+test('approachFactor limits braking and acceleration slopes', () => {
+  assert.equal(S.approachFactor(1, 0, 0.1, 2.5, 0.8, false), 0.75);
+  assert.ok(Math.abs(S.approachFactor(0.5, 1, 0.1, 2.5, 0.8, false) - 0.58) < 1e-12);
+});
+
+test('approachFactor applies an immediate safety stop and fails closed', () => {
+  assert.equal(S.approachFactor(0.8, 0, 0.01, 2.5, 0.8, true), 0);
+  assert.equal(S.approachFactor(Number.NaN, 1, 0.1, 2.5, 0.8, false), 0);
+});
+
+test('chooseManeuver uses the safety candidate priority', () => {
+  const safe = clearance => ({ safe: true, clearance });
+  const blocked = clearance => ({ safe: false, clearance });
+  const base = {
+    currentMode: 'PROCEED', holdMs: 1000, minHoldMs: 300,
+    proceed: safe(0.3), retract: safe(0.25), safeLift: safe(0.2),
+  };
+
+  assert.equal(S.chooseManeuver({ ...base, danger: false }).mode, 'PROCEED');
+  assert.equal(S.chooseManeuver({ ...base, danger: true, beforeCross: true }).mode, 'HOLD');
+  assert.equal(S.chooseManeuver({ ...base, danger: true, beforeCross: false }).mode, 'RETRACT');
+  assert.equal(S.chooseManeuver({
+    ...base, danger: true, beforeCross: false, retract: blocked(-0.1),
+  }).mode, 'SAFE_LIFT');
+  assert.equal(S.chooseManeuver({
+    ...base, danger: true, beforeCross: false,
+    retract: blocked(-0.1), safeLift: blocked(-0.2),
+  }).mode, 'STOP');
+});
+
+test('chooseManeuver holds a conservative mode for at least 300ms', () => {
+  const options = {
+    danger: false,
+    currentMode: 'STOP',
+    minHoldMs: 300,
+    proceed: { safe: true, clearance: 0.4 },
+  };
+
+  assert.equal(S.chooseManeuver({ ...options, holdMs: 299 }).mode, 'STOP');
+  assert.equal(S.chooseManeuver({ ...options, holdMs: 300 }).mode, 'PROCEED');
+});
+
+test('chooseManeuver fails closed on invalid candidates', () => {
+  assert.equal(S.chooseManeuver({ danger: false }).mode, 'STOP');
+});

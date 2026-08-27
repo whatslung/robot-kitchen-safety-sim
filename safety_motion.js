@@ -207,5 +207,70 @@
     };
   }
 
-  return { samplePlannedPath, segmentSegmentDistance, sweptSegmentCapsuleContact };
+  function clampUnit(value) {
+    return Math.min(1, Math.max(0, value));
+  }
+
+  function approachFactor(current, target, dtSec, decelRate, accelRate, immediateStop) {
+    const values = [current, target, dtSec, decelRate, accelRate];
+    if (values.some(value => !Number.isFinite(value))
+        || dtSec < 0 || decelRate < 0 || accelRate < 0) return 0;
+    const from = clampUnit(current);
+    const to = clampUnit(target);
+    if (immediateStop && to === 0) return 0;
+    if (to < from) return Math.max(to, from - decelRate * dtSec);
+    return Math.min(to, from + accelRate * dtSec);
+  }
+
+  function validCandidate(candidate) {
+    return candidate
+      && typeof candidate.safe === "boolean"
+      && Number.isFinite(candidate.clearance);
+  }
+
+  function chooseManeuver(options) {
+    const settings = options || {};
+    const order = ["PROCEED", "HOLD", "RETRACT", "SAFE_LIFT", "STOP"];
+    const currentMode = order.includes(settings.currentMode)
+      ? settings.currentMode : "PROCEED";
+    let chosen;
+
+    if (settings.danger === false) {
+      chosen = validCandidate(settings.proceed) && settings.proceed.safe
+        ? { mode: "PROCEED", reason: "path-clear", clearance: settings.proceed.clearance }
+        : { mode: "STOP", reason: "invalid-or-blocked-proceed", clearance: null };
+    } else if (settings.danger === true && settings.beforeCross === true) {
+      chosen = { mode: "HOLD", reason: "danger-before-cross", clearance: null };
+    } else if (settings.danger === true && settings.beforeCross === false) {
+      if (validCandidate(settings.retract) && settings.retract.safe) {
+        chosen = {
+          mode: "RETRACT", reason: "safe-retract", clearance: settings.retract.clearance,
+        };
+      } else if (validCandidate(settings.safeLift) && settings.safeLift.safe) {
+        chosen = {
+          mode: "SAFE_LIFT", reason: "retract-blocked", clearance: settings.safeLift.clearance,
+        };
+      } else {
+        chosen = { mode: "STOP", reason: "no-safe-candidate", clearance: null };
+      }
+    } else {
+      chosen = { mode: "STOP", reason: "invalid-danger-state", clearance: null };
+    }
+
+    const elapsed = Number.isFinite(settings.holdMs) ? Math.max(0, settings.holdMs) : 0;
+    const minimum = Number.isFinite(settings.minHoldMs) ? Math.max(0, settings.minHoldMs) : 300;
+    const easingRisk = order.indexOf(chosen.mode) < order.indexOf(currentMode);
+    if (easingRisk && elapsed < minimum) {
+      return { mode: currentMode, reason: "minimum-hold", clearance: chosen.clearance };
+    }
+    return chosen;
+  }
+
+  return {
+    samplePlannedPath,
+    segmentSegmentDistance,
+    sweptSegmentCapsuleContact,
+    approachFactor,
+    chooseManeuver,
+  };
 });
