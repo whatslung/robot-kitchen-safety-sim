@@ -571,17 +571,18 @@
   <div class="hint" id="demoNote">정상 조리 → 수증기 → 화재 →
     <b>before</b>: 못 보고 쓰러짐 · <b>after</b>: 감지 → 대피 → 진화</div>
 
-  <!-- ② 사람 동선 감지 — chanwoo가 별도 브랜치에서 작업 중(PR #24: 통로 회피 데모).
-       자리를 **미리 비워 둔다.** 그쪽 버튼(corrBefore/corrAfter/corrStop)이 머지되면
-       이 안내문을 지우고 그 btnrow를 여기 넣으면 끝난다 — 발표 탭 구조를 다시 안 건드린다.
-       ⚠️ 그때 두 가지를 맞춘다: ① 섹션 제목을 「② 사람 동선 감지」로 (브랜치 쪽은
-          "통로 회피 데모"라 TABS 목록에 안 걸려 **조용히 ⚙고급으로 떨어진다**) ·
-          ② corrStop 라벨을 「↩ ② 되돌리기」로 (안 그러면 되돌리기가 이 탭에 셋이 된다).
-       ⚠️ 여기 가짜 버튼을 두지 않는다. 눌러도 아무 일 없는 버튼이 발표 자리에 있으면
-          안 만든 것보다 나쁘다. -->
+  <!-- ② 사람 동선 감지 (2026-08-28 재구축) — 기존 안전 시스템(자동작업 + SAFE 감속/정지 + 예측) 위에서 돈다.
+       충돌: SAFE.blind로 로봇이 못 본 채 작업 → 스크립트로 걸어오는 사람을 팔이 휩쓴다.
+       회피: WASD로 사람 직접 조종 → 로봇이 실시간 감속/정지/재개. 예측 표시 on. -->
   <div class="section">② 사람 동선 감지 <span class="note" style="font-weight:400">발표 시나리오</span></div>
-  <div class="hint" id="demo2Note">chanwoo 작업 중 — 로봇이 사람을 <b>못 피할 때</b>와
-    <b>피할 때</b>를 비교합니다. 병합되면 여기에 버튼이 생깁니다.</div>
+  <div class="btnrow">
+    <button id="corrBefore" class="danger">▶ 충돌 (회피 OFF)</button>
+    <button id="corrAfter" class="primary">▶ 회피 (WASD 조종)</button>
+    <button id="corrStop">↩ ② 되돌리기</button>
+  </div>
+  <div class="note" id="demo2Note"><b>충돌</b>: 로봇이 사람을 못 본 채 작업 → 걸어오는 사람을 팔이 휩쓸어 쓰러뜨립니다. ·
+    <b>회피</b>: <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>로 조리원을 직접 몰아 로봇에 다가가면 —
+    가까울수록 <b>감속 → 정지</b>, 멀어지면 <b>재개</b>. 로봇의 <b>예측</b>(화살표·경로선)이 함께 표시됩니다.</div>
 
   <div class="section">사고 시나리오 (연쇄)</div>
   <div class="btnrow">
@@ -9423,6 +9424,8 @@ function robotGuardTick() {
 }
 function physWatch() {
   if (!PHYS.ready || PHYS.estop || !PHYS.personCap) return;
+  // 충돌 데모(② before) 중에는 이 범용 접촉 estop을 끈다 — corrTick이 쓰러짐·estop을 직접 처리한다.
+  if (typeof CORR !== "undefined" && CORR.on && CORR.mode === "before") return;
   PHYS.personCap.computeWorldMatrix(true);
   for (const l of PHYS.links) {
     l.mesh.computeWorldMatrix(true);
@@ -11413,6 +11416,76 @@ $("hzFall").addEventListener("click", () => {          // 실신 토글 — 쓰�
 });
 $("hzPinch").addEventListener("click", () => demoHazard("pinch"));
 $("hzClear").addEventListener("click", () => demoHazardClear());
+
+/* ══ ② 사람 동선 감지 데모 (2026-08-28 재구축) ═══════════════════════════════
+   기존 시스템만 쓴다: 자동작업(튀김 사이클) + SAFE(거리 감속/정지) + 예측 표시 + WASD 사람 조종.
+   충돌: SAFE.blind로 로봇이 사람을 못 본 채 작업 → 스크립트로 걸어오는 사람을 팔이 휩쓸어 쓰러뜨린다.
+   회피: 로봇이 사람을 보고(SAFE 활성) WASD로 직접 몰면 실시간 감속/정지/재개. 예측 화살표·경로선 on. */
+const CORR = { on:false, mode:null, hit:false, saved:null };
+function corrVizOn(on) {
+  ["vizRarr", "vizDens", "vizLine"].forEach(id => {
+    const el = $(id); if (el && el.checked !== on) { el.checked = on; el.dispatchEvent(new Event("change")); }
+  });
+}
+function corrReset(quiet) {
+  const was = CORR.on; CORR.on = false; CORR.mode = null; CORR.hit = false;
+  if (CORR.saved) {
+    SAFE.blind = CORR.saved.blind;
+    if (typeof setCtrlTarget === "function") setCtrlTarget(CORR.saved.ctrl);
+    corrVizOn(false);
+    CORR.saved = null;
+  }
+  if (was) {
+    demoStandUp();
+    if (typeof clearEstop === "function") clearEstop();
+    person.freeze = false; person.mode = "idle"; person.path = []; person.stations = null;
+  }
+  if (!quiet) setStatus("되돌림 — ② 사람 동선 감지 종료");
+}
+function corrStart(mode) {
+  corrReset(true);
+  if (typeof demoHazardClear === "function") demoHazardClear();
+  demoStandUp();
+  if (typeof clearEstop === "function") clearEstop();
+  CORR.saved = { blind: SAFE.blind, ctrl: (typeof CTRL !== "undefined") ? CTRL.target : "camera" };
+  if (!state.auto) $("autoBtn").click();      // 로봇 정상 작업(튀김 사이클) — "지금 시나리오 대로"
+  person.freeze = false; person.stations = null; person.path = []; person.mode = "idle";
+  CORR.on = true; CORR.mode = mode; CORR.hit = false;
+  if (mode === "after") {
+    // 회피: 로봇이 사람을 본다 + WASD 직접 조종 + 예측 표시
+    SAFE.blind = false;
+    if (typeof setCtrlTarget === "function") setCtrlTarget("person");
+    corrVizOn(true);
+    person.node.position.set(2.2, 0, 1.20); person.node.rotation.y = -Math.PI / 2;
+    setStatus("▶ 회피 — WASD로 조리원을 몰아 로봇에 다가가세요. 가까우면 감속→정지, 멀어지면 재개. (예측 표시 켜짐)  [demo-v10]");
+  } else {
+    // 충돌: 로봇이 사람을 못 봄(SAFE.blind) + 스크립트로 통로를 걸어들어감
+    SAFE.blind = true;
+    if (typeof setCtrlTarget === "function") setCtrlTarget("camera");
+    corrVizOn(false);
+    person.node.position.set(2.4, 0, 1.20); person.node.rotation.y = -Math.PI / 2;
+    personGo([new V3(2.4, 0, 1.20), new V3(-0.4, 0, 1.20)], { speed:0.85 });
+    setStatus("▶ 충돌 — 로봇이 사람을 못 본 채 작업합니다. 걸어오는 사람이 팔에 휩쓸립니다.  [demo-v10]");
+  }
+}
+function corrTick() {   // 충돌 접촉 감지 → 밀어내고 쓰러뜨림 (매 프레임 호출)
+  if (!CORR.on || CORR.mode !== "before" || CORR.hit) return;
+  const p = person.node.position;
+  if (armClearance(p.x, p.z) < 0) {
+    CORR.hit = true;
+    const tcp = tipPos();
+    let nx = p.x - tcp.x, nz = p.z - tcp.z; const nl = Math.hypot(nx, nz) || 1; nx /= nl; nz /= nl;
+    person.node.position.set(p.x + nx * 0.6, 0, p.z + nz * 0.6);
+    person.node.rotation.y = Math.atan2(-nx, -nz);
+    person.mode = "idle"; person.path = [];
+    if (typeof personFall === "function") personFall();
+    if (typeof triggerEstop === "function") triggerEstop("팔↔사람 접촉");
+    setStatus("⛔ 충돌 — 로봇이 못 보고 팔이 사람을 밀었다  [demo-v10]");
+  }
+}
+$("corrBefore").addEventListener("click", () => corrStart("before"));
+$("corrAfter").addEventListener("click", () => corrStart("after"));
+$("corrStop").addEventListener("click", () => corrReset(false));
 $("scWander").addEventListener("click", () => personWander(!WANDER.on));
 $("scWorkflow").addEventListener("click", () => personWorkflow(!WF.on));
 /* 작업 동선 — 스테이션마다 도착해서 실제 작업 동작을 재생한다 */
@@ -12228,6 +12301,7 @@ scene.registerBeforeRender(() => {
   sensorTick(now);
   robotGuardTick();          // 설비 관통 방지 — 겹치면 직전 안전 포즈로 되돌림
   physWatch();
+  if (typeof corrTick === "function") corrTick();   // ② 사람 동선 감지 — 충돌 접촉 판정
   if (MIL.on && !MIL.busy) {
     MIL.acc += dt;
     if (MIL.acc >= 1000/MIL.hz) { MIL.acc = 0; milCapture(); }
