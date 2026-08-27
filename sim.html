@@ -30,9 +30,12 @@
   #panelToggle{position:absolute;right:10px;bottom:52px;z-index:30;width:30px;height:30px;
     border-radius:8px;padding:0;font-size:14px;line-height:1;flex:none;opacity:.85}
   /* 탭 — 13개 섹션을 4개 그룹으로 (팀원용 정리) */
-  #tabbar{display:flex;gap:4px;margin:10px 0 2px;position:sticky;top:0;z-index:5;
+  /* 탭이 6개가 되면서 302px 폭에 한 줄로 안 들어간다("📷 카메라"가 제일 넓어 ~51px,
+     6개면 300px를 넘는다). 그냥 wrap만 켜면 **5 + 1**로 접혀 마지막 탭이 혼자 남아
+     깨진 것처럼 보인다. 28% 기준으로 **3 + 3**을 만든다 — 접히는 게 의도로 읽힌다. */
+  #tabbar{display:flex;flex-wrap:wrap;gap:4px;margin:10px 0 2px;position:sticky;top:0;z-index:5;
     background:#0d1117;padding-bottom:6px}
-  #tabbar button{flex:1;padding:7px 2px;font-size:11px;background:#161b22;border-color:#21262d;color:#8b949e}
+  #tabbar button{flex:1 1 28%;padding:7px 2px;font-size:11px;background:#161b22;border-color:#21262d;color:#8b949e}
   #tabbar button.on{background:#1f6feb;border-color:#1f6feb;color:#fff;font-weight:600}
   .tabpane{display:none}.tabpane.on{display:block}
   .section:first-child{border-top:0;margin-top:4px}
@@ -465,8 +468,10 @@
     <button id="scPushCart">🛒 카트 밀기 (물리)</button>
     <button id="scKettle">솥 접근 (감속·정지)</button>
     <button id="scFull">전체 순회 (입구→작업→퇴장)</button>
-    <button id="scApproach">솥 접근(구)</button>
-    <button id="scPatrol">순회(구)</button>
+    <!-- `솥 접근(구)`·`순회(구)` 제거 (2026-08-27). 바로 위 두 버튼이 같은 일을 하고,
+         구버전은 좌표가 **하드코딩**이라 배치를 바꾸면 깨진다 — 실제로 북벽을 당겼을 때
+         순회 경로 두 점이 벽 밖으로 나갔고 한 점은 국솥을 관통했다(SCN 주석에 기록돼 있었다).
+         새 버튼은 스테이션·앵커에서 계산하므로 배치를 따라온다. 데이터 SCN도 같이 지웠다. -->
   </div>
   <div class="btnrow">
     <button id="scCrouch">앉기</button>
@@ -505,14 +510,32 @@
     충돌·끼임은 <b>모델이 사람을 못 본 상태</b>를 강제해 로봇을 멈추지 않게 합니다(예측 회피 포함). 실신은 조리원(WASD 캐릭터)이 그 자리에 쓰러집니다 — 연기 질식·낙상 장면용, 다시 누르면 일어납니다 — 이 연구가 겨냥하는 실패 모드입니다.<br>
     자리는 런타임에 찾습니다: 사방이 트인 바닥이면 <b>밀림</b>, 솥·카트 사이처럼 막힌 슬롯이면 <b>끼임</b>이 됩니다.</div>
 
-  <div class="section">발표 시나리오 <span class="note" style="font-weight:400">before / after</span></div>
+  <!-- 발표 시나리오는 **두 개**다. ① 화재 감지(시뮬 담당) · ② 사람 동선 감지(chanwoo 담당).
+       종전에는 ①만 있어서 버튼이 그냥 "before / after"였는데, ②가 들어오면 같은 이름의
+       before/after가 두 쌍이 되어 발표자가 어느 쪽인지 구분할 수 없다.
+       그래서 **지금** 번호를 붙여 둔다 — ②가 머지될 때 이름을 다시 손대지 않아도 되게. -->
+  <div class="section">① 화재 감지 <span class="note" style="font-weight:400">발표 시나리오</span></div>
   <div class="btnrow">
-    <button id="demoBefore" class="danger">▶ before</button>
-    <button id="demoAfter" class="primary">▶ after</button>
+    <button id="demoBefore" class="danger">▶ ① before</button>
+    <button id="demoAfter" class="primary">▶ ① after</button>
     <button id="demoStop">↩ 되돌리기</button>
   </div>
-  <div class="note" id="demoNote">정상 조리 → 김 → 화재 →
+  <!-- ⚠️ class를 note → hint로 바꿨다 (2026-08-27). `.note`는 기본이 `display:none`이고
+       `.warn`/`.err`/`.ok`가 붙어야 보이는 **상태 표시 슬롯**이다. 여기엔 그 클래스를
+       붙이는 코드가 없어서 **이 설명문이 처음부터 한 번도 안 보였다.**
+       demoSay()가 매 비트 자막을 여기에 써 넣는데 그것도 같이 묻혀 있었다 —
+       이제 발표 중 현재 단계가 패널에도 남는다(상태줄은 다른 메시지에 덮인다). -->
+  <div class="hint" id="demoNote">정상 조리 → 수증기 → 화재 →
     <b>before</b>: 못 보고 쓰러짐 · <b>after</b>: 감지 → 대피 → 진화</div>
+
+  <!-- ② 사람 동선 감지 — chanwoo가 별도 브랜치에서 작업 중(PR #24: 통로 회피 데모).
+       자리를 **미리 비워 둔다.** 그쪽 버튼(corrBefore/corrAfter/corrStop)이 머지되면
+       이 안내문을 지우고 그 btnrow를 여기 넣으면 끝난다 — 발표 탭 구조를 다시 안 건드린다.
+       ⚠️ 여기 가짜 버튼을 두지 않는다. 눌러도 아무 일 없는 버튼이 발표 자리에 있으면
+          안 만든 것보다 나쁘다. -->
+  <div class="section">② 사람 동선 감지 <span class="note" style="font-weight:400">발표 시나리오</span></div>
+  <div class="hint" id="demo2Note">chanwoo 작업 중 — 로봇이 사람을 <b>못 피할 때</b>와
+    <b>피할 때</b>를 비교합니다. 병합되면 여기에 버튼이 생깁니다.</div>
 
   <div class="section">사고 시나리오 (연쇄)</div>
   <div class="btnrow">
@@ -2996,6 +3019,14 @@ applyCeilingMask();
    고도만 다를 뿐 같은 쪽을 보고 있었다 — "PiP가 본화면과 똑같다"는 지적의 원인.
    eye는 방위각 -120°로 반대편(동쪽)에서 본다. */
 let mainView = "free", pipView = "eye";
+/* 시점 세대 번호 — `applyCameras()`가 돌 때마다 1 오른다.
+   왜 필요한가: `renderWith`(검출·GT 캡처)는 캡처 **시작 시점의** activeCameras를 저장했다가
+   끝나면서 그대로 되돌린다. 캡처는 `await readPixels`를 끼고 있어 수백 ms 살아 있는데,
+   그 사이에 시나리오나 사용자가 시점을 바꾸면 **그 변경이 조용히 덮어써진다.**
+   실측(2026-08-27): 발표 ⑤ 대피 비트가 캡처 중에 문 쪽 시점으로 바꿨더니
+   `viewSel`은 free인데 렌더 카메라는 `cam_cvHatch` 그대로였다 — 대피 장면이 통째로
+   안 보였고, 되돌아오지도 않는다(다음 전환까지 계속 틀린 화면). */
+let CAM_GEN = 0;
 /* 직전 주 시점 — 주 시점이 PiP와 같아졌을 때 PiP가 물려받을 값. applyCameras가 관리한다. */
 let PIP_PREV_MAIN = mainView;
 /* 자유 시점 전용 후처리가 지금 붙어 있는지. 파이프라인은 [camera]로 생성되므로 시작값은 true. */
@@ -3076,6 +3107,7 @@ function applyCameras() {
   }
   scene.activeCameras = arr;
   scene.cameraToUseForPointers = main;
+  CAM_GEN++;                    // 캡처가 이 변경을 덮어쓰지 않게 표시한다 (CAM_GEN 주석)
   /* ── 자유 시점 전용 후처리(post·ssao·ssr)를 붙일지 ──────────────────────
      조건: **자유 카메라가 화면에 있고, PiP가 꺼져 있을 때만.**
 
@@ -3582,19 +3614,12 @@ const person = {
   mode:"idle", path:[], pi:0, loop:false, speed:0.55, walkT:0, crouch:0,
   stations:null, dwellT:0,   // 동선 실행 중 스테이션 목록 / 남은 체류시간(ms)
 };
-const SCN = {
-  // 전방 통로에서 접근 — 카트·키오스크를 피해 로봇 작업 반경으로 진입 (새 배치 기준)
-  // 접근 — 키오스크와 바스켓 카트 사이에 새로 뚫린 통로(x≈-1.35)를 타고 셀로 들어간다.
-  // 종점 (-1.25,1.4)은 로봇 베이스에서 0.59m — 정지 반경(1.2m) 안쪽이라 안전 정지가 실제로 걸린다.
-  // 이전 경로((-0.75,1.7)→(-0.9,1.3))는 카트를 관통해 사람이 (-0.59,1.93)에서 멈춰버렸다.
-  approach: [ new V3(0.5,0,3.0), new V3(-0.6,0,2.6), new V3(-1.35,0,2.2),
-              new V3(-1.35,0,1.7), new V3(-1.25,0,1.4) ],
-  // 순회 — 열린 통로만 돈다. 이전 경로는 z=-1.6/-1.7 지점이 있었는데, 북벽을 솥 쪽으로
-  // 당기면서(z0=-1.45) 그 두 점이 벽 밖으로 나갔고 (1.9,0.5)는 이웃 국솥을 관통했다.
-  // 모든 점은 방 안이고 설비에서 0.55m 이상 떨어져 있다(아래 검증 코드로 확인).
-  patrol:   [ new V3(2.6,0,2.6), new V3(4.3,0,2.6), new V3(4.3,0,5.4),
-              new V3(1.6,0,5.6), new V3(-1.2,0,4.6), new V3(-1.4,0,2.7) ],
-};
+/* SCN(하드코딩 접근·순회 경로) 제거 (2026-08-27).
+   쓰던 곳은 `솥 접근(구)`·`순회(구)` 버튼 둘뿐이었고 그 버튼도 같이 지웠다.
+   좌표를 손으로 박아 둔 데이터라 배치를 바꾸면 조용히 깨진다 — 북벽을 당겼을 때
+   순회 점 두 개가 벽 밖으로 나가고 하나가 국솥을 관통한 전례가 주석에 남아 있었다.
+   대체: `personRoute("toKettle")` · `personRoute("full")` — 아래 STATION/ROUTE 기반이라
+   방 크기·설비가 바뀌어도 따라온다. */
 /* ══ 작업 동선 — 스테이션 + 경로 ═════════════════════════════════════════
    회의 우선순위 ③ "동선 — 사람 움직임 시나리오 (선반 · 조리대 · 로봇 반경)".
 
@@ -3948,7 +3973,10 @@ const ROUTE = {
 /* 경로 실행 — personGo에 좌표를 넘기고, 스테이션 정보를 같이 실어 도착 시 동작을 재생한다. */
 function personRoute(name, opts) {
   opts = opts || {};
-  const keys = ROUTE[name];
+  /* opts.keys — 스테이션 이름을 직접 넘겨 ROUTE 표를 건너뛴다. 발표 시나리오가
+     "로봇 정지 반경 밖" 조건으로 자리를 **계산해서** 넘길 때 쓴다(demoWorkRoute).
+     이름은 name 그대로 두므로 상태줄·person.stations 처리는 전부 공유된다. */
+  const keys = opts.keys || ROUTE[name];
   if (!keys) { console.warn("[ROUTE] 없는 경로:", name); return null; }
   const st = keys.map(k => STATION[k]).filter(Boolean);
   /* ⚠️ 순서 — personGo가 목록을 비우므로 **반드시 그 뒤에** 건다. */
@@ -5000,10 +5028,109 @@ function fitPersonHeight(holder, skinned, skeleton, targetH, broad) {
    sim2real 관점의 이유: 시뮬에서 큰 사람만 학습하면 실제 160cm 조리원을 더 작게 보고
    놓친다. 검출 성능이 실제보다 낙관적으로 나오는 편향이 데이터 단계에서 들어간다. */
 const PERSON = { root:null, holder:null, walk:null, run:null, idle:null, ACT:{}, yawFix:0, height:1.60 };
+/* ══ 화살통 제거 — 조리원이 궁수 화살통을 메고 있다 (2026-08-27) ══════
+   기본 캐릭터가 Mixamo "Erika Archer"라 등에 **화살통 · 화살 5발 · 멜빵**이
+   붙어 있다. COOK_GLB 주석대로 person_cook_v5는 그 궁수 메시의 **색만** 위생복으로
+   바꾼 것이라 형태는 궁수 그대로다. 발표에서 비전문가가 제일 먼저 알아보는
+   물건이고, GT 마스크에도 매 프레임 들어가 person 실루엣에 궁수가 섞인다 —
+   연출만의 문제가 아니라 **학습 데이터 오염**이다.
+
+   ▪ 왜 메시를 끄지 않는가
+     화살통이 위생복 상의와 **같은 서브메시**(Erika_Archer_Body_Mesh_primitive0 ·
+     Cook_Top)에 들어 있다. 그 메시를 끄면 상의가 통째로 사라져 맨살이 된다(실측).
+
+   ▪ 왜 정점을 안 건드리는가
+     스키닝은 정점마다 붙은 본 가중치로 돌아간다. **삼각형만 지우면** 남은 정점의
+     본 결합이 1비트도 안 바뀌어 애니 45종이 원본과 동일하게 나온다. 예전에 실패한
+     v4(아처 메시 스무딩)는 좌표를 옮겨서 무너진 것이다 — 지우는 것과 옮기는 것은 다르다.
+
+   ▪ 왜 구멍이 안 생기는가
+     실측(2026-08-27): 이 서브메시는 하나로 보이지만 실제로는 **정점을 공유하지
+     않는 껍데기 31개**의 모음이다. 화살통·화살은 각자 독립 껍데기라 통째로
+     지워도 몸통 표면에 구멍이 안 난다. 앞·뒤·쓰러짐(Death01) 3각도로 확인했다.
+
+   ▪ 무엇을 고르는가 (바인드 포즈 로컬좌표 · 몸 앞이 +Z)
+     · 화살통(216) · 화살대 5×10 · 깃 5×6 → **AABB 전체가 Z < -0.14**.
+       "등 뒤로만 존재하는 껍데기"다. 여유가 크다 — 지울 것들의 maxZ는
+       -0.155~-0.22, 안 지울 것 중 제일 뒤가 -0.058이다.
+     · 멜빵(190)은 이 규칙에 안 걸린다. 어깨를 넘어 **가슴 앞까지** 감긴다
+       (Z -0.176~+0.159). 몸통 뒷면(-0.162)보다 더 뒤로 나오면서 앞까지 닿는
+       유일한 껍데기라 그것으로 고른다.
+
+   ⚠️ 캐릭터를 바꾸면 이 좌표가 전부 틀린다. 그래서 **지울 삼각형 수를 먼저 세고**
+      예상(486/4071)과 다르면 **아무것도 안 지운다.** 조용히 엉뚱한 데를 자르는
+      것보다 화살통이 남는 편이 낫다 — 왜 건너뛰었는지 콘솔에 적는다.
+      원본 궁수를 그대로 보려면 URL에 ?quiver=keep */
+const QUIVER_KEEP = new URLSearchParams(location.search).get("quiver") === "keep";
+const QUIVER_SIG = { tris: 4071, shells: 31, strip: 486 };
+
+/* 인덱스 버퍼를 "정점을 공유하는 삼각형 무리"로 쪼갠다.
+   ⚠️ 정점 번호가 아니라 **좌표로 용접**해서 이어야 한다. GLB는 UV·노멀 이음매에서
+   같은 자리 정점을 쪼개 두므로, 번호만 보면 이어진 표면이 여러 조각으로 갈라진다. */
+function meshShells(pos, idx) {
+  const n = pos.length / 3, weld = new Int32Array(n), at = new Map();
+  let w = 0;
+  for (let i = 0; i < n; i++) {
+    const k = Math.round(pos[i*3] * 1e4) + "_" + Math.round(pos[i*3+1] * 1e4) + "_" + Math.round(pos[i*3+2] * 1e4);
+    if (at.has(k)) weld[i] = at.get(k); else { at.set(k, w); weld[i] = w++; }
+  }
+  const par = new Int32Array(w);
+  for (let i = 0; i < w; i++) par[i] = i;
+  const find = a => { while (par[a] !== a) { par[a] = par[par[a]]; a = par[a]; } return a; };
+  const uni = (a, b) => { a = find(a); b = find(b); if (a !== b) par[b] = a; };
+  for (let t = 0; t < idx.length; t += 3) { uni(weld[idx[t]], weld[idx[t+1]]); uni(weld[idx[t+1]], weld[idx[t+2]]); }
+  const by = new Map();
+  for (let t = 0; t < idx.length; t += 3) {
+    const r = find(weld[idx[t]]);
+    let g = by.get(r);
+    if (!g) { g = { tris: [], min: [1e9, 1e9, 1e9], max: [-1e9, -1e9, -1e9] }; by.set(r, g); }
+    g.tris.push(t);
+    for (let j = 0; j < 3; j++) {
+      const v = idx[t+j] * 3;
+      for (let k = 0; k < 3; k++) { const c = pos[v+k]; if (c < g.min[k]) g.min[k] = c; if (c > g.max[k]) g.max[k] = c; }
+    }
+  }
+  return Array.from(by.values());
+}
+
+/* GLB 임포트 직후에 부른다. 서명이 안 맞는 메시는 조용히 지나간다. */
+function stripQuiver(meshes) {
+  if (QUIVER_KEEP) return 0;
+  let hit = 0;
+  for (const m of meshes) {
+    const idx = (m.getIndices && m.getTotalVertices && m.getTotalVertices()) ? m.getIndices() : null;
+    if (!idx || idx.length / 3 !== QUIVER_SIG.tris) continue;     // 화살통이 든 서브메시가 아니다
+    const pos = m.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+    if (!pos) continue;
+    const shells = meshShells(pos, idx);
+    if (shells.length !== QUIVER_SIG.shells) {
+      console.warn("[화살통] 껍데기 수가 다르다 —", shells.length, "≠", QUIVER_SIG.shells, "· 건너뜀");
+      continue;
+    }
+    const dead = new Set();
+    let cut = 0;
+    for (const s of shells) {
+      const behind = s.max[2] < -0.14;                                              // 화살통 · 화살대 · 깃
+      const strap  = s.min[2] < -0.165 && s.max[2] > 0.10 && s.tris.length < 300;   // 멜빵
+      if (behind || strap) { for (const t of s.tris) dead.add(t); cut += s.tris.length; }
+    }
+    if (cut !== QUIVER_SIG.strip) {
+      console.warn("[화살통] 고른 삼각형이", cut, "개 — 예상", QUIVER_SIG.strip, "과 달라 건너뛴다(캐릭터가 바뀌었나?)");
+      continue;
+    }
+    const keep = [];
+    for (let t = 0; t < idx.length; t += 3) if (!dead.has(t)) keep.push(idx[t], idx[t+1], idx[t+2]);
+    m.setIndices(keep, null, true);
+    hit++;
+  }
+  return hit;
+}
+
 async function loadCook() {
   if (!SHOW_PERSON) return;      // 환경 구축 단계 — 캐릭터 제외 (33MB 로드도 건너뜀)
   try {
     const r = await BABYLON.SceneLoader.ImportMeshAsync("", ASSETS.dir, COOK_GLB, scene, null, ".glb");
+    stripQuiver(r.meshes);          // 궁수 화살통·멜빵 제거 — 위 주석
     const holder = new BABYLON.TransformNode("cookHolder", scene);
     holder.parent = anchors["person"].node;
     const root = r.meshes.find(m => m.name === "__root__") || r.meshes[0];
@@ -7477,6 +7604,7 @@ function classifyByNearest(px, w, h, palette) {
 async function renderWith(cam, setup, teardown, opts) {
   const savedCams = scene.activeCameras ? scene.activeCameras.slice() : null;
   const savedCam = scene.activeCamera;
+  const savedGen = CAM_GEN;         // 캡처 도중 시점이 바뀌었는지 판별용 (CAM_GEN 주석)
   const savedVp = cam.viewport;   // PiP 인셋 뷰포트가 물려오면 GT가 구석에 렌더됨 — 전체 프레임 강제
   cam.viewport = new BABYLON.Viewport(0, 0, 1, 1);
   scene.activeCameras = [];
@@ -7491,8 +7619,15 @@ async function renderWith(cam, setup, teardown, opts) {
   const data = await engine.readPixels(0, 0, w, h);
   if (teardown) teardown();
   cam.viewport = savedVp;
-  scene.activeCameras = savedCams;
-  scene.activeCamera = savedCam;
+  /* ⚠️ 저장본을 무조건 되돌리면 안 된다. `await readPixels` 동안 시나리오·사용자가
+     시점을 바꿨을 수 있고, 그러면 방금의 그 변경을 덮어쓴다(CAM_GEN 주석의 실측 사례).
+     세대가 그대로일 때만 저장본을 쓰고, 바뀌었으면 **현재 결정을 다시 적용한다.** */
+  if (CAM_GEN === savedGen) {
+    scene.activeCameras = savedCams;
+    scene.activeCamera = savedCam;
+  } else {
+    applyCameras();
+  }
   return { data: new Uint8Array(data.buffer), w, h };
 }
 function pixelsToDataURL(px, w, h) {
@@ -10752,12 +10887,8 @@ $("mbPushReset").addEventListener("click", () => {
 });
 $("scKettle").addEventListener("click", () => personRoute("toKettle"));
 $("scFull").addEventListener("click",   () => personRoute("full",     { loop:true }));
-$("scApproach").addEventListener("click", () => {
-  personGo(SCN.approach.map(v => v.clone())); setStatus("사람: 솥으로 접근 시작");
-});
-$("scPatrol").addEventListener("click", () => {
-  personGo(SCN.patrol.map(v => v.clone()), {loop:true}); setStatus("사람: 조리실 순회 시작");
-});
+/* scApproach·scPatrol 핸들러 제거 (2026-08-27) — 버튼과 SCN 데이터를 같이 지웠다.
+   scKettle(personRoute "toKettle")·scFull("full")이 같은 일을 배치 독립적으로 한다. */
 $("scCrouch").addEventListener("click", () => {
   person.mode = person.mode === "crouch" ? "idle" : "crouch";
   person.path = [];
@@ -11715,7 +11846,7 @@ window.__sim = {
   SURV, capture, captureBoth, applyCameras, camOf, pipRect, swapViews, cyclePip, pickView,
   setView: v => { mainView = v; viewSel.value = v; applyCameras(); },
   setPip:  v => { pipView = v; pipSel.value = v; applyCameras(); },
-  person, personGo, SCN, SAFE, setFire, FIRE_FOG, SMOKE_LAYER, fireSeekTo, fireRandomStage,
+  person, personGo, SAFE, setFire, FIRE_FOG, SMOKE_LAYER, fireSeekTo, fireRandomStage,   // SCN 제거 (2026-08-27)
   // Ground Truth · 데이터셋
   groundTruth, generateDataset, DATAGEN, randomizeScene, restoreAfterDataset,
   GT_CLASSES, classOfMesh, showInspector,
@@ -11831,16 +11962,38 @@ initPhysics();   // 비동기 — 파일 없으면 물리만 꺼진 채 계속 �
    HTML 구조는 그대로 두고 DOM만 재배치한다(이벤트 핸들러는 노드를 따라 이동). */
 (function organizeUI() {
   const panel = $("panel");
+  /* 🎬 발표 탭이 **맨 앞이고 기본**이다 (2026-08-27).
+
+     왜 만들었나 — 발표 한 번 하는 데 탭을 3개 오갔다:
+       ▶ 실행   before / after
+       📊 데이터 실영상 패널 · 검출 시작        ← 시나리오 ④에서 쓰는데 다른 탭
+       📷 카메라 샷 리스트
+     발표 도중에 탭을 찾아 헤매면 이야기 흐름이 끊긴다. 회의록의 "지금 데모 시 너무
+     버튼이 많다"는 **개수가 아니라 이 동선** 얘기다 — 화면에 보이는 버튼은 37개인데
+     발표자가 실제로 누르는 건 열 개가 안 된다.
+
+     ⚠️ 상단 메뉴바(mbPush 등)가 생긴 이유도 같은 문제였다("탭을 바꾸고 스크롤해야
+     보였다" — 그 주석 참고). 그건 증상에 붙인 반창고고, 이 탭이 원인을 없앤다.
+     메뉴바는 그대로 둔다 — 항상 보이는 게 해가 되지는 않는다.
+
+     섹션을 **옮긴다**(복사가 아니다). DOM 노드를 그대로 이동하므로 핸들러가 따라오고,
+     같은 버튼이 두 곳에 생기지 않는다. 옮긴 섹션은 원래 탭에서 빠진다. */
   const TABS = [
+    /* ⚠️ 섹션 제목 앞에 **번호를 붙여** 매칭한다("① 화재 감지" / "② 사람 동선 감지").
+       종전처럼 둘 다 "발표 시나리오"로 시작하면 find가 첫 번째만 잡아 ②가 고급 탭으로
+       흘러간다. 제목을 고칠 때는 이 목록도 같이 고쳐야 한다 — 안 고치면 **에러 없이
+       조용히** 섹션이 사라진다(find가 undefined를 돌려주고 그냥 넘어간다). */
+    { id:"show", label:"🎬 발표",  secs:["① 화재 감지","② 사람 동선 감지",
+                                        "실영상 패널","샷 리스트","사고 시나리오 (연쇄)"] },
     { id:"start", label:"🚀 시작", secs:[] },   // 아래 startTabUI()가 내용을 채운다
-    { id:"run",  label:"▶ 실행",   secs:["발표 시나리오","관절 제어","조리 설정","조리 상태","조작 대상","사람 시나리오 · 화재","사고 시나리오 (연쇄)"] },
-    { id:"cam",  label:"📷 카메라", secs:["카메라 · 모델 입력","시점 프리셋","샷 리스트","감시 카메라 관리"] },
+    { id:"run",  label:"▶ 실행",   secs:["관절 제어","조리 설정","조리 상태","조작 대상","사람 시나리오 · 화재"] },
+    { id:"cam",  label:"📷 카메라", secs:["카메라 · 모델 입력","시점 프리셋","감시 카메라 관리"] },
     /* 데이터 탭은 "데이터를 만든다 → 모델을 검증한다 → 회차를 비교한다" 순서로 읽히게 둔다.
        센서 리얼리즘·조리실 인원은 데이터셋의 다양성을 정하는 손잡이라 고급이 아니라 여기다.
        (고급에 있으면 데이터 만드는 사람이 영영 못 찾는다) */
     { id:"data", label:"📊 데이터", secs:["데이터셋 · Ground Truth","궤적 데이터 수집",
                                          "센서 리얼리즘 (CCTV 특성)",
-                                         "조리실 인원 (다양성)","모델 검증 (Model-in-the-Loop)","실영상 패널",
+                                         "조리실 인원 (다양성)","모델 검증 (Model-in-the-Loop)",
                                          "궤적 예측","회차 기록 (Run Log)"] },
     { id:"adv",  label:"⚙ 고급",   secs:["전문가 기능","시각화 표시","화면 품질","물리 · 안전 (Havok)","에셋 임포트 (선택)"] },
   ];
@@ -11874,6 +12027,7 @@ initPhysics();   // 비동기 — 파일 없으면 물리만 꺼진 채 계속 �
 
   // 탭별 첫머리 안내문
   const HINTS = {
+    show: "발표에서 누를 것만 모았습니다. <b>시나리오 ①</b>부터 위에서 아래로 진행합니다.",
     run:  "로봇을 움직이고 사고 상황을 재현합니다. <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 사람 이동 · <kbd>Tab</kbd> 대상 전환",
     cam:  "시점을 고르고, 원하는 각도를 새 카메라로 등록해 여러 각도에서 캡처합니다. <kbd>C</kbd> 현재 캡처",
     data: "위에서 아래로 <b>데이터 생성 → 다양성 설정 → 모델 검증 → 회차 비교</b> 순서입니다. 등록된 모든 카메라가 대상입니다.",
@@ -11916,7 +12070,9 @@ initPhysics();   // 비동기 — 파일 없으면 물리만 꺼진 채 계속 �
     box.style.transition = "box-shadow .2s"; box.style.boxShadow = "0 0 0 2px #58a6ff";
     setTimeout(() => { box.style.boxShadow = ""; }, 1600);
   };
-  showTab("start");
+  /* 기본 탭이 🚀 시작이었다. 팀원이 처음 열 때는 그게 맞지만, **발표 자리에서는
+     아니다** — 열자마자 화재 시나리오가 보여야 한다. 시작 탭은 한 번 누르면 된다. */
+  showTab("show");
   let dev = false;
   try { dev = localStorage.getItem("hkr.sim.devMode") === "1"; } catch (e) {}
   const dm = document.getElementById("devMode");
@@ -12009,7 +12165,8 @@ initPhysics();   // 비동기 — 파일 없으면 물리만 꺼진 채 계속 �
   };
   document.getElementById("stMil").onclick = () => { showTab("data"); click("milBtn"); };
   document.getElementById("stAuto").onclick = () => click("autoBtn");
-  document.getElementById("stApproach").onclick = () => click("scApproach");
+  // scApproach(구) 제거 → 같은 일을 하는 scKettle로. 이쪽은 배치가 바뀌어도 따라온다.
+  document.getElementById("stApproach").onclick = () => click("scKettle");
   /* 기본 탭에서 바로 누를 수 있어야 한다 — 상단바·실행 탭에도 같은 버튼이 있지만,
      처음 여는 사람이 보는 화면은 이 탭이다(실측 지적: "카트 밀기가 안 보인다"). */
   document.getElementById("stPush").onclick     = () => click("mbPush");
@@ -12229,6 +12386,7 @@ function gearFollow(g, skinned, headBone, spineBone, yaw, prone) {
 async function spawnExtraPerson(i) {
   if (!SHOW_PERSON) return null;               // 캐릭터 제외 상태 — 추가 인원도 스폰 금지
   const r = await BABYLON.SceneLoader.ImportMeshAsync("", ASSETS.dir, COOK_GLB, scene, null, ".glb");
+  stripQuiver(r.meshes);            // 궁수 화살통·멜빵 제거 — loadCook 위 주석
   const root = new BABYLON.TransformNode("extraRoot" + i, scene);
   const holder = new BABYLON.TransformNode("extraHold" + i, scene);
   holder.parent = root;
@@ -13191,7 +13349,11 @@ setStatus(V.ok ? "준비 완료 — ▶ 자동 작업(튀김 배출)을 눌러�
    ⚠️ 이 블록은 **파일 끝에 몰아 둔다.** 같은 sim.html을 팀원이 동시에 고치고 있어
    (로봇 회피 기동), 기존 함수 사이에 끼워 넣으면 병합할 때 통째로 충돌한다.
    렌더 훅도 공용 registerBeforeRender에 줄을 더하지 않고 **관찰자를 따로 등록**한다. */
-const DEMO = { on:false, kind:null, t:0, beat:-1, saved:null, fade:null, evac:null, follow:null };
+const DEMO = { on:false, kind:null, t:0, beat:-1, saved:null, fade:null, evac:null, follow:null,
+  /* 발표 중인가. `on`과 다르다 — `on`은 마지막 비트 4초 뒤에 꺼지지만 화면은 그대로
+     남아 있고, 발표자는 아직 그 화면을 설명하는 중이다. demoRun에서 켜고 demoReset에서 끈다.
+     지금 쓰는 곳: 우측 실영상 패널의 ⚠더미·⚠라벨불일치 경고를 발표 중에만 감춘다. */
+  presenting:false };
 
 /* 화재 진행을 4배로 감는다 — 90초 곡선을 발표용 22초로 압축한다.
    fireSeekTo로 순간이동시키지 않는 이유: **연기가 서서히 차오르는 과정 자체가**
@@ -13285,14 +13447,54 @@ function demoNormalWork() {
   if (!state.auto) $("autoBtn").click();      // 로봇은 평소처럼 튀김 작업 중
   /* "정상 작업"이 서 있는 그림이면 안 된다. 조리 전용 액션(젓기·투입)은 리그에 없지만,
      스테이션 작업 루트가 선반에서 집고(pickup) 조리대·솥에서 다루는(interact) 동작을
-     돌려 준다 — 지금 가진 것 중 작업으로 보이는 유일한 경로다. */
-  if (typeof personRoute === "function") personRoute("tidy", { loop:true });
+     돌려 준다 — 지금 가진 것 중 작업으로 보이는 유일한 경로다.
+     자리는 demoWorkRoute가 정지 반경 밖에서 골라 준다(왜인지는 그 주석에). */
+  if (typeof personRoute === "function") personRoute("tidy", { loop:true, keys: demoWorkRoute() });
   demoPersonView();
 }
 
 function demoSteamUp() { STEAM.k = 5; steamSettle(); }
 
 function demoIgnite() { FIRE_FOG.speed = DEMO_FIRE_SPEED; setFire(true); }
+
+/* ④가 틀 클립 세 개를 **비트 간격 안에 욱여넣는다** (2026-08-27).
+
+   **왜 필요한가 — 안 하면 첫 클립만 나온다.** `VID_END`의 기본값은 0(= 파일 끝까지)이라
+   실사 클립 하나가 **98.8초**다. ④가 21초에 normal을 틀면 ⑤(36초)·⑥(48초)이 지나
+   시나리오가 끝나도 여전히 normal이 돌고 있다 — smoke·fire는 화면에 **한 번도 안 뜬다.**
+   실측(2026-08-27, 15초 관찰): 클립 전환 0회, 계속 normal.
+   비트 간격을 15초로 늘린 것만으로는 아무것도 해결되지 않는다. 클립을 잘라야 한다.
+
+   **왜 상수로 안 박는가.** 5초씩 박아 두면 비트 간격을 다시 조정할 때(발표 길이는
+   리허설에서 바뀐다) 조용히 어긋난다 — 간격을 줄이면 마지막 클립이 잘리고, 늘리면
+   빈 화면이 남는다. **간격에서 나눠 쓴다.** 클립이 두 개만 와도 알아서 반씩 쓴다.
+
+   ⚠️ 손으로 정한 구간(`?vidend=fire:52`)은 **건드리지 않는다.** 실제 영상이 오면
+   "불이 40초에 나온다" 같은 건 사람만 안다. 자동 계산은 그게 없을 때의 기본값이다.
+   되돌린 값은 DEMO.saved.vidEnd에 담아 demoReset이 복원한다. */
+function demoClipSegments() {
+  const S = DEMO_SCRIPTS.after;
+  const i = S.findIndex(b => b.act === demoDetectOn);         // 비트 번호를 박지 않는다
+  /* **다음 비트가 아니라 마지막 비트까지** 쓴다 (2026-08-27). 우측 패널은 `<video>`
+     이벤트가 끌고 가는 DOM이라 시뮬 비트와 무관하게 계속 돈다 — ⑤ 대피가 시작돼도
+     클립은 그대로 이어진다. 종전처럼 ④→⑤ 간격만 쓰면 ⑤를 당기는 순간(30s) 클립이
+     3초씩으로 쪼그라들어 박스가 뜨는 걸 볼 수 없다. ④→⑥ 전체면 21s / 3개 = 6.7초씩. */
+  const gap = (i >= 0) ? (S[S.length - 1].at - S[i].at) / 1000 : 15;
+  const have = vidHave();
+  if (!have.length) return null;
+  /* 전환에 0.3초쯤 먹는다(src 교체 + canplay 대기). 빼두지 않으면 마지막 클립이
+     다음 비트에 잘린다. 하한 2초 — 그보다 짧으면 박스가 뜨는 걸 볼 수 없다. */
+  const seg = Math.max(2, gap / have.length - 0.3);
+  const saved = {};
+  for (const k of have) {
+    if (vidEndOf(k)) continue;                                // 손으로 정한 구간은 존중
+    saved[k] = VID_END[k];
+    VID_END[k] = (VID_START[k] || 0) + seg;
+  }
+  console.log("[DEMO] ④ 클립 구간 " + seg.toFixed(1) + "초 × " + have.length +
+              "개 (간격 " + gap + "초) — " + have.join(" → "));
+  return saved;
+}
 
 /* 검출을 켠다. 자유 시점이면 박스 오버레이가 안 보이므로(milCapture는 CCTV 프레임을
    쓴다) 화재가 제일 잘 보이는 CCTV로 먼저 옮긴다. 모드는 기본 mock —
@@ -13322,8 +13524,27 @@ function demoDetectOn() {
   }
   if (!MIL.on) $("milBtn").click();
   /* 실영상 패널도 같이 연다 — 시뮬이 시뮬을 검출하는 그림만으로는 설득이 안 된다.
-     클립이 하나도 없으면 조용히 넘어간다(패널이 안 열릴 뿐 시나리오는 계속 간다). */
-  if (vidShowFor(vidBestSlot()) && ONNX.session && !VID.detect) $("vidDetectBtn").click();
+
+     **세 조건을 이어서 튼다** (정상 → 연기 → 연기+화재). 회의록 after ④의 하위 1·2·3이다.
+     화재 클립 하나만 틀면 관객이 보는 건 "불났을 때 박스가 뜬다" 하나뿐이라,
+     정작 우리가 파는 **"연기가 껴도 잡는다"**의 근거가 화면에 없다. 조건을 바꿔 가며
+     같은 모델이 계속 잡는 것을 보여야 증명이 된다.
+
+     연쇄는 `<video>`의 `ended`/`timeupdate`가 끌고 간다(vidNext). 렌더 루프와 무관한
+     네이티브 이벤트라 탭이 쉬어도 넘어간다 — 실측으로 확인했다.
+
+     클립이 하나도 없으면 vidPlaySeq가 false를 돌려주므로 vidShowFor로 **자리표시자**를
+     띄운다(패널은 열리고 "클립 준비 중"이 뜬다). 셋 중 일부만 있어도 있는 것만 순서대로
+     돈다 — 화재팀 영상이 순서대로 오지 않아도 발표가 멈추지 않는다. */
+  /* 구간을 **먼저** 잡고 튼다. vidPlay가 src를 넣는 순간 vidSeekStart가 걸리므로
+     순서가 바뀌면 첫 클립만 통짜로 나간다.
+     ⚠️ 구간 계산은 DEMO.saved와 **무관하게** 돈다. 이 함수는 버튼(demoRun)뿐 아니라
+     콘솔·리허설에서 직접 불리기도 하는데, saved에 매달아 두면 그때 구간이 안 잡혀
+     "버튼으로는 되는데 콘솔로는 첫 클립만 나온다"가 된다. 복원 정보만 saved에 담는다. */
+  const savedEnds = demoClipSegments();
+  if (DEMO.saved && DEMO.saved.vidEnd === undefined) DEMO.saved.vidEnd = savedEnds;
+  const shown = vidPlaySeq() || vidShowFor(vidBestSlot());
+  if (shown && ONNX.session && !VID.detect) $("vidDetectBtn").click();
 }
 
 function demoCollapse() { personFall(); }
@@ -13354,10 +13575,24 @@ function demoExitView() {
      복도형(`?layout=corridor`)에서는 방이 z1=3.5까지라 **벽 바깥을 보게 된다**(실측 1.55m 어긋남).
      각도(alpha·beta)는 월드 기준이라 그대로 둬도 두 배치 모두 방 안에 카메라가 선다. */
   const d = scene.getMeshByName("door");
-  const dx = d ? d.position.x : 1.8;
+  /* ⚠️ `position`이 아니라 `getAbsolutePosition()`이다 — demoEvacuate에 같은 경고가 있는데
+     여기만 안 고쳐져 있었다. doorBuild가 문을 경첩에 붙이므로 `position.x`는 **로컬 0.475**다.
+     실측(2026-08-27): 카메라가 문에서 1.33m 옆을 겨냥해 대피하는 조리원이 화면
+     가장자리(정규좌표 x=0.92)로 밀렸고, 그 자리는 실영상 패널이 덮는다 — ⑤가 통째로 안 보였다. */
+  const dx = d ? d.getAbsolutePosition().x : 1.8;
   const zt = LAYOUT.room.z1 - 1.15;              // 문 조금 안쪽 — 걸어오는 구간이 같이 잡힌다
   camera.setTarget(new V3(dx, 1.00, zt));
-  camera.alpha = -2.60; camera.beta = 1.28; camera.radius = 5.3;
+  /* 거리는 **고정값이 아니라 그때 사람 위치에서 정한다** (2026-08-27).
+     왜: ⑤ 시점에 안개가 이미 최대(0.22)라 **거리가 곧 가시성**이다
+     (투과율 exp(-0.22·d): 6.5m 24% · 4.5m 37%). 그래서 붙이고 싶은데, 고정으로
+     붙이면 회차에 따라 넘친다 — 조리원의 작업 자리가 회차마다 다르기 때문이다.
+     실측: 반경 3.4로 박았더니 어떤 회차에서 시작 순간 사람이 화면 **아래로 넘쳤다**
+     (정규좌표 y=1.03). 반대로 종전 5.3은 여유는 있지만 연기 속에서 흐리다.
+     → 사람과 문 사이 거리에 여유 2.6m를 더해 **둘 다 들어오는 최소 거리**를 쓴다.
+     연기 자체는 손대지 않는다 — before와 조건이 달라지면 "조건이 달랐잖아"가 된다. */
+  const gap = Math.hypot(person.node.position.x - dx, person.node.position.z - zt);
+  camera.alpha = -2.60; camera.beta = 1.28;
+  camera.radius = Math.min(5.6, Math.max(4.0, gap + 2.6));
 }
 
 /* ══ 출입문 열림 — 대피 연출 (2026-08-25) ═══════════════════════════════════
@@ -13494,8 +13729,8 @@ const DEMO_SCRIPTS = {
        명시돼 있고, 다시 재 보니 **김은 보인다** — 해치 정면에서 가시픽셀 7.83%다.
        뺐던 근거(1.16%)는 전체 화면 평균이라 국소 기둥에는 안 맞는 지표였다.
        자세한 숫자는 demoHatchView 주석에 있다. */
-    { at:7000,  msg:"② 국솥에서 수증기가 오릅니다 — 조리가 한창입니다",   act: () => { demoSteamUp(); demoHatchView(); vidShowFor("normal"); } },
-    { at:15000, msg:"③ 과열된 기름에 불이 붙었습니다",                  act: () => { demoIgnite(); demoHatchView(); vidShowFor("smoke"); } },
+    { at:7000,  msg:"② 국솥에서 수증기가 오릅니다 — 조리가 한창입니다",   act: () => { demoSteamUp(); demoHatchView(); } },  /* 영상 패널은 ④ 화재 감지에서만 (회의 after④). 조리·수증기 중엔 안 띄운다 */
+    { at:15000, msg:"③ 과열된 기름에 불이 붙었습니다",                  act: () => { demoIgnite(); demoHatchView(); } },
     { at:24000, msg:"④ 연기가 자욱합니다 — 카메라가 화재를 놓칩니다",   act: demoWideView },
     /* ⚠️ demoHazard는 "push"/"pinch"만 받는다. 처음에 "fall"을 넘겼더니 findHazardSpot이
        null을 돌려주고 **조용히 아무 일도 안 일어났다.** 실신은 주인공 액션이다. */
@@ -13510,9 +13745,25 @@ const DEMO_SCRIPTS = {
        명시돼 있고, 다시 재 보니 **김은 보인다** — 해치 정면에서 가시픽셀 7.83%다.
        뺐던 근거(1.16%)는 전체 화면 평균이라 국소 기둥에는 안 맞는 지표였다.
        자세한 숫자는 demoHatchView 주석에 있다. */
-    { at:7000,  msg:"② 국솥에서 수증기가 오릅니다 — 조리가 한창입니다",   act: () => { demoSteamUp(); demoHatchView(); vidShowFor("normal"); } },
-    { at:15000, msg:"③ 과열된 기름에 불이 붙었습니다",                  act: () => { demoIgnite(); demoHatchView(); vidShowFor("smoke"); } },
-    { at:21000, msg:"④ 화재를 즉시 감지했습니다 — 검출 시작",           act: demoDetectOn },
+    { at:7000,  msg:"② 국솥에서 수증기가 오릅니다 — 조리가 한창입니다",   act: () => { demoSteamUp(); demoHatchView(); } },  /* 영상 패널은 ④ 화재 감지에서만 (회의 after④). 조리·수증기 중엔 안 띄운다 */
+    { at:15000, msg:"③ 과열된 기름에 불이 붙었습니다",                  act: () => { demoIgnite(); demoHatchView(); } },
+    /* ④ 자막이 "화재를 즉시 감지했습니다"였는데, 우측에 **정상 조리 영상부터** 뜨는
+       순서로 바꿨으므로 자막과 화면이 어긋난다. 이 비트가 실제로 증명하는 것으로 고쳤다 —
+       조건을 바꿔 가며 **같은 모델이 계속 잡는다**는 것. 화재 감지는 그 셋 중 마지막이다. */
+    { at:21000, msg:"④ 같은 모델이 세 조건에서 모두 잡습니다 — 정상 · 연기 · 화재", act: demoDetectOn },
+    /* ⑤⑥를 6초씩 뒤로 밀었다 (30→36 · 42→48). ④에 클립 3개가 들어가야 하는데
+       종전 ④→⑤ 간격이 **9초**뿐이라 한 개도 다 못 틀었다. 15초면 클립당 5초다.
+       ⑤→⑥ 간격 12초는 그대로 지켰다 — 대피 지점까지 9.6m라 그 아래로 줄이면
+       조리원이 문에 닿기 전에 진화 비트가 덮어쓴다.
+       전체 길이 46초 → 52초. */
+    /* ⑤를 36s → **30s**로 당겼다 (2026-08-27). 회의록 after ⑤에 "(미리)"라고 적혀 있는데,
+       before의 쓰러짐이 **33초**라 36초는 그보다 **늦다** — 나란히 놓으면 "감지했더니 더
+       늦게 나갔다"가 되어 대조가 거꾸로 선다. 30초면 쓰러지기 3초 전에 나가는 그림이다.
+       ④→⑤ 간격이 15s → 9s로 줄지만 **클립은 안 쫓긴다** — demoClipSegments가
+       ④→⑥ 전체(21s)에서 나눠 쓰도록 같이 고쳤다(그쪽 주석). 우측 패널은 시뮬 비트와
+       무관한 DOM이라 조리원이 대피하는 동안에도 계속 돈다.
+       ⑤→⑥ 12s는 그대로 지킨다 — 대피 지점까지 9.6m라 그 아래로 줄이면 문에 닿기 전에
+       진화 비트가 덮어쓴다. */
     { at:30000, msg:"⑤ 조리원이 출입구로 대피합니다",                   act: demoEvacuate },
     { at:42000, msg:"⑥ 진화 — 연기가 걷힙니다",                        act: () => { demoWideView(); demoExtinguish(9000); } },
   ],
@@ -13588,6 +13839,7 @@ function demoTick(dt) {
 function demoRun(kind) {
   if (!DEMO_SCRIPTS[kind]) return;
   demoReset(true);
+  DEMO.presenting = true;              // 경고 배지를 감춘다 (DEMO.presenting 주석)
   /* 되돌릴 지점을 뜬다 — 사고 시나리오의 ACC.saved와 같은 방식이다.
      안 뜨면 되돌리기를 눌러도 사람은 문 앞에 서 있고 주 시점은 CCTV에 남는다
      (실측으로 확인한 첫 판의 실제 증상이다). */
@@ -13597,9 +13849,84 @@ function demoRun(kind) {
     /* ⚠️ 검출 모드도 뜬다. ④에서 mock→onnx로 바꾸는데, 되돌리지 않으면
        **다음 사람이 쓸 때 모드가 바뀐 채로 남는다.** 같은 sim.html을 팀원이 쓴다. */
     milMode: MIL.mode,
+    /* 발표용 안전 설정도 뜬다 — 아래 demoPresentSafety 주석에 왜인지 적어 뒀다. */
+    margin: AVOID.margin,
+    horizon: PRED.vizHorizon,
+    roles: EXTRAS.map(P => P.role),
   };
+  demoPresentSafety();
   DEMO.on = true; DEMO.kind = kind; DEMO.t = 0; DEMO.beat = -1;
   demoSay("▶ " + kind + " 시나리오 시작");
+}
+
+/* ══ 발표 중에는 로봇이 계속 움직여야 한다 (2026-08-26) ═══════════════════════
+   **문제.** 기본 시작 시나리오는 학습 데이터용이라 `caution` 역할이 **일부러**
+   감속 반경을 드나든다. 그 구성 그대로 ▶ after를 누르면 ① "조리원이 평소대로
+   작업합니다" 자막이 나오는 내내 로봇이 굳어 있다.
+
+   실측 (2026-08-26, 기본 3명 구성 · 관절 각도 합을 6회 표본):
+
+   | | 결과 |
+   |---|---|
+   | 관절 변화 없음 | **6회 중 5회** (변화량 0.0000) |
+   | AVOID 사유 | "횡단 보류 — 2.1s 내 2.35m 접근 예측" |
+   | 보류 누적 | 5.7s → **24.0s** (계속 증가) |
+   | 안전 계수 | 0.75 (감속) |
+   | 엑스트라 제거 후 | 조리 사이클 **완주** (seq 3→4→5→9→10→12→0 · 사유 없음) |
+
+   화면에는 "안전하게 멈춘 로봇"이 아니라 **고장난 로봇**으로 보인다. 발표에서
+   제일 나쁜 그림이고, before는 과열→발화가 진행돼야 해서 로봇이 멈추면 이야기
+   자체가 안 굴러간다.
+
+   **고치는 방법.** 2026-08-22의 `?demo=1`이 하던 일과 같다. 다만 URL 플래그는
+   **발표자가 잊어버린다** — 실제로 8/24 되돌리기(v82) 때 통째로 사라졌고 그 뒤로
+   아무도 몰랐다. 그래서 버튼 안으로 넣는다. 시나리오가 도는 동안만:
+     ① 엑스트라를 전원 `far` 역할로 — roleStations가 zone으로 걸러 반경 밖 스테이션만 쓴다
+     ② `AVOID.margin` 0.35 → 0 — 0.35면 판정 반경이 3.45m인데 조리 스테이션이
+        로봇에서 3~4m에 몰려 있어 **사람이 제 일만 해도 상시 보류**가 된다
+     ③ `PRED.vizHorizon` 3.5 → 1.2 — ①②만으로는 **부족하다**(실측: 동결 7/10).
+        far 스테이션 하한이 3.90m인데 정지 반경이 3.10m라 사이가 0.80m뿐이고,
+        예측 불확실성 σ가 그 틈을 넘어선다. 실측: 3.90m에 **가만히 선** 사람이
+        1.9s 창에서 판정 2.7~2.9m → 보류. 창을 줄이면 σ가 덜 자란다.
+
+   ⚠️ **반응형 안전(SAFE.factor)은 건드리지 않는다.** 사람이 실제로 가까워지면
+   그대로 감속·정지한다. 끄는 것은 "곧 가까워질 것 같다"는 예측 보류뿐이다.
+   ⚠️ 되돌리기(demoReset)가 셋 다 복원한다. 복원을 빼먹으면 팀원이 데이터셋을
+   뽑을 때 caution/danger 표본이 조용히 사라진다 — 화면에는 안 보이는 사고다. */
+function demoPresentSafety() {
+  AVOID.margin = 0;
+  PRED.vizHorizon = 1.2;
+  EXTRAS.forEach(P => { P.role = "far"; extraNextTarget(P); });
+}
+
+/* ①번에서 조리원이 설 자리 — **계산해서** 고른다.
+   종전에는 `tidy` 경로를 그대로 썼는데, 그 다섯 자리 중 셋이 로봇 정지 반경(3.10m)
+   안이다: `wrack` 1.18m · `shelf` 2.25m · `prep` 3.11m. 조리원이 거기 서 있는 동안
+   로봇은 **정상적으로** 정지한다 — 안전 기능은 제대로 도는데 화면은 멈춰 있다.
+   (실측: 표본 33회 중 정지 13회 · 조리 단계가 5에서 20회 연속 멈춤)
+
+   ⚠️ 자리를 손으로 다시 박으면 안 된다. 2026-08-22에 같은 실수를 했다 — 반경 밖
+   좌표로 하드코딩했더니 복도형 배치(13×7m)에서 12개 중 10개가 방 밖이었다.
+   그래서 **로봇 위치와 정지 반경에서 매번 고른다**:
+     · 조리 동작(pickup·interact)이 붙은 스테이션만
+     · 정지 반경 + 0.5m 밖 — 0.5는 걷다 흔들려도 반경을 안 밟게 하는 여유
+     · 그중 **가장 가까운** 4곳 — 멀리 보내면 로봇과 한 화면에 안 담긴다
+       (demoPersonView 반경이 7.6m다)
+   현재 배치에서 뽑히는 자리: 제어반 앞 3.89 · 배식구 앞 3.97 · 중앙 배선 준비대 4.11 ·
+   북측 배출대 4.58. 전부 감속 밴드라 **로봇이 사람 쪽을 향할 때 느려지는 그림**은
+   그대로 남는다 — 그게 이 제품이 파는 것이라 오히려 보여줘야 한다. */
+function demoWorkRoute() {
+  const B = LAYOUT.robot.base, min = SAFE.NOM_STOP + 0.5;
+  const picked = Object.entries(STATION)
+    .map(([k, s]) => ({ k, s, d: Math.hypot(s.pos.x - B.x, s.pos.z - B.z) }))
+    .filter(o => o.d >= min && (o.s.act || []).some(a => a === "pickup" || a === "interact"))
+    .sort((a, b) => a.d - b.d)
+    .slice(0, 4)
+    .map(o => o.k);
+  /* 배치가 이상해 두 곳도 못 찾으면 종전 경로로 물러선다 — 발표가 멈추는 것보다 낫다. */
+  if (picked.length < 2) { console.warn("[DEMO] 반경 밖 작업 자리 부족 — tidy로 대체"); return null; }
+  picked.push(picked[0]);                       // 고리로 닫는다(마지막 → 처음)
+  return picked;
 }
 
 function demoReset(quiet) {
@@ -13613,6 +13940,7 @@ function demoReset(quiet) {
   /* 진화 페이드가 돌던 중이면 끊는다 — 위에서 이미 setFire(false)를 불렀으므로
      안개는 정식 복원돼 있다. 남겨 두면 복원된 밀도를 페이드가 다시 덮어쓴다. */
   DEMO.fade = null; DEMO.evac = null; DEMO.follow = null;
+  DEMO.presenting = false;                      // 경고 배지를 다시 보이게 (DEMO.presenting 주석)
   doorReset();                                  // 문을 닫힌 상태로
   if (VID.open) { VID.detect = false; const vb = $("vidDetectBtn"); if (vb) vb.textContent = "검출 시작"; vidOpen(false); }
   person.node.setEnabled(true);                 // 대피로 감췄던 경우 되돌린다
@@ -13632,6 +13960,23 @@ function demoReset(quiet) {
       const sel = $("milMode");
       if (sel) { sel.value = DEMO.saved.milMode; sel.dispatchEvent(new Event("change")); }
       else MIL.mode = DEMO.saved.milMode;
+    }
+    /* 발표용으로 낮춘 예측 회피 여유와 엑스트라 역할을 복원한다 (demoPresentSafety 짝).
+       빼먹으면 데이터셋에서 caution·danger 표본이 조용히 사라진다 — 화면에는 안 보인다. */
+    if (typeof DEMO.saved.margin === "number") AVOID.margin = DEMO.saved.margin;
+    if (typeof DEMO.saved.horizon === "number") PRED.vizHorizon = DEMO.saved.horizon;
+    if (DEMO.saved.roles) {
+      EXTRAS.forEach((P, k) => {
+        if (DEMO.saved.roles[k] && P.role !== DEMO.saved.roles[k]) {
+          P.role = DEMO.saved.roles[k]; extraNextTarget(P);
+        }
+      });
+    }
+    /* ④가 자동으로 잡은 클립 구간을 되돌린다 (demoClipSegments 짝).
+       안 되돌리면 되돌리기를 눌러도 클립이 5초에서 끊긴 채 남는다 — 발표 뒤에
+       팀원이 실영상 패널을 열면 영상이 토막나 있고 왜 그런지 알 수가 없다. */
+    if (DEMO.saved.vidEnd) {
+      for (const k in DEMO.saved.vidEnd) VID_END[k] = DEMO.saved.vidEnd[k];
     }
     DEMO.saved = null;
   }
@@ -13663,21 +14008,41 @@ function demoReset(quiet) {
    전용 캠도 후반엔 연무에 묻힌다), 연기 낀 뷰는 후반이라야 자욱하다.
      fire: null → 지금 상태 그대로 · 0 → 끈다 · N → 켜고 N초 지점으로 맞춘다
 
-   ⚠️ 순서는 **요청받은 그대로** 뒀다. 그래서 ②에서 불을 켰다가 ③~⑧에서 끄고 ⑨에서 다시
-   켠다 — 점화가 두 번 일어난다. 화재 컷(②⑨⑩⑪)을 뒤로 몰면 한 번으로 끝나고 더 매끄럽다.
-   바꾸려면 이 배열 순서만 고치면 된다. */
+   ✅ 순서를 **불 없는 컷 → 불 있는 컷**으로 바꿨다 (2026-08-26).
+
+   종전에는 회의록에 적힌 나열 순서를 그대로 썼는데, 그러면 화재 상태가
+   `끔 → 12s → 끔 → … → 15s → 65s → 12s` 로 오르내린다. 실측:
+   **점화 2회 · 뒤로 되감기 1회**(65s → 12s).
+
+   되감기가 제일 비싸다. `fireSeekTo`는 목표 진행도까지 입자를 **채우는** 함수라
+   앞으로 감는 건 이어서 채우면 되지만, 뒤로 갈 때는 쌓인 연기를 **비우고 처음부터
+   다시 채운다.** 컷이 넘어가는 순간 화면이 튄다.
+
+   바꾼 뒤: **점화 1회 · 되감기 0회**, 진행도가 12 → 12 → 15 → 65로 단조 증가한다.
+   불이 한 번 붙어서 점점 심해지는 그림이라 이야기로도 자연스럽다.
+
+   ⚠️ 회의록의 그 줄은 "**남길 카메라**" 목록이지 재생 순서 지정이 아니다 —
+   카메라 11컷·10대는 하나도 안 뺐고 자리만 바꿨다. 나열 순서대로 틀어야 한다면
+   아래 `회의록 나열 순서` 주석의 번호대로 되돌리면 된다.
+
+   화재 단계를 컷마다 지정하는 이유 — "해치정면(불 나는 거)"과 "저상(연기 낀 뷰)"은
+   시점이 아니라 **타이밍이 조건**이다. 불꽃은 초반이라야 연기에 안 가리고(실측: 후드 밑
+   전용 캠도 후반엔 연무에 묻힌다), 연기 낀 뷰는 후반이라야 자욱하다.
+     fire: null → 지금 상태 그대로 · 0 → 끈다 · N → 켜고 N초 지점으로 맞춘다 */
 const SHOTS = [
-  { cam:"lowFloor", label:"① 저상 — 남서",        fire:0  },
-  { cam:"fireSE",   label:"② 불꽃 — 남동",        fire:12 },
-  { cam:"cvNW",     label:"③ 북서 모서리",        fire:0  },
-  { cam:"cvN",      label:"④ 조리라인",           fire:0  },
-  { cam:"cvNE",     label:"⑤ 북동 모서리",        fire:0  },
-  { cam:"cvSE",     label:"⑥ 입구",               fire:0  },
-  { cam:"cvS",      label:"⑦ 로봇 남",            fire:0  },
-  { cam:"cvSW",     label:"⑧ 배식구",             fire:0  },
-  { cam:"cvHatch",  label:"⑨ 해치 정면 — 발화",   fire:15 },
-  { cam:"lowFloor", label:"⑩ 저상 — 연기 낀 뷰",  fire:65 },
-  { cam:"fireNW",   label:"⑪ 불꽃2 — 북서",       fire:12 },
+  //                                                              회의록 나열 순서
+  { cam:"lowFloor", label:"① 저상 — 남서",        fire:0  },   // ①
+  { cam:"cvNW",     label:"② 북서 모서리",        fire:0  },   // ③
+  { cam:"cvN",      label:"③ 조리라인",           fire:0  },   // ④
+  { cam:"cvNE",     label:"④ 북동 모서리",        fire:0  },   // ⑤
+  { cam:"cvSE",     label:"⑤ 입구",               fire:0  },   // ⑥
+  { cam:"cvS",      label:"⑥ 로봇 남",            fire:0  },   // ⑦
+  { cam:"cvSW",     label:"⑦ 배식구",             fire:0  },   // ⑧
+  // ── 여기서 한 번 점화하고, 이 아래로는 진행도만 올린다 (되감기 없음) ──
+  { cam:"fireSE",   label:"⑧ 불꽃 — 남동",        fire:12 },   // ②
+  { cam:"fireNW",   label:"⑨ 불꽃2 — 북서",       fire:12 },   // ⑪
+  { cam:"cvHatch",  label:"⑩ 해치 정면 — 발화",   fire:15 },   // ⑨
+  { cam:"lowFloor", label:"⑪ 저상 — 연기 낀 뷰",  fire:65 },   // ⑩
 ];
 const SHOW = { on:false, i:-1, t:0, dwell:4000, saved:null };
 
@@ -13868,11 +14233,14 @@ function vidDupSlots() {
    발표 중에 빈 검은 화면이 뜨는 것보다 패널이 안 열리는 편이 낫다. */
 function vidHave() { return VID.order.filter(k => VID.clips[k]); }
 
-/* ④ 감지 비트가 틀 클립. 셋 다 있으면 ③(연기+화재)이 맞지만 **화재팀 영상이 순서대로
-   오지 않는다.** fire가 없으면 smoke로 내려간다 — 없다고 ④를 통째로 건너뛰면 발표에서
-   증명해야 할 장면이 사라진다.
-   ⚠️ normal까지는 안 내려간다. "화재를 즉시 감지했습니다" 자막 밑에 **평범한 조리 영상**이
-   뜨면 자리표시자보다 나쁘다 — 관객이 먼저 알아챈다. */
+/* ④가 **클립이 하나도 없을 때** 띄울 자리표시자를 고른다.
+
+   ⚠️ 종전에는 이게 ④의 정식 경로였다(클립 하나만 틀었다). 2026-08-27에 ④를
+   `vidPlaySeq`(정상 → 연기 → 화재 연쇄)로 바꾸면서 **폴백으로 내려왔다.**
+   그때 "normal까지는 안 내려간다 — '화재를 즉시 감지했습니다' 자막 밑에 평범한 조리
+   영상이 뜨면 안 된다"는 제약을 달아 뒀는데, 자막 자체를 "세 조건에서 모두 잡습니다"로
+   바꿨으므로 그 제약은 사라졌다. 여기서 normal을 안 보는 이유는 이제 하나다 —
+   **자리표시자는 못 채운 것을 가리켜야** 한다("③ 연기+화재 클립 준비 중"). */
 function vidBestSlot() {
   for (const k of ["fire", "smoke"]) if (VID.clips[k]) return k;
   return "fire";                                  // 없으면 "③ 연기+화재 클립 준비 중"
@@ -14066,10 +14434,17 @@ function vidStatusLine() {
   if (VID.err) { st.textContent = "⚠ " + VID.err; return; }
   if (!VID.detect) { st.textContent = VID.cur ? (VID_LABEL[VID.cur] + " — 검출 꺼짐") : "대기"; return; }
   const mismatch = ONNX.nc !== null && ONNX.nc !== ONNX.labels.length;
-  st.textContent = (ONNX.isDummy ? "⚠더미 · " : "") + (mismatch ? "⚠라벨불일치 · " : "") +
-                   (ONNX.name || "model") + " · " + (VID.boxes ? VID.boxes.length : 0) + "개 검출 · " +
+  /* 발표 중에는 ⚠더미·⚠라벨불일치를 **감춘다** (사용자 지시, 2026-08-27).
+     이 배지는 발표 화면 위에 그대로 뜨는 자리라 관객이 먼저 읽는다.
+     ⚠️ **없애는 게 아니라 가리는 것뿐이다.** 되돌리기를 누르면 다시 나오고,
+     옆 패널 안내문(vidNote)과 콘솔 경고는 발표 중에도 그대로다 — 준비 단계에서
+     더미를 더미로 알아보는 장치는 살려 둔다. */
+  const hideWarn = (typeof DEMO !== "undefined") && DEMO.presenting;
+  const warn = hideWarn ? "" : ((ONNX.isDummy ? "⚠더미 · " : "") + (mismatch ? "⚠라벨불일치 · " : ""));
+  st.textContent = warn + (ONNX.name || "model") + " · " +
+                   (VID.boxes ? VID.boxes.length : 0) + "개 검출 · " +
                    VID.ms.toFixed(0) + "ms · " + VID.hz + "Hz";
-  st.style.color = (ONNX.isDummy || mismatch) ? "#f0a020" : "";
+  st.style.color = (!hideWarn && (ONNX.isDummy || mismatch)) ? "#f0a020" : "";
 }
 
 function vidNote() {
