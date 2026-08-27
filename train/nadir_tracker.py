@@ -68,10 +68,9 @@ class _KF:
 
 
 class _Track:
-    _next = 1
-    def __init__(self, box):
+    def __init__(self, box, tid):
         self.kf = _KF(box); self.box = list(box[:4])
-        self.id = _Track._next; _Track._next += 1
+        self.id = tid                       # id는 소속 NadirTracker가 발급(카메라별 독립)
         self.hits = 1; self.time_since_update = 0
 
     def predict(self):
@@ -86,7 +85,7 @@ class NadirTracker:
     def __init__(self, iou_thresh=0.3, min_hits=2, max_age=5):
         self.iou_thresh = iou_thresh; self.min_hits = min_hits; self.max_age = max_age
         self.tracks = []
-        _Track._next = 1
+        self._next = 1                      # 이 추적기 전용 id 시퀀스(다른 추적기와 독립)
 
     def update(self, dets):
         """dets: [[x1,y1,x2,y2,score], ...] → outputs: [{box,id,source,score}]."""
@@ -98,7 +97,7 @@ class NadirTracker:
             self.tracks[ti].update(dets[di][:4]); det_to_track[di] = self.tracks[ti]
         # 미매칭 검출 → 새 트랙
         for di in un_d:
-            t = _Track(dets[di][:4]); self.tracks.append(t); det_to_track[di] = t
+            t = _Track(dets[di][:4], self._next); self._next += 1; self.tracks.append(t); det_to_track[di] = t
         # 미매칭 트랙 → 놓침 카운트
         for ti in un_t: self.tracks[ti].time_since_update += 1
 

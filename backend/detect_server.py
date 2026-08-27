@@ -541,7 +541,6 @@ class _NadirGroup:
             dt = t - tr.last_t
             tr.px = (tr.pos[0] + tr.vel[0] * dt, tr.pos[1] + tr.vel[1] * dt)
         # 2) 거리 게이트 그리디 연관
-        import numpy as _np
         matched_t, matched_d = set(), set()
         if self.tracks and world_pts:
             pairs = []
@@ -559,17 +558,18 @@ class _NadirGroup:
                 gdt = max(1e-3, t - tr.last_t)
                 tr.vel = ((d[0] - tr.pos[0]) / gdt, (d[1] - tr.pos[1]) / gdt)
                 tr.pos = d; tr.last_t = t; tr.misses = 0
-        # 3) 미매칭 검출 → 새 트랙
-        for di, d in enumerate(world_pts):
-            if di in matched_d:
-                continue
-            self.tracks.append(_WorldTrack(self.next_id, d, t)); self.next_id += 1
-        # 4) 미매칭 트랙 → coast(예측 위치 유지) + 만료
+        # 4) 미매칭 (기존) 트랙 → coast(예측 위치 유지) + 만료.
+        #    새 트랙 추가(3) 전에 처리해, 이번 프레임에 막 생긴 트랙이 miss로 잡히지 않게 한다.
         for ti, tr in enumerate(self.tracks):
             if ti in matched_t:
                 continue
             tr.misses += 1
             tr.pos = tr.px            # 등속 예측으로 위치 유지
+        # 3) 미매칭 검출 → 새 트랙 (miss 처리 뒤)
+        for di, d in enumerate(world_pts):
+            if di in matched_d:
+                continue
+            self.tracks.append(_WorldTrack(self.next_id, d, t)); self.next_id += 1
         self.tracks = [tr for tr in self.tracks if tr.misses <= NADIR_MAXAGE]
         # 5) hist를 NADIR_DT 간격으로 샘플(예측기 dt에 맞춤)
         for tr in self.tracks:
@@ -620,8 +620,11 @@ def _nadir_response(body):
     # 3) 월드 추적 업데이트
     tracks = grp.update([tuple(m) for m in merged], t)
 
-    # 4) 관측 충분한 트랙만 예측+위험
-    out_tracks = []
+    # 4) 관측 충분한(obs≥8) 트랙만 예측+위험. 계산 결과를 id로 보관.
+    #    ★ 응답 계약: tracks 는 **항상 모든 트랙**을 담는다(새로 나타난 사람이 누락되면 안 됨).
+    #      ready 트랙엔 modes/risk 를 붙이고, 나머지는 위치만.
+    pred_by_id = {}
+    worst = None
     ready = [tr for tr in tracks if len(tr.hist) >= NADIR_OBS]
     if ready and body.get("robot") is not None:
         p = _get_predictor()
@@ -630,25 +633,24 @@ def _nadir_response(body):
             robot = (float(body["robot"]["x"]), float(body["robot"]["z"]))
             stopR = float(body.get("stopR", 3.10)); slowR = float(body.get("slowR", 3.90))
             horizon = float(body.get("horizon", 4.8)); ksig = float(body.get("safeKsig", 1.0)); tau = float(body.get("safeTau", 0.1))
-            hists = [tr.hist[-NADIR_OBS:] for tr in ready]
-            modes_all = p.predict_batch(hists)
+            modes_all = p.predict_batch([tr.hist[-NADIR_OBS:] for tr in ready])
             risks = []
             for tr, modes in zip(ready, modes_all):
                 r = track_risk(modes, robot, stopR, slowR, horizon, ksig, tau)
                 risks.append({"id": tr.id, **r})
-                out_tracks.append({"id": tr.id, "pos": [round(tr.pos[0], 3), round(tr.pos[1], 3)],
-                                   "vel": [round(tr.vel[0], 3), round(tr.vel[1], 3)],
-                                   "modes": [_mode_json(m) for m in modes],
-                                   "risk": {k: _round(v) for k, v in r.items()}})
+                pred_by_id[tr.id] = ([_mode_json(m) for m in modes], {k: _round(v) for k, v in r.items()})
             worst = arbitrate(risks)
             if worst is not None:
                 worst = {k: _round(v) for k, v in worst.items()}
-            return {"tracks": out_tracks, "worst": worst, "coverage": len(tracks), "per_cam": per_cam}
-    # 예측기 없거나 관측 부족 — 트랙 위치만
+    # 5) 모든 트랙 방출 — ready면 예측/위험 첨부, 아니면 위치만
+    out_tracks = []
     for tr in tracks:
-        out_tracks.append({"id": tr.id, "pos": [round(tr.pos[0], 3), round(tr.pos[1], 3)],
-                           "vel": [round(tr.vel[0], 3), round(tr.vel[1], 3)], "obs": len(tr.hist)})
-    return {"tracks": out_tracks, "worst": None, "coverage": len(tracks), "per_cam": per_cam}
+        d = {"id": tr.id, "pos": [round(tr.pos[0], 3), round(tr.pos[1], 3)],
+             "vel": [round(tr.vel[0], 3), round(tr.vel[1], 3)], "obs": len(tr.hist)}
+        if tr.id in pred_by_id:
+            d["modes"], d["risk"] = pred_by_id[tr.id]
+        out_tracks.append(d)
+    return {"tracks": out_tracks, "worst": worst, "coverage": len(tracks), "per_cam": per_cam}
 
 
 @app.post("/nadir")

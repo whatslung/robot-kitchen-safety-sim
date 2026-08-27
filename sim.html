@@ -8107,7 +8107,11 @@ function randomizeScene() {
    ★ GT 라벨은 인스턴스 마스크(emissive 단색 오버라이드)에서 나오므로 이 RGB 색
      변경에 전혀 영향받지 않는다 — 라벨은 그대로 정확하다.
    얼굴/피부(Body_MAT)는 건드리지 않는다(Cook_Top·Hood·Pant만). 나디르는 어차피
-   정수리·어깨만 보이므로 옷·모자 색만으로 충분하다. */
+   정수리·어깨만 보이므로 옷·모자 색만으로 충분하다.
+   ⚠️ 호출처: 이 함수(및 아래 gtFreeze/gtUnfreeze)는 sim 내장 generateDataset이 아니라
+     **브라우저 콘솔 생성 스니펫**(train/gen_zone_console.js·gen_temporal_console.js)이
+     런타임에 호출한다 — 나디르 데이터셋은 그 스니펫으로 만들었다(문서 §2·재현 스크립트).
+     내장 generateDataset(구 경로)은 이 다양화/프리즈를 쓰지 않는다. */
 function datasetDiversify() {
   const floor = scene.meshes.find(m => m.name === "floor" && m.material && m.material.albedoColor);
   if (floor) {
