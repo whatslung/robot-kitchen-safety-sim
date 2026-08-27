@@ -21,6 +21,10 @@
      글자가 세로로 한 자씩 쌓인다(실측 2026-08-22). min-width로 하한도 준다. */
   .btnrow{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
   .btnrow>button{min-width:84px}
+  /* 라벨이 긴 버튼 묶음 — 한 줄에 하나씩 세운다. 가로로 접으면 86px 칸이 되어 4줄로 깨진다.
+     (flex-wrap은 min-width만 지키면 몇 개든 밀어 넣기 때문에 라벨 길이를 안 본다) */
+  .btnrow.stack{flex-direction:column;align-items:stretch}
+  .btnrow.stack>button{flex:0 0 auto;width:100%}
   /* 좁은 창에서 3D 화면이 찌그러지지 않도록 — 패널을 줄이고 스테이지 트리를 접는다 */
   #viewport{min-width:0}
   @media (max-width:1180px){ #panel{width:264px;flex-basis:264px} #stagePanel{display:none} }
@@ -120,9 +124,14 @@
   #statusbar .v.ok{color:#3fb950} #statusbar .v.warn{color:#e3b341} #statusbar .v.bad{color:#f85149}
   /* 가운데 정렬이면 PiP(우상단) 밑으로 뻗어 화면을 가린다 — 상태칩과 같은 왼쪽 열로 내린다.
      PiP는 최대 45%까지 커질 수 있으므로 폭은 46%로 묶는다. */
+  /* nowrap 한 줄이라 시나리오 메시지가 **단어 중간에서** 잘렸다 (실측: 내용 525px / 칸 356px
+     → "재료 준비(fa…" 로 끊기고 seed까지 통째로 사라졌다).
+     폭은 PiP 때문에 46%로 묶어 둔 채(위 주석), 두 줄까지 흘려 쓰고 그 뒤로만 …을 붙인다.
+     word-break:keep-all — 한글이 어절 중간에서 접히지 않게. */
   #status{position:absolute;top:62px;left:14px;background:rgba(13,17,23,.92);
     border:1px solid #30363d;border-radius:9px;padding:8px 16px;font-size:12.5px;backdrop-filter:blur(14px);
-    white-space:nowrap;max-width:46%;overflow:hidden;text-overflow:ellipsis}
+    max-width:46%;overflow:hidden;word-break:keep-all;line-height:1.45;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
   #hint{margin-top:10px;padding-top:9px;border-top:1px solid #21262d;color:#6e7681;font-size:10.5px;line-height:1.75}
   kbd{background:#21262d;border:1px solid #30363d;border-bottom-width:2px;border-radius:4px;
     padding:0 4px;font-size:9.5px;font-family:ui-monospace,monospace;color:#8b949e}
@@ -218,10 +227,13 @@
   <div class="sep"></div>
   <!-- 물리 시연 — 패널 "▶ 실행" 탭 안에만 두었더니 탭을 바꾸고 스크롤해야 보였다.
        기본 탭이 "🚀 시작"이라 사실상 아무도 못 찾는다. 상단바는 항상 보인다. -->
-  <button class="mbtn" id="mbPush" title="조리원이 카트를 로봇 쪽으로 밀고 갑니다 (물리)">🛒 카트 밀기</button>
+  <button class="mbtn" id="mbPush" title="조리원이 카트를 로봇 쪽으로 밀고 갑니다 (물리)">카트 밀기</button>
   <button class="mbtn" id="mbPushReset" title="밀린 카트를 처음 자리로">↩ 카트 원위치</button>
   <div class="sep"></div>
-  <button class="mbtn" id="mbGT">GT 캡처</button>
+  <!-- 라벨과 동작이 달랐다 (2026-08-27). 이 버튼은 gtPreviewBtn을 누른다 = **한 장 미리보기**다.
+       "캡처"라고 써 있어서 데이터셋이 저장되는 줄 알고 누르게 된다. 저장은 📊 데이터 탭의
+       「데이터셋 생성」이다. -->
+  <button class="mbtn" id="mbGT" title="GT 라벨 한 장 미리보기 — 저장이 아닙니다">GT 미리보기</button>
   <div class="right">Babylon.js <span id="bver2"></span> · 오프라인</div>
 </div>
 
@@ -242,7 +254,9 @@
       <div class="cell"><span class="k">데이터셋</span><span class="v" id="sbData">0장</span></div>
     </div>
     <div id="status">준비 완료 — 자동 작업을 눌러보세요 · 도움말 H</div>
-    <div id="stats">FPS <b id="fps">–</b> · 삼각형 <b id="tris">–</b> · 사람↔로봇 <b id="pdist">–</b></div>
+    <!-- 사람↔로봇 거리는 바로 위 관제바(sbDist)에 이미 있다 — 같은 값이 화면 위아래에
+         겹쳐 떠 있었다. 여기는 성능 지표만 두고, 모델 검증 중일 때만 실제-vs-모델을 덧붙인다. -->
+    <div id="stats">FPS <b id="fps">–</b> · 삼각형 <b id="tris">–</b><span id="statsMil" style="display:none"> · 검증 <b id="pdist">–</b></span></div>
   </div>
 
 <div id="help">
@@ -268,8 +282,8 @@
     <ul>
       <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> <b>지금 고른 조작 대상</b>을 움직입니다 ·
           <kbd>Shift</kbd> 빠르게</li>
-      <li><kbd>Tab</kbd> 조작 대상 전환 — <b>🎥 자유 시점</b>(WASD 이동·<kbd>Q</kbd><kbd>E</kbd> 높이)
-          ↔ 🚶 사람 ↔ 🤖 로봇 관절. 오른쪽 <b>▶ 실행</b> 탭의 "조작 대상"에서도 고를 수 있습니다.</li>
+      <li><kbd>Tab</kbd> 조작 대상 전환 — <b>자유 시점</b>(WASD 이동·<kbd>Q</kbd><kbd>E</kbd> 높이)
+          ↔ 사람 ↔ 로봇 관절. 오른쪽 <b>실행</b> 탭의 "조작 대상"에서도 고를 수 있습니다.</li>
       <li>로봇 모드: <kbd>W/S</kbd> 어깨 · <kbd>Q/A</kbd> 베이스 · <kbd>E/D</kbd> 팔꿈치 · <kbd>R/F</kbd> 손목 · <kbd>T/G</kbd> 회전</li>
       <li><kbd>C</kbd> 주 시점 캡처 · <kbd>Shift</kbd>+<kbd>C</kbd> 주 시점 + PiP 둘 다</li>
       <li><kbd>0</kbd> 자유 시점 · <kbd>1</kbd>~<kbd>3</kbd> 카메라 전환(그 외는 왼쪽 시점 목록) ·
@@ -280,9 +294,9 @@
 
     <h3>물건 밀기 (물리)</h3>
     <ul>
-      <li>맨 위 <b>🛒 카트 밀기</b> — 조리원이 가장 가까운 카트를 <b>로봇 쪽으로</b> 밀고 갑니다.
+      <li>맨 위 <b>카트 밀기</b> — 조리원이 가장 가까운 카트를 <b>로봇 쪽으로</b> 밀고 갑니다.
           카트가 안전 링 안으로 들어가는 것이 볼 거리입니다. <b>↩ 카트 원위치</b>로 되돌립니다.</li>
-      <li>직접 밀려면 <kbd>Tab</kbd>으로 <b>🚶 사람</b>을 고르고 <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>로
+      <li>직접 밀려면 <kbd>Tab</kbd>으로 <b>사람</b>을 고르고 <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>로
           카트에 밀고 들어가세요. 미는 자세로 바뀝니다.</li>
       <li>밀리는 것은 <b>팬 카트·바스켓 카트·쓰레기통</b>입니다. 바퀴가 있는 카트는 굴러가고,
           쓰레기통은 조금 밀리다 섭니다. 작업대·선반·냉장고는 고정입니다.</li>
@@ -291,16 +305,16 @@
 
     <h3>탭 안내</h3>
     <ul>
-      <li><b>▶ 실행</b> — 로봇 조작, 조리 설정, 사람/화재/사고 시나리오</li>
-      <li><b>📷 카메라</b> — 시점 프리셋, 카메라 추가·위치 조정, 캡처</li>
-      <li><b>📊 데이터</b> — 학습용 이미지·라벨 자동 생성(Ground Truth), 모델 연결</li>
-      <li><b>⚙ 고급</b> — 물리 엔진, 외부 3D 파일 불러오기</li>
+      <li><b>실행</b> — 로봇 조작, 조리 설정, 사람/화재/사고 시나리오</li>
+      <li><b>카메라</b> — 시점 프리셋, 카메라 추가·위치 조정, 캡처</li>
+      <li><b>데이터</b> — 학습용 이미지·라벨 자동 생성(Ground Truth), 모델 연결</li>
+      <li><b>고급</b> — 물리 엔진, 외부 3D 파일 불러오기</li>
     </ul>
 
     <h3>학습 데이터가 필요하면</h3>
     <ul>
-      <li><b>📷 카메라</b> 탭에서 원하는 각도를 잡고 <b>이 시점을 카메라로 등록</b> — 카메라는 몇 대든 늘릴 수 있습니다.</li>
-      <li><b>📊 데이터</b> 탭의 <b>데이터셋 생성</b>은 카메라마다 RGB·마스크·깊이·YOLO 라벨을 자동 저장합니다.</li>
+      <li><b>카메라</b> 탭에서 원하는 각도를 잡고 <b>이 시점을 카메라로 등록</b> — 카메라는 몇 대든 늘릴 수 있습니다.</li>
+      <li><b>데이터</b> 탭의 <b>데이터셋 생성</b>은 카메라마다 RGB·마스크·깊이·YOLO 라벨을 자동 저장합니다.</li>
     </ul>
     <div class="btnrow close"><button id="helpClose" class="primary">닫기</button></div>
   </div>
@@ -381,8 +395,8 @@
   <div class="section">조작 대상 <span class="note" style="font-weight:400">Tab 전환</span></div>
   <div class="row"><span>키보드</span>
     <select id="ctrlSel">
-      <option value="camera">🎥 자유 시점 (WASD 이동·QE 높이)</option>
-      <option value="person">🚶 사람 (WASD·Shift 달리기)</option>
+      <option value="camera">자유 시점 (WASD 이동·QE 높이)</option>
+      <option value="person">사람 (WASD·Shift 달리기)</option>
       <option value="robot">로봇 관절 (WASD·QE·RF·TG)</option>
     </select>
   </div>
@@ -403,6 +417,15 @@
   <div class="row"><span>블러</span><input id="snBlur" type="range" min="0" max="1.5" step="0.05"><b id="snBlurV">0</b></div>
   <div class="row"><span>비네팅</span><input id="snVig" type="range" min="0" max="1" step="0.05"><b id="snVigV">0</b></div>
   <div class="row"><span>노출변동</span><input id="snExp" type="range" min="0" max="0.6" step="0.02"><b id="snExpV">0</b></div>
+  <div class="row"><span>렌즈 김서림</span><input id="snSteam" type="range" min="0" max="1" step="0.05"><b id="snSteamV">0</b></div>
+  <label class="row" style="cursor:pointer"><input type="checkbox" id="snSteamAuto" checked style="accent-color:#76b900">
+    <span style="width:auto;color:#c9d1d9">자동 — 솥 김에 연동</span></label>
+  <div class="hint">뜨거운 김이 <b>렌즈에 서린</b> 상태입니다 — 얼룩지게 번지고 대비가 떨어집니다.
+    솥에서 올라오는 3D 김(<b>조리 온도</b>)과는 <b>다른 것</b>이며 서로 독립입니다.<br>
+    슬라이더를 움직이면 <b>서서히</b> 낍니다(약 2.5초). 내리면 더 천천히 걷힙니다(약 15초) —
+    실제 렌즈가 그렇습니다. 속도는 콘솔에서 <code>__sim.SENSOR.steamAttack / steamDecay</code>로 바꿉니다.<br>
+    <b>자동</b>을 켜면 <b>솥에서 김이 날 때만</b> 렌즈가 낍니다. 온도를 내리거나 <b>불이 나면</b>
+    (기름 화재라 김이 멈춥니다) 렌즈도 서서히 걷힙니다. 슬라이더를 손으로 움직이면 자동이 꺼집니다.</div>
   </div>
   <div class="row"><span>저해상</span><input id="snLow" type="range" min="0" max="2" step="1"><b id="snLowV">0</b></div>
   <div class="hint">라벨(마스크·깊이)에는 적용되지 않습니다 — 학습 입력만 실제 CCTV처럼 열화시킵니다.</div>
@@ -425,7 +448,7 @@
   <div class="row"><span>조정할 카메라</span><select id="camSel"></select></div>
   <div class="btnrow">
     <button id="camRename">이름 변경</button>
-    <button id="camDel" style="color:#ff9a9a">🗑 삭제</button>
+    <button id="camDel" style="color:#ff9a9a">삭제</button>
   </div>
   <div class="row"><span>X 좌우</span><input id="camX" type="range" step="0.02"><b id="camXV">0</b></div>
   <div class="row"><span>Y 높이</span><input id="camY" type="range" step="0.02"><b id="camYV">0</b></div>
@@ -457,15 +480,32 @@
     데이터셋 라벨(person 위험도)은 그 직무의 동선이 로봇에 얼마나 가까이 가느냐로 자동 결정됩니다.</div>
 
   <div class="section">사람 시나리오 · 화재</div>
-  <div class="btnrow">
+  <!-- 라벨이 길어 한 .btnrow에 몰아넣으면 flex-wrap이 3열(86px)로 접고 어절 중간에서
+       끊긴다 — "작업자"가 "작 / 업자"로 갈라졌다(실측). 그래서 **라벨 실측 폭으로 행을 나눈다.**
+       그림문자 접두를 뺀 뒤 재측정(px):
+         ＋A 183 · ＋B 173 · ＋C 171 · 전체순회 150 · 작업동선 130 · 직무전이 127 ·
+         랜덤 114 · 솥접근 103 · 전원제거 94 · 카트밀기 90
+       패널 안쪽 271px, 2열이면 칸이 132px — **132 이하만 2열로 묶고 나머지는 한 줄에 하나.**
+       묶는 순서는 뜻으로 맞춘다: 인원 배치 / 움직임 모드 / 단발 동작 / 이동 시나리오.
+       ⚠️ 라벨을 고치면 이 계산이 깨진다. 고칠 때 폭을 다시 재라.
+       ⚠️ 그림문자 접두(🎲·🧭 등)는 2026-08-27에 전부 뺐다 — 기능·id는 그대로다.
+          docs/chanwoo/HANDOFF.md 가 진입점을 "버튼 `🧭 직무 전이 모드`"로 적고 있어
+          지금 이름(직무 전이 모드 시작/중지)과 어긋난다. 그 문서를 손볼 때 같이 맞춘다. -->
+  <div class="btnrow stack">
     <button id="scRoleFar">＋ A 원거리 작업자 (로봇 접근 안 함)</button>
     <button id="scRoleCaution">＋ B 주의구역 작업자 (감속까지만)</button>
     <button id="scRoleDanger">＋ C 위험 접근자 (정지 반경 진입)</button>
     <button id="scRoleClear">－ 인원 전원 제거</button>
-    <button id="scWander">🎲 랜덤 움직임 시작/중지</button>
-    <button id="scWorkflow">🧭 직무 전이 모드 시작/중지</button>
-    <button id="scWork">🔁 작업 동선 (선반↔조리대)</button>
-    <button id="scPushCart">🛒 카트 밀기 (물리)</button>
+  </div>
+  <div class="btnrow">
+    <button id="scWander">랜덤 움직임 시작/중지</button>
+    <button id="scWorkflow">직무 전이 모드 시작/중지</button>
+  </div>
+  <div class="btnrow">
+    <button id="scWork">작업 동선 (선반↔조리대)</button>
+    <button id="scPushCart">카트 밀기 (물리)</button>
+  </div>
+  <div class="btnrow stack">
     <button id="scKettle">솥 접근 (감속·정지)</button>
     <button id="scFull">전체 순회 (입구→작업→퇴장)</button>
     <!-- `솥 접근(구)`·`순회(구)` 제거 (2026-08-27). 바로 위 두 버튼이 같은 일을 하고,
@@ -478,7 +518,7 @@
     <button id="scPersonReset">초기 위치</button>
   </div>
   <div class="btnrow">
-    <button id="fireBtn" class="danger">🔥 화재 씬</button>
+    <button id="fireBtn" class="danger">화재 씬</button>
   </div>
 
   <div class="section">조리실 인원 (다양성)</div>
@@ -518,7 +558,10 @@
   <div class="btnrow">
     <button id="demoBefore" class="danger">▶ ① before</button>
     <button id="demoAfter" class="primary">▶ ① after</button>
-    <button id="demoStop">↩ 되돌리기</button>
+    <!-- 「↩ 되돌리기」가 이 탭에 둘이었다(여기 + 사고 시나리오). 발표자가 어느 쪽인지
+         구분할 수 없었다. **번호 체계로 맞춘다** — 위 ▶ ① before / ▶ ① after 와 같은 ①.
+         ⚠️ ②(corrStop)가 머지되면 그쪽 라벨은 「↩ ② 되돌리기」로 맞춘다. -->
+    <button id="demoStop">↩ ① 되돌리기</button>
   </div>
   <!-- ⚠️ class를 note → hint로 바꿨다 (2026-08-27). `.note`는 기본이 `display:none`이고
        `.warn`/`.err`/`.ok`가 붙어야 보이는 **상태 표시 슬롯**이다. 여기엔 그 클래스를
@@ -531,6 +574,9 @@
   <!-- ② 사람 동선 감지 — chanwoo가 별도 브랜치에서 작업 중(PR #24: 통로 회피 데모).
        자리를 **미리 비워 둔다.** 그쪽 버튼(corrBefore/corrAfter/corrStop)이 머지되면
        이 안내문을 지우고 그 btnrow를 여기 넣으면 끝난다 — 발표 탭 구조를 다시 안 건드린다.
+       ⚠️ 그때 두 가지를 맞춘다: ① 섹션 제목을 「② 사람 동선 감지」로 (브랜치 쪽은
+          "통로 회피 데모"라 TABS 목록에 안 걸려 **조용히 ⚙고급으로 떨어진다**) ·
+          ② corrStop 라벨을 「↩ ② 되돌리기」로 (안 그러면 되돌리기가 이 탭에 셋이 된다).
        ⚠️ 여기 가짜 버튼을 두지 않는다. 눌러도 아무 일 없는 버튼이 발표 자리에 있으면
           안 만든 것보다 나쁘다. -->
   <div class="section">② 사람 동선 감지 <span class="note" style="font-weight:400">발표 시나리오</span></div>
@@ -540,7 +586,7 @@
   <div class="section">사고 시나리오 (연쇄)</div>
   <div class="btnrow">
     <button id="accRun" class="danger">오프닝 연쇄 재생</button>
-    <button id="accReset">↩ 되돌리기</button>
+    <button id="accReset">↩ 사고 되돌리기</button>
   </div>
   <div class="note" id="accNote">캐스터 미잠금 → 기름 방울 → 미끄러짐 → 카트 충돌 → 바스켓 기울임 → 누운 사람 미검출</div>
 
@@ -563,6 +609,21 @@
 
   <div class="section">데이터셋 · Ground Truth</div>
   <div class="row"><span>샘플 수</span><input id="gtCount" type="range" min="1" max="200" step="1" value="20"><b id="gtCountV">20</b></div>
+  <label class="row" style="cursor:pointer"><input type="checkbox" id="gtCells" style="accent-color:#76b900">
+    <span style="width:auto;color:#c9d1d9">12칸 균등 생성 — 화재 4단계 × 김 3단계</span></label>
+  <!-- 기본 10 — 평가셋 기준값이다. 카메라 10대까지 쪼개서 봐도 칸당 10장이 남는다.
+       3장이면 칸 합계로는 보이지만 카메라별로 나누면 1~2장이라 아무 말도 못 한다. -->
+  <div class="row" id="gtPerCellRow" style="display:none"><span>칸당 샘플</span>
+    <input id="gtPerCell" type="range" min="1" max="20" step="1" value="10"><b id="gtPerCellV">10</b></div>
+  <div class="hint" id="gtCellsNote" style="display:none">평상시 · 화재초기(3~30s) · 화재중기(30~60s) · 화재후기(60~90s)
+    × 김약함(0.2~0.8) · 김보통(0.8~2.0) · 김강함(2.0~6.0) = <b>12칸</b>을 같은 장수로 채웁니다.<br>
+    켜면 <b>샘플 수 슬라이더는 무시</b>되고 12 × 칸당샘플 이 됩니다. 칸을 하나씩 돌아가며 찍으므로
+    <b>중간에 멈춰도 칸 사이 차이는 최대 1장</b>입니다.<br>
+    <b>평가셋(val)으로 쓰세요.</b> 학습셋까지 균등으로 만들면 실제로는 드문 화재가 절반이 되어
+    오탐이 늘 수 있습니다 — 학습셋은 체크를 끄고 뽑는 쪽이 맞습니다.<br>
+    <code>conditions.csv</code>에 <code>cell</code> 열이 붙습니다 — 학습 쪽에서 그 열로 묶으면
+    <b>어느 칸에서 놓치는지</b>가 바로 나옵니다. 단 cell은 <b>요청값</b>이고, 실제로 찍힌 값은
+    같은 줄의 <code>fire_progress · smoke_particles · steam_k</code>입니다(느린 PC에서는 후반 칸이 목표에 못 미칠 수 있습니다).</div>
   <div class="btnrow">
     <button id="gtPreviewBtn">GT 미리보기</button>
     <button id="gtGenBtn">데이터셋 생성</button>
@@ -692,10 +753,10 @@
   </div>
 
   <div id="hint">
-    🖱️ <b>드래그</b> 회전 · <b>휠</b> 줌 · <b>Shift+클릭</b> 교반봉 이동<br>
+    <b>드래그</b> 회전 · <b>휠</b> 줌 · <b>Shift+클릭</b> 교반봉 이동<br>
     <kbd>Q</kbd><kbd>A</kbd> 베이스 · <kbd>W</kbd><kbd>S</kbd> 어깨 · <kbd>E</kbd><kbd>D</kbd> 팔꿈치 ·
     <kbd>R</kbd><kbd>F</kbd> 손목 · <kbd>T</kbd><kbd>G</kbd> 회전 · <kbd>Space</kbd> 정지<br>
-    📁 3D 파일을 화면에 <b>끌어다 놓으면</b> 해당 앵커의 플레이스홀더를 대체합니다
+    3D 파일을 화면에 <b>끌어다 놓으면</b> 해당 앵커의 플레이스홀더를 대체합니다
   </div>
 </div>
 </div><!-- /main -->
@@ -3380,7 +3441,22 @@ const FIRE_FOG = {
      종전에는 점화 즉시 700/초로 최대였다 — 초기 단계 표본이 아예 없었다.
      안개(max·full)는 제곱 곡선이라 초반엔 0에 가깝게 머물러 자연히 뒤따라온다. */
   smokeMin:120,                      // 점화 직후 배출량 — 솥 위 옅은 연기
-  smokeMax:700,                      // 최대. 수명 3~7s와 짝지어 정상상태 ≈3500개(cap 4000)
+  /* 700 → **350** (2026-08-27). 스텝 고정으로 연기가 제대로 바닥까지 깔리자
+     **사람이 라벨에서 사라졌다.** `cvN` GT 라벨 실측(700 기준):
+       화재없음 person 3개 · 5초 1개 · 10초 1개 · 15초 1개 · **20초부터 0개**
+     경계는 연기 약 4,000개(17초 근처)였고, 90초 곡선의 **첫 1/5만** 쓸모가 있었다.
+     즉 12칸 중 화재중기·후기 6칸이 통째로 "사람 없는 그림"이었다.
+
+     범인은 안개가 아니라 **입자**다(분리 측정): 80초에서 안개만 끄면 person 여전히 0,
+     입자만 끄면 person 2·robot 1·kettle 2가 전부 복귀. GT 마스크 패스가 안개를 끄므로
+     안개는 라벨에 영향이 0이다 — 그래서 `max`(0.22)는 그대로 두고 입자만 줄인다.
+
+     350에서 80초 = 연기 4,553개, person 1개(면적 1.1% = 대부분 가려진 어려운 표본)가
+     살아난다. 자욱한 느낌은 유지되고 밀도만 절반이다. 200까지 내리면 kettle까지
+     돌아오지만 그건 화재 후기로 안 보인다 — 350이 "가려지되 남아 있는" 지점이다.
+     ⚠️ 연기 look이 바뀐다. 스텝 고정으로 이미 한 번 바뀌었으므로 **재학습 한 라운드에
+     묶는다**(HANDOFF 「연기 총량이 과하다」 참고). 기존 데이터와 섞지 않는다. */
+  smokeMax:350,                      // 최대 배출/초. 수명과 짝지어 80초 정상상태 ≈4,550개
   smokeFull:20000,                   // 이 시간(ms)에 최대 배출 — 20초면 데모 호흡에 맞는다
   saved:null
 };
@@ -3558,8 +3634,29 @@ function fireSeekTo(sec) {
      수명이 진행에 따라 바뀌므로 상수 5를 쓰면 안 된다 — 후반부를 한참 덜 채우게 된다. */
   const avgLife = (fsmoke.minLifeTime + fsmoke.maxLifeTime) / 2;
   const target = Math.min(fsmoke.getCapacity() * 0.9, fsmoke.emitRate * avgLife);
-  const sv = [firePS, fsmoke, steam, bubbles].map(P => ({ P, s: P.updateSpeed }));
-  sv.forEach(x => { x.P.updateSpeed = x.s * 10; });
+  /* 목표치를 남긴다 — 아래 가드가 목표에 못 닿는 일이 실제로 있다(환경 의존).
+     meta/CSV에 `smoke_target`으로 나가므로 **얼마나 찼는지(충전율)를 데이터에서 바로 잰다.**
+     종전에는 smoke_particles만 있어서 "이 값이 이 단계에 맞는 값인가"를 알 수 없었다. */
+  FIRE_FOG.seekTarget = Math.round(target);
+  /* ── 스텝 고정 (2026-08-27) — 빨리감기 ×10을 **뺐다** ────────────────────────
+     여기서 `scene.render()`를 직접 부르면 `engine.beginFrame()`을 안 거쳐
+     `engine.getDeltaTime()`이 갱신되지 않는다. 그래서 `getAnimationRatio()`가
+     **직전 실제 프레임 값을 그대로 물려받는다** — 스텝 크기가 정해져 있지 않았다.
+     실측(2026-08-27, 같은 코드·같은 파일):
+       · 백그라운드 탭: ratio 0.06 → 프레임당 7.2ms → 400프레임에 **22%**만 참
+       · 일반 창 60fps: ratio 0.96 → 프레임당 **115ms**(라이브 10프레임!) → 143프레임에 100%
+     즉 창이 앞에 있느냐에 따라 **연기 그림이 달라졌다.**
+
+     그리고 100% 찬 쪽이 오히려 틀린 그림이다. smokeConfineTick의 하강·확산이
+     **프레임당** 가해지므로(dt가 안 곱해져 있다) 스텝이 크면 덜 눌린다:
+       스텝 115ms → 연기층 평균높이 2.97m · 천장 뚫은 입자 **81개** · 후드 뚫음 50개
+       스텝 11.5ms(라이브와 동일) → 평균높이 **1.19m** · 천장·후드 뚫음 **0**
+     그래서 배수를 올리는 건 오답이었다 — 스텝이 더 커져 이걸 악화시킨다.
+
+     해법: dt를 상수(16ms)로 못 박고 배수를 ×1로 둔다 → 프레임당 11.5ms = 라이브 한 프레임.
+     어느 창에서 뽑아도 같은 그림이 나온다. 비용은 프레임 수(가드 아래 참고). */
+  const prevConstDt = scene.useConstantAnimationDeltaTime;
+  scene.useConstantAnimationDeltaTime = true;
   /* ⚠️ **여기는 아직 완전히 해결되지 않았다** (2026-08-24).
      가드가 90이었을 때 후반 단계가 목표의 절반도 안 찼다:
        10s 목표 2,472 → 2,474 (달성) · 40s 6,304 → 4,537 · 80s 9,104 → 4,541
@@ -3575,16 +3672,64 @@ function fireSeekTo(sec) {
      animationRatio가 0.06까지 떨어진다(인계문서의 그 함정). 그래서 프레임을 더 줘도
      선형으로만 는다.
 
-     제대로 고치려면 **빨리감기 배수(아래 ×10)를 올려야 한다.** 다만 배수를 올리면 한
-     스텝의 이동거리가 커져 smokeConfineTick의 천장·후드 가두기를 넘어설 수 있으므로,
-     정상 속도 머신에서 **연기 분포(평균 높이·반경)를 켜기 전후로 비교**한 뒤 정해야 한다.
+     ✅ 해결됨 (2026-08-27) — 원인은 프레임 수도 배수도 아니라 **스텝 크기가
+     정해져 있지 않은 것**이었다. 위 「스텝 고정」 주석 참고. 배수를 올리는 건 오답이다.
      ⚠️ 조기 탈출("더 이상 안 늘면 그만")도 넣어 봤다가 뺐다 — 한 프레임에 붙는 입자가
      워낙 적어 **안 느는 프레임이 정상적으로 섞이는데** 그걸 평형으로 오인해 끊었다. */
+  /* 가드 400 → 2000. 스텝이 라이브와 같아졌으므로 채우는 데 시뮬레이션 시간만큼
+     프레임이 든다: 필요 프레임 ≈ 평균수명 ÷ 0.0115s.
+     실측 — 초기(10s) 약 330 · 중기(45s) 약 800 · 후기(80s) **1,250**프레임에 97%.
+     목표에 닿으면 즉시 빠지므로 초기 단계는 여전히 싸다. 2000은 후기 여유분이다. */
   let guard = 0;
-  while (fsmoke.particles.length < target && guard++ < 400) scene.render();
-  sv.forEach(x => { x.P.updateSpeed = x.s; });
+  FIRE_FOG.seekStepMs = null;
+  while (fsmoke.particles.length < target && guard < 2000) {
+    scene.render();
+    /* 첫 프레임에서 **실제로 쓰인 스텝**을 잰다. ratio는 render() 안에서 갱신되므로
+       루프 밖에서 읽으면 복원된 값이 나와 거짓말이 된다(진단이 진단을 못 하게 된다). */
+    if (guard === 0) FIRE_FOG.seekStepMs = +(fsmoke.updateSpeed * scene.getAnimationRatio() * 1000).toFixed(1);
+    guard++;
+  }
+  scene.useConstantAnimationDeltaTime = prevConstDt;
+  FIRE_FOG.seekFrames = guard;                  // 진단용 — __sim.fireCheck()가 읽는다
   FIRE_FOG.t = t;                 // 빨리감기 동안 틱이 밀어 놓은 값을 목표로 되돌린다
   fireFogTick(0);                 // 연무 농도·배출량을 그 시점 값으로 확정
+}
+
+/* ══ 화재 단계 자가진단 — `__sim.fireCheck(80)` ══════════════════════════════
+   fireSeekTo가 그 단계를 **제대로 만들었는지**를 사람이 눈으로 재지 않아도 되게
+   합격/불합격으로 낸다. 판정 기준은 위 실측에서 나온 것이다:
+     · 충전율 ≥ 90%      — 목표 개수만큼 찼는가 (종전 22%까지 떨어졌다)
+     · 천장·후드 뚫음 0   — 스텝이 커지면 연기가 가두기를 넘는다
+     · 프레임당 10~20ms   — 라이브 한 프레임(16.7ms) 근처인가 = 스텝이 고정됐는가
+   이 셋이 다 통과하면 그 단계의 그림은 라이브와 같다. */
+function fireCheck(sec) {
+  if (!state.fire) setFire(true);
+  fireSeekTo(sec);
+  const H = HOOD_BOX, ceilY = LAYOUT.room.h - 0.12, ps = fsmoke.particles;
+  let sumY = 0, above = 0, aboveHood = 0;
+  for (const p of ps) {
+    const y = p.position.y;
+    sumY += y;
+    if (y > ceilY + 0.02) above++;
+    if (H && p.position.x >= H.x0 && p.position.x <= H.x1 &&
+        p.position.z >= H.z0 && p.position.z <= H.z1 && y > H.y + 0.02) aboveHood++;
+  }
+  const fill = ps.length / Math.max(1, FIRE_FOG.seekTarget);
+  const step = FIRE_FOG.seekStepMs;
+  const stepOK = step === null || (step >= 10 && step <= 20);   // 라이브 한 프레임 16.7ms 근처
+  const r = {
+    단계: sec + "s", 연기: ps.length, 목표: FIRE_FOG.seekTarget,
+    충전율: (fill * 100).toFixed(0) + "%", 프레임: FIRE_FOG.seekFrames,
+    프레임당: (step === null ? "—" : step + "ms"),
+    연기층평균높이: (sumY / Math.max(1, ps.length)).toFixed(2) + "m",
+    천장뚫음: above, 후드뚫음: aboveHood,
+    판정: (fill >= 0.9 && above === 0 && aboveHood === 0 && stepOK) ? "✅ 통과" : "❌ 실패",
+  };
+  if (!stepOK) r.실패이유 = "프레임당 " + step + "ms — 스텝 고정이 안 걸렸다(라이브는 16.7ms)";
+  if (fill < 0.9) r.실패이유 = "연기가 목표의 " + (fill * 100).toFixed(0) + "%까지만 찼다";
+  else if (above || aboveHood) r.실패이유 = "연기가 천장·후드를 뚫었다 — 스텝이 너무 크다";
+  console.table ? console.table(r) : console.log(r);
+  return r;
 }
 /* 데이터셋 표본용 무작위 진행 시점(초). 0 = 막 붙은 불, full = 완전히 자욱.
    **앞구간을 촘촘히** 본다 — 지수 1.5로 0쪽에 몰리게 한다.
@@ -3598,14 +3743,15 @@ function fireRandomStage() {
 
 function setFire(on) {
   state.fire = on;
+  FIRE_FOG.seekTarget = 0;      // fireSeekTo가 뒤이어 채운다. 안 부르면 0 = "목표 없음"
   firePS.emitRate = on ? 420 : 0;
   /* 점화 시점 배출량. 여기서 최대(700)를 주지 않는다 — fireFogTick이 smokeFull(20초)에
      걸쳐 smokeMin→smokeMax로 끌어올린다. 불 → 연기 → 가림 순서를 만들기 위함이다. */
   fsmoke.emitRate = on ? FIRE_FOG.smokeMin : 0;
   if (on) fireFogStart(); else fireFogStop();
-  $("fireBtn").textContent = on ? "🧯 화재 진압" : "🔥 화재 씬";
+  $("fireBtn").textContent = on ? "화재 진압" : "화재 씬";
   $("fireBtn").classList.toggle("fireon", on);   // 같은 버튼의 on/off를 색으로도 보인다
-  setStatus(on ? "🔥 화재 발생 — 카메라 뷰로 화염·연기 확인" : "화재 진압 완료");
+  setStatus(on ? "화재 발생 — 카메라 뷰로 화염·연기 확인" : "화재 진압 완료");
 }
 
 /* ══ 사람 이동 컨트롤러 ══════════════════════════════════════════════════ */
@@ -6412,6 +6558,18 @@ function vizMeshList() {
   if (typeof PMODE !== "undefined") for (const k in PMODE.mesh) out.push(PMODE.mesh[k]);
   if (typeof GRAPH !== "undefined") for (const k in GRAPH.mesh) out.push(GRAPH.mesh[k]);
   if (typeof RARR !== "undefined") for (const k in RARR.mesh) out.push(RARR.mesh[k]);
+  /* 안전 반경 링 3개 (2026-08-27) — zone1.87 빨강 · zone3.1 주황 · zone3.9 초록.
+     로봇 정지·감속 반경을 보여 주는 **시연용 표시**인데 `disableLighting + emissiveColor`라
+     자체 발광하고 항상 켜져 있어서 **데이터셋 이미지에 그대로 찍히고 있었다.**
+     실사 급식실 바닥에 로봇 반경이 색깔별로 빛나는 원은 없다. 라벨도 안 붙으므로
+     (GT 클래스 `env`) 모델에겐 배경 무늬인데, 문제는 **위치 단서**다 — 이 원들은 언제나
+     로봇 base가 중심이라 "원의 중심 = 로봇"을 학습할 수 있다. 실사엔 그 단서가 없다.
+     이 목록에 넣으면 데이터셋 캡처와 **모델 입력 캡처(milCapture)** 양쪽에서 같이 빠진다.
+     학습과 추론이 같은 그림을 보게 되는 게 핵심이다.
+     ⚠️ 바닥 테이프(`ZoneTape*`)는 건드리지 않는다 — 실제 급식실에도 칠해진 진짜 바닥
+     마감이고 블렌더 에셋으로 들어온다. 지우면 오히려 실사와 멀어진다.
+     시연·발표 화면에서는 그대로 보인다. 캡처하는 순간에만 빠진다. */
+  if (typeof dangerRing !== "undefined") out.push(dangerRing.mesh, stopRing.mesh, slowRing.mesh);
   return out;
 }
 function vizSuppressBegin() {
@@ -7120,7 +7278,7 @@ function safetyUpdate() {
       const byWorst = w && performance.now() - MPRED.at < 1000
         && ((isStop && w.tEntryStop != null && w.tEntryStop <= es + 1e-6)
             || (!isStop && w.tEntrySlow != null && w.tEntrySlow <= el + 1e-6));
-      setStatus("🟡 선제 감속 — " + (byWorst ? ("최고위험 작업자 " + w.id + "의 예측 경로가 ")
+      setStatus("선제 감속 — " + (byWorst ? ("최고위험 작업자 " + w.id + "의 예측 경로가 ")
                                              : "예측 경로가 ") +
                 tIn.toFixed(1) + "s 후 " + (isStop ? "정지" : "감속") + " 반경 진입");
       RUNLOG.onEvent("preSlow", SAFE.trueDist);
@@ -7133,7 +7291,7 @@ function safetyUpdate() {
        빨강은 이제 '팔이 닿는 반경'이라는 고정된 뜻을 갖는다(신호등 규약). */
     stopRing.mat.emissiveColor = C3.FromHexString(stopped ? "#ff7b1a" : "#e3853d");
     if (stopped) {
-      setStatus("⛔ 안전 정지 — 사람 감지 (판단 거리 " + SAFE.dist.toFixed(2) + "m" +
+      setStatus("안전 정지 — 사람 감지 (판단 거리 " + SAFE.dist.toFixed(2) + "m" +
         (MIL.safety && MIL.on ? " · 실제 " + SAFE.trueDist.toFixed(2) + "m" : "") + ")");
       RUNLOG.onEvent("stop", SAFE.trueDist);
     }
@@ -7149,6 +7307,11 @@ probe.position = new V3(0.4, 1.5, 0.2);
 scene.meshes.forEach(m => probe.renderList.push(m));
 probe.refreshRate = BABYLON.RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
 scene.environmentTexture = probe.cubeTexture;
+/* ⚠️ 이 큐브맵은 **한 번만 굽는다** — 굽는 순간 화면에 있던 것이 스테인리스 반사로 남는다.
+   안전 반경 링(zone*)이 여기 박혀 있는지 의심해 재봤다(2026-08-27): 링을 켠 채 구운
+   환경맵과 뺀 채 구운 환경맵에서 **솥 반사 색 픽셀 6 vs 5 — 차이 없다.**
+   링은 바닥에 붙은 평면이라 프로브(높이 1.5m)에서 거의 안 보인다. 손댈 필요 없다.
+   (솥 몸통의 색 줄무늬는 소화기·신호등·비상정지·식재료 같은 **실제 물건**의 반사다.) */
 /* 2.6은 과했다 — 모든 스테인리스가 크롬 거울처럼 번들거려 재질 구분이 안 됐다.
    1.5로 낮추면 반사가 형태를 죽이지 않아 오히려 스테인리스로 읽힌다.
    ※ 프레임에는 영향이 없다. 프로브는 RENDER_ONCE라 매 프레임 비용이 0이다
@@ -7304,13 +7467,37 @@ pipe.bloomThreshold = 0.72; pipe.bloomWeight = 0.32; pipe.bloomKernel = 48;
 const SENSOR = {
   on:true, grain:0, distortion:0, chroma:0, blur:0, vignette:0,
   expJit:0, lowres:0, applyFree:false, lens:null, mb:{}, attached:false, baseExp:null,
+  /* ── 렌즈 김서림 (2026-08-27) ────────────────────────────────────────────
+     `steam`이 **목표 세기**, `steamNow`가 화면에 실제로 걸린 세기다. 둘을 나눈 이유:
+     김은 스위치처럼 켜지지 않는다. 슬라이더를 움직이면 화면이 **서서히** 뿌예져야 한다.
+     시상수는 비대칭이다 — 뜨거운 김이 닿으면 몇 초 만에 끼지만, 걷히려면 응결이
+     증발해야 해서 한참 걸린다. 실사 급식실 CCTV에서 관찰되는 거동이다.
+     ⚠️ 데이터셋 캡처 중에는 **즉시 목표값으로 스냅**한다 — 한 표본의 카메라 10대를
+     찍는 동안 값이 흐르면 같은 표본인데 카메라마다 김서림이 달라진다. */
+  steam:0, steamNow:0, steamPhase:0,
+  /* 자동 연동 — 렌즈 김서림의 **원인은 솥 김**이다. 종전에는 완전 독립이라
+     "솥엔 김이 하나도 없는데 렌즈만 뿌옇다"는 물리적으로 불가능한 상태가 나왔다.
+     켜 두면 목표를 김 입자 수에서 뽑는다. 불이 나면 김이 멈추므로(updateCooking)
+     목표가 0으로 내려가고 감쇠가 15초에 걸쳐 걷어낸다 — 전환이 저절로 만들어진다.
+     ⚠️ 데이터셋 생성 중에는 무시한다. 표본은 칸이 정한 값을 그대로 써야 한다. */
+  steamAuto:true,
+  steamGain:0.85,      // 김이 최대일 때 도달하는 김서림
+  steamRef:1200,       // 이 입자 수를 "최대 김"으로 본다 (k=5에서 약 1,200개 실측)
+  steamAttack:2.5,     // 초 — 목표까지 끼는 시간
+  steamDecay:15.0,     // 초 — 걷히는 시간. 끼는 것보다 6배 느리다
+  steamDrift:1.0,      // 얼룩이 흐르는 속도 배수. 1.0 = 화면 폭을 지나는 데 약 33초
 };
 const SENSOR_PRESETS = {   // 실 CCTV 관측 범위로 보정 (2026-08-08 육안·수치 검증 후 조정)
-  clean: { grain:0,  distortion:0,    chroma:0,   blur:0,    vignette:0,    lowres:0, expJit:0 },
-  cctv:  { grain:4,  distortion:0.12, chroma:0.5, blur:0.35, vignette:0.30, lowres:1, expJit:0.20 },
-  cheap: { grain:9,  distortion:0.24, chroma:1.0, blur:0.55, vignette:0.55, lowres:2, expJit:0.30 },
-  night: { grain:14, distortion:0.14, chroma:0.7, blur:0.70, vignette:0.70, lowres:2, expJit:0.40 },
+  clean: { grain:0,  distortion:0,    chroma:0,   blur:0,    vignette:0,    lowres:0, expJit:0,    steam:0    },
+  cctv:  { grain:4,  distortion:0.12, chroma:0.5, blur:0.35, vignette:0.30, lowres:1, expJit:0.20, steam:0.20 },
+  cheap: { grain:9,  distortion:0.24, chroma:1.0, blur:0.55, vignette:0.55, lowres:2, expJit:0.30, steam:0.40 },
+  night: { grain:14, distortion:0.14, chroma:0.7, blur:0.70, vignette:0.70, lowres:2, expJit:0.40, steam:0.30 },
 };
+/* 김서림 말고 다른 센서 축이 하나라도 켜져 있는가 — 후처리를 뗄지 판단할 때 쓴다 */
+function sensorAnyAxis() {
+  return SENSOR.grain > 0.001 || SENSOR.distortion > 0.001 || SENSOR.chroma > 0.001 ||
+         SENSOR.blur > 0.001 || SENSOR.vignette > 0.001 || SENSOR.expJit > 0.001 || SENSOR.lowres > 0;
+}
 function sensorCams() {
   const arr = Object.values(SURV).map(s => s.cam);
   if (SENSOR.applyFree) arr.push(camera);
@@ -7323,11 +7510,63 @@ BABYLON.Effect.ShadersStore["sensorGrainFragmentShader"] = `
 precision highp float;
 varying vec2 vUV;
 uniform sampler2D textureSampler;
-uniform float grainAmt, vigAmt, expo, uTime;
+uniform float grainAmt, vigAmt, expo, uTime, steamBeta, steamPhase;
 float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
+/* 값 노이즈 — 김서림 얼룩용. hash를 격자로 보간해 **덩어리진** 무늬를 만든다.
+   그레인처럼 픽셀 단위로 튀면 김이 아니라 노이즈로 보인다. */
+float vnoise(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = hash(i), b = hash(i + vec2(1.0, 0.0));
+  float c = hash(i + vec2(0.0, 1.0)), d = hash(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
 void main(void){
   vec3 col = texture2D(textureSampler, vUV).rgb;
   float r = distance(vUV, vec2(0.5)) * 1.4142;          // 0(중앙)~1(코너)
+  /* ══ 렌즈 김서림 — 공식 두 개로 만든다. 손으로 맞춘 계수는 없다 ══════════
+     ⚠️ 처음엔 블러로 만들었다가 버렸다. 화면을 뭉개면 "초점이 안 맞은 렌즈"지
+     김서림이 아니다. 실제로 일어나는 일은 **산란**이고, 그건 식이 정해져 있다.
+
+     ① 합성 — 대기산란 모델(Koschmieder). 합성 안개 데이터셋(RESIDE 등)이
+        이미지를 만들 때 쓰는 바로 그 식이다:
+              I = J·t + A·(1 − t),    t = exp(−β·D)
+        J=원본, A=산란광, t=투과율, β=산란계수, D=광학두께.
+        대기 안개는 D가 **거리**지만, 렌즈 김서림은 렌즈에서 산란하므로
+        D는 그 지점의 **물방울 두께**다. 식은 그대로다.
+        β 범위는 RESIDE가 쓰는 0.6~1.8을 포함하도록 슬라이더 0~1 → 0~2.2로 잡았다.
+
+     ② 산란광 A(x)의 모양 — 글레어 확산 함수. Stiles–Holladay 식:
+              L_veil(θ) = 10·E / θ²        (θ ≥ 1°)
+        즉 **1/θ²**로 퍼진다. 가우시안이 아니라 꼬리가 두꺼운 게 핵심이다 —
+        그래서 밝은 곳의 빛이 화면 반대편까지 닿아 대비를 무너뜨린다.
+
+        2D 적분에서 반경 θ 링의 기여는 PSF(θ)·2πθ·dθ ∝ (1/θ²)·θ·dθ = d(ln θ).
+        **로그 등간격 링을 같은 가중치로 더하면 1/θ² PSF와 같다.** 그래서 아래는
+        반경을 2배씩 키우며 6개 링을 같은 무게로 더한다 — 임의 가중치가 없다.
+        0.5%에서 시작해 16%까지: 안쪽 링이 디테일 손실, 바깥 링이 젖빛을 만든다. */
+  if (steamBeta > 0.004) {
+    // 물방울 광학두께 D — 고르게 맺히지 않는다(두 옥타브). 가장자리가 먼저 낀다
+    vec2 q = vUV * 4.0 + vec2(steamPhase * 0.030, steamPhase * 0.017);
+    float D = vnoise(q) * 0.60 + vnoise(q * 2.3 + 5.2) * 0.40;
+    D = mix(D, 0.55 + 0.45 * D, smoothstep(0.35, 1.0, r));
+    D = 0.45 + 0.90 * D;                        // 0.45~1.35 — 평균 약 1
+    float t = exp(-steamBeta * D);              // 투과율
+
+    // 산란광 A — 로그 등간격 링 6개 × 8방향, 등가중 = 1/θ² PSF
+    vec3 A = vec3(0.0);
+    float rad = 0.005;
+    for (int i = 0; i < 6; i++) {
+      for (int a = 0; a < 8; a++) {
+        float ang = float(a) * 0.7853981 + float(i) * 0.3617;   // 링마다 틀어 별 모양 방지
+        A += texture2D(textureSampler, vUV + vec2(cos(ang), sin(ang)) * rad).rgb;
+      }
+      rad *= 2.0;
+    }
+    A /= 48.0;
+
+    col = col * t + A * (1.0 - t);              // ← 대기산란 모델 그대로
+  }
   col *= 1.0 - vigAmt * smoothstep(0.30, 1.0, r);       // 비네팅
   col *= expo;                                          // 노출 변동
   float n = hash(vUV * 1024.0 + fract(uTime) * 97.0);   // 시간축 노이즈(프레임마다 변함)
@@ -7364,12 +7603,16 @@ function sensorApply() {
        LensRenderingPipeline의 edge_blur + 저해상 업스케일로 부분 대체한다. */
     // 노이즈·비네팅·노출 — 렌즈/모션블러 뒤에 적용해야 블러에 상쇄되지 않는다
     const gp = new BABYLON.PostProcess("sensorGrain_" + c.name, "sensorGrain",
-      ["grainAmt", "vigAmt", "expo", "uTime"], null, 1.0, c);
+      ["grainAmt", "vigAmt", "expo", "uTime", "steamBeta", "steamPhase"], null, 1.0, c);
     gp.onApply = eff => {
       eff.setFloat("grainAmt", SENSOR.grain / 100);
       eff.setFloat("vigAmt", SENSOR.vignette);
       eff.setFloat("expo", SENSOR.expoNow || 1);
       eff.setFloat("uTime", (performance.now() % 10000) / 1000);
+      /* 슬라이더 0~1 → 산란계수 β 0~2.2. RESIDE가 합성 안개를 만들 때 쓰는
+         β 0.6~1.8이 슬라이더 0.27~0.82 구간에 들어온다. */
+      eff.setFloat("steamBeta", 2.2 * (SENSOR.steamNow || 0));
+      eff.setFloat("steamPhase", SENSOR.steamPhase || 0);
     };
     SENSOR.gp[c.name] = gp;
   });
@@ -7377,6 +7620,46 @@ function sensorApply() {
 }
 /* 노출 변동 — 자동노출이 흔들리는 실 CCTV 특성 */
 function sensorTick(t) {
+  /* 김서림 시간 진행 — dt는 여기서 직접 잰다(호출부는 타임스탬프만 준다).
+     탭이 백그라운드였다가 돌아오면 dt가 수 초로 튀므로 상한을 둔다. 안 그러면
+     복귀하는 순간 김이 통째로 걷혀 화면이 깜빡인다. */
+  const dt = Math.min(200, SENSOR._lastT ? t - SENSOR._lastT : 16);
+  SENSOR._lastT = t;
+  /* ── 자동 연동: 솥 김 → 렌즈 김서림 목표 ────────────────────────────────
+     데이터셋 중에는 건드리지 않는다(칸 값이 우선). 목표만 정하고 실제 값은
+     아래 시상수가 따라간다 — 김이 세져도 렌즈는 2.5초에 걸쳐 낀다. */
+  if (SENSOR.steamAuto && !DATAGEN.running && !GT_BUSY) {
+    SENSOR.steam = SENSOR.steamGain * Math.min(1, steam.particles.length / SENSOR.steamRef);
+    /* 후처리를 붙이고 떼는 것도 여기서 관리한다 — 자동 모드에서는 슬라이더 핸들러가
+       안 돌기 때문이다. 다 걷힌 뒤에 뗀다(끼는 도중에 떼면 화면이 툭 맑아진다). */
+    const want = SENSOR.steam > 0.002 || SENSOR.steamNow > 0.002 || sensorAnyAxis();
+    if (want !== SENSOR.on) { SENSOR.on = want; SENSOR._pendingOff = false; sensorApply(); }
+  }
+  /* ── 김서림: 목표를 시상수로 따라간다 ──────────────────────────────────
+     **on 검사보다 먼저** 돈다. 슬라이더를 0으로 내리면 다른 축이 전부 0일 때
+     SENSOR.on이 꺼지는데, 여기서 같이 끊으면 화면이 툭 맑아진다 — 걷히는 데
+     15초가 걸려야 한다. 그래서 다 걷힌 뒤에 끄도록 _pendingOff로 미룬다.
+     데이터셋 캡처 중에는 스냅한다: 한 표본의 카메라 10대를 찍는 동안 값이 흐르면
+     같은 표본인데 카메라마다 김서림이 달라져 conditions.csv가 거짓말이 된다
+     (GT 패스 사이에 파티클을 얼리는 것과 같은 이유). */
+  const tgt = SENSOR.steam || 0;
+  if (DATAGEN.running || GT_BUSY) {
+    SENSOR.steamNow = tgt;
+  } else {
+    const tau = (tgt > SENSOR.steamNow ? SENSOR.steamAttack : SENSOR.steamDecay) * 1000;
+    SENSOR.steamNow += (tgt - SENSOR.steamNow) * (1 - Math.exp(-dt / Math.max(1, tau)));
+    if (Math.abs(tgt - SENSOR.steamNow) < 0.002) SENSOR.steamNow = tgt;   // 꼬리 자르기
+    SENSOR.steamPhase += dt / 1000 * SENSOR.steamDrift;                   // 얼룩이 흐른다
+  }
+  if (SENSOR.steamAuto && Math.abs((SENSOR._uiShown || 0) - SENSOR.steamNow) > 0.02) {
+    SENSOR._uiShown = SENSOR.steamNow;      // 자동일 때 슬라이더가 따라 움직이는 게 보이게
+    const el = document.getElementById("snSteam"), lb = document.getElementById("snSteamV");
+    if (el) el.value = SENSOR.steamNow.toFixed(2);
+    if (lb) lb.textContent = SENSOR.steamNow.toFixed(2);
+  }
+  if (SENSOR._pendingOff && SENSOR.steamNow <= 0.002) {   // 다 걷혔다 — 이제 떼도 된다
+    SENSOR._pendingOff = false; SENSOR.on = false; sensorApply();
+  }
   if (!SENSOR.on) { SENSOR.expoNow = 1; return; }
   // 자동노출이 흔들리는 실 CCTV 특성 — 셰이더 uniform으로 전달(머티리얼 톤매핑 경로와 무관)
   SENSOR.expoNow = 1 + Math.sin(t / 2300) * SENSOR.expJit * 0.35
@@ -7385,6 +7668,9 @@ function sensorTick(t) {
 function sensorPreset(name) {
   Object.assign(SENSOR, SENSOR_PRESETS[name] || {});
   SENSOR.on = name !== "clean";
+  /* 프리셋은 **즉시** 반영한다 — 버튼을 눌렀는데 15초에 걸쳐 걷히면 고장으로 보인다.
+     시상수는 슬라이더를 손으로 움직일 때만 쓴다. */
+  SENSOR.steamNow = SENSOR.steam || 0;
   sensorApply(); sensorUIsync();
   setStatus("센서 프리셋: " + name);
 }
@@ -8043,11 +8329,20 @@ async function groundTruthImpl(camId, opt) {
        ⚠️ imagesOnly 모드에서는 gt/를 아예 안 쓰므로 이 메타도 안 나온다. */
     scene: {
       seed: SEED0,
+      /* 12칸 생성일 때 **요청한 칸**. 아래 fire_progress·smoke_particles·steam_k가
+         실제로 찍힌 값이므로, 둘을 나란히 보면 칸이 제대로 채워졌는지 확인된다
+         (fireSeekTo가 느린 환경에서 목표에 못 미치는 문제 — HANDOFF 참고).
+         12칸 생성이 아니면 빈 문자열이다. */
+      cell: DATAGEN.cellKey || "",
       fire: state.fire,
       // 0 = 점화 직후, 1 = 최성기(90s). "옅은 구간에서만 놓치는가"를 가르는 축
       fire_progress: state.fire ? +Math.min(1, FIRE_FOG.t / FIRE_FOG.full).toFixed(4) : 0,
       fog_density: +scene.fogDensity.toFixed(5),    // 화면 전체를 덮는 연무 (렌더된 실제 값)
       smoke_particles: fsmoke.particles.length,     // 연기 입자 수 — 가림 정도의 직접 지표
+      /* fireSeekTo가 이 단계에 채우려던 개수. smoke_particles / smoke_target = 충전율.
+         느린 PC에서 후반 단계가 목표의 20~30%에 그치는 일이 실제로 있다(실측). 그러면
+         fire_progress는 0.9인데 연기는 초기 수준인 표본이 된다 — 이 두 열을 나눠 보면 걸린다. */
+      smoke_target: state.fire ? (FIRE_FOG.seekTarget | 0) : 0,
       steam_k: +STEAM.k.toFixed(3),                 // 김 세기 — 화재 오탐(개요 핵심 난제) 축
       people: 1 + (typeof EXTRAS !== "undefined" ? EXTRAS.length : 0),
       /* 센서 열화는 프리셋 이름이 아니라 **값을 직접** 흔든다(randomizeScene).
@@ -8055,7 +8350,10 @@ async function groundTruthImpl(camId, opt) {
       sensor: { grain:+SENSOR.grain.toFixed(2), distortion:+SENSOR.distortion.toFixed(3),
                 chroma:+SENSOR.chroma.toFixed(3), blur:+SENSOR.blur.toFixed(3),
                 vignette:+SENSOR.vignette.toFixed(3), expJit:+SENSOR.expJit.toFixed(3),
-                lowres:SENSOR.lowres, on:SENSOR.on },
+                lowres:SENSOR.lowres, on:SENSOR.on,
+                /* 렌즈 김서림 — 화면에 **실제로 걸린 값**(steamNow)을 남긴다.
+                   목표값(steam)이 아니다. 라이브에서는 둘이 다를 수 있다. */
+                steam_lens:+(SENSOR.steamNow || 0).toFixed(3) },
     },
     instances,
   };
@@ -8216,7 +8514,55 @@ function placeOccluder() {
   ENV_RAND.last.occluder = [+ox.toFixed(2), +oz.toFixed(2)];
 }
 
-function randomizeScene() {
+/* ══ 12칸 균등 생성 — 화재 4단계 × 김 3단계 ═══════════════════════════════
+   왜. 종전에는 화재 유무를 확률(FIRE_P 0.5)로, 진행 단계를 fireRandomStage()로,
+   김 세기를 U(0.2~2.0)×(15% ×3)으로 **각각 따로** 뽑았다. 축마다 분포는 맞지만
+   **조합별 장수를 아무도 보장하지 않는다.** 특히 단계 분포가 rand^1.5라
+   화재 표본의 절반이 32초 이전(연기 옅은 구간)에 몰린다(E[x^1.5]=0.4 → 평균 36s).
+   그래서 "자욱할 때 못 잡는다"가 나와도 모델이 약한 건지 그 칸이 얇은 건지 못 가른다.
+
+   칸을 고정하면 학습 쪽이 `conditions.csv`를 cell로 group by 해서
+   **어느 칸에서 재현율이 떨어지는지**를 바로 표로 낼 수 있다. 그게 다음에 무엇을
+   더 뽑을지 정해 준다.
+
+   ⚠️ 요청한 칸이 곧 찍힌 값은 아니다. fireSeekTo는 느린 환경에서 목표 연기량의
+   63%까지 떨어진 적이 있다(HANDOFF 「조건부 미해결」). 그래서 CSV에는 요청(cell)과
+   실측(fire_progress · smoke_particles · steam_k)을 **둘 다** 남긴다. 어긋나면
+   그 두 열을 나란히 보면 드러난다. */
+const CELL_FIRE = [
+  { key:"none",  label:"평상시",   fire:false, stage:null    },
+  { key:"early", label:"화재초기", fire:true,  stage:[3, 30] },
+  { key:"mid",   label:"화재중기", fire:true,  stage:[30, 60] },
+  { key:"late",  label:"화재후기", fire:true,  stage:[60, 90] },   // FIRE_FOG.full = 90s
+];
+/* ⚠️ 두 번째 축을 **솥 김(STEAM.k) → 렌즈 김서림**으로 바꿨다 (2026-08-27).
+   이유: 솥 김 축이 **화재 9칸에서 이미 죽어 있었다.** 실측 — 김을 껐다 켰을 때
+   바뀌는 화면 픽셀이 화재 없을 때 10.87%인데 화재 30초에서는 **0.07%**다(155배).
+   연기에 완전히 묻혀서, `conditions.csv`에 steam_k=4.7이 찍혀도 그 표본 화면에는
+   김이 없었다. 축이 아니라 거짓말이었다.
+   렌즈 김서림은 후처리라 연기에 안 묻힌다 — 같은 화재 30초 장면에서 대비 51.6 →
+   36.7(−29%). **화재 유무와 무관하게 축으로 성립한다.**
+   물리적으로도 정당하다: 발화 직전까지 솥에서 김이 났다면 렌즈에 서린 김은
+   화재 초반까지 남는다(걷히는 데 15초). 솥 김은 이제 온도·화재에서 따라오는
+   결과로 두고, 표본마다 흔드는 건 종전대로 유지한다(CSV의 steam_k로 남는다). */
+const CELL_FOG = [
+  { key:"clear", label:"김서림없음", fog:[0.00, 0.00] },   // 대조군
+  { key:"mid",   label:"김서림중간", fog:[0.20, 0.50] },   // β 0.44~1.10
+  { key:"heavy", label:"김서림심함", fog:[0.50, 0.90] },   // β 1.10~1.98
+];
+/* 칸 목록을 **라운드로빈**으로 편다(칸1~12, 다시 칸1~12…). 칸별로 몰아 찍으면
+   중간에 중단했을 때 앞쪽 칸만 가득 차고 뒤쪽은 0장이 된다 — 생성은 수분~수십분이라
+   중단이 흔하다. 라운드로빈이면 언제 멈춰도 칸 사이 차이가 최대 1장이다. */
+function cellPlan(perCell) {
+  const plan = [];
+  for (let r = 0; r < perCell; r++)
+    for (const f of CELL_FIRE)
+      for (const g of CELL_FOG)
+        plan.push({ key: f.key + "|" + g.key, label: f.label + "·" + g.label,
+                    fire: f.fire, stage: f.stage, fog: g.fog, round: r });
+  return plan;
+}
+function randomizeScene(cell) {
   randomizeEnvironment();
   const [px, pz] = randFloorPos();
   person.mode = "idle"; person.path = []; person.freeze = true;
@@ -8242,18 +8588,27 @@ function randomizeScene() {
      1/3도 안 돼 클래스 불균형이 커진다(실측: 2샘플에서 fire 3박스 vs equipment 296박스).
      화재 감지가 이 프로젝트 목적의 절반이므로 절반은 화재 장면이어야 한다.
      sim.html?fire=0.7 처럼 회차별로 조절할 수 있게 열어 둔다. */
-  const wantFire = Math.random() < FIRE_P;
+  const wantFire = cell ? cell.fire : Math.random() < FIRE_P;
   setFire(wantFire);
   /* 화재 표본은 **진행 단계를 여기서 뽑는다.** 안 하면 직전 샘플 상태가 그대로 이어져
      초기 발화(연기 25개)와 최성기(연기 3548개) 두 극단만 나오고, 정작 필요한
-     "연기가 옅게 낀" 중간 구간이 비어 버린다. fireSeekTo가 그 상태를 즉시 만든다. */
-  if (wantFire) fireSeekTo(fireRandomStage());
+     "연기가 옅게 낀" 중간 구간이 비어 버린다. fireSeekTo가 그 상태를 즉시 만든다.
+     칸 지정이 오면 그 칸의 초 구간 안에서만 뽑는다(균등). */
+  if (wantFire) fireSeekTo(cell ? cell.stage[0] + Math.random() * (cell.stage[1] - cell.stage[0])
+                                : fireRandomStage());
   else { fsmoke.reset(); firePS.reset(); }   // 꺼진 표본에 직전 연기가 남지 않게
+  /* 화재 표본은 솥 김을 **확실히 비운다.** updateCooking의 감쇠(×0.94)만으로는
+     직전 표본의 김이 몇 프레임 남고, 그러면 화재 표본에 김이 섞인 채로 찍힌다.
+     기름이 타는 솥에 수증기는 없다 — 여기서 딱 끊는다. */
+  if (wantFire) { steam.emitRate = 0; steam.reset(); }
   /* 김 세기 — 실사 김은 조리 종류·시점에 따라 0~대량까지 변한다(C-2, 참조프레임 확인).
      15%는 투입·배출급 대량 방출 표본 — "김이 연기 규모에 접근하는" 어려운 음성 표본이
      난제를 데이터에 존재하게 만든다. temp가 170 고정이므로 배율 k가 유일한 손잡이다. */
+  /* 솥 김 세기는 **칸 축이 아니다**(위 CELL_FOG 주석 참고 — 화재 칸에서 죽은 축이었다).
+     종전처럼 표본마다 랜덤으로 흔든다. 화재 없는 칸에서 "김 vs 연기 오탐" 난제를
+     계속 만들어 주고, CSV의 steam_k로 남아 학습 쪽이 그 축으로도 묶어 볼 수 있다. */
   STEAM.k = (0.2 + Math.random() * 1.8) * (Math.random() < 0.15 ? 3 : 1);
-  steamSettle();
+  if (!wantFire) steamSettle();
   // 센서 특성 랜덤화 — 카메라 개체차·설치환경 차이를 데이터에 반영
   SENSOR.grain = 2 + Math.random() * 22;
   SENSOR.distortion = Math.random() * 0.30;
@@ -8262,6 +8617,17 @@ function randomizeScene() {
   SENSOR.vignette = 0.1 + Math.random() * 0.6;
   SENSOR.expJit = Math.random() * 0.45;
   SENSOR.lowres = Math.random() < 0.5 ? 1 : (Math.random() < 0.5 ? 0 : 2);
+  /* 렌즈 김서림 — **45%만** 낀다. 나머지 55%가 대조군이 되어야 "김서림 때문에 놓쳤다"를
+     가릴 수 있다. 전 표본에 걸면 축이 아니라 그냥 화질 저하가 된다.
+     3D 김 세기(STEAM.k)와 독립으로 뽑는다 — 렌즈 김서림은 카메라 위치·환기가 정하지
+     솥 김 세기와 1:1이 아니다. 독립이어야 "솥엔 김이 없는데 렌즈만 뿌옇다"도 나온다. */
+  /* 렌즈 김서림 — 12칸 생성이면 **칸이 정한다**(두 번째 축). 아니면 종전처럼 45%만 건다.
+     ⚠️ 자동 연동(steamAuto)은 여기서 끈다. 표본 값을 덮어쓰면 칸이 무의미해진다. */
+  SENSOR.steamAuto = false;
+  SENSOR.steam = cell ? cell.fog[0] + Math.random() * (cell.fog[1] - cell.fog[0])
+                      : (Math.random() < 0.45 ? 0.15 + Math.random() * 0.70 : 0);
+  SENSOR.steamNow = SENSOR.steam;                       // 표본은 즉시 그 값 (시상수 무시)
+  SENSOR.steamPhase = Math.random() * 500;              // 얼룩 무늬도 표본마다 다르게
   SENSOR.on = true; sensorApply(); if (window.sensorUIsync) sensorUIsync();
   // 인원 배치·자세 랜덤화 — 각 개체를 금지구역 밖으로 재배치, 일부는 쭈그린 자세
   EXTRAS.forEach(P => {
@@ -8298,14 +8664,22 @@ function restoreAfterDataset() {
      끝나고 되돌리지 않으면 **사용자 화면이 저품질 CCTV로 고정**된다.
      생성 중에는 흔들리고, 끝나면 선명하게 돌아온다. */
   sensorPreset("clean");     // 슬라이더 UI까지 같이 맞춰 준다
+  /* 김서림 자동 연동을 되돌린다 — randomizeScene이 표본마다 껐기 때문이다.
+     안 되돌리면 데이터셋을 한 번 뽑고 나서 라이브에서 김서림이 김을 안 따라간다
+     (센서 원복을 안 해서 화면이 저품질로 굳던 것과 같은 계열의 실수). */
+  SENSOR.steamAuto = true;
+  const _sa = $("snSteamAuto"); if (_sa) _sa.checked = true;
 }
 /* 데이터셋 회차의 화재 샘플 비율. ?fire= 로 덮어쓴다(0~1). */
 const FIRE_P = (() => {
   const q = parseFloat(new URLSearchParams(location.search).get("fire"));
   return (isFinite(q) && q >= 0 && q <= 1) ? q : 0.5;
 })();
-const DATAGEN = { running:false, abort:false, saved:0, cams:null, imagesOnly:false };   // 실행 상태 · 중단 · 누적 · cams(null=전체, 예 ['orthotop']) · imagesOnly(gt/ 생략)
-async function generateDataset(n) {
+const DATAGEN = { running:false, abort:false, saved:0, cams:null, imagesOnly:false, cellKey:"" };   // 실행 상태 · 중단 · 누적 · cams(null=전체, 예 ['orthotop']) · imagesOnly(gt/ 생략) · cellKey(12칸 생성 시 현재 칸)
+/* plan을 주면 **12칸 균등 생성**이 된다(cellPlan()이 만든 배열). 그때 n은 무시하고
+   plan.length 만큼 돈다. plan이 없으면 종전과 완전히 같다 — 기본 동작은 안 바뀐다. */
+async function generateDataset(n, plan) {
+  if (plan && plan.length) n = plan.length;
   const cams = (DATAGEN.cams && DATAGEN.cams.length) ? DATAGEN.cams.filter(c => SURV[c]) : Object.keys(SURV);
   let dir = null;
   if (window.showDirectoryPicker) {
@@ -8341,6 +8715,8 @@ async function generateDataset(n) {
     n, cameras: cams.length, res: GT_W + "×" + GT_H,
     classes: GT_CLASSES.length, labelMode: "instance",
     randomize: !!(typeof ENV_RAND !== "undefined" && ENV_RAND.enabled),
+    cells: plan ? (CELL_FIRE.length * CELL_FOG.length) + "칸 × " +
+                  Math.round(plan.length / (CELL_FIRE.length * CELL_FOG.length)) + "장" : null,
   });
   const t0 = performance.now();
   let done = 0;
@@ -8348,9 +8724,11 @@ async function generateDataset(n) {
      gt/*_meta.json은 이미지 1장당 파일 1개라, "검출된 것 vs 안 된 것"을 비교하려면
      수천 개를 열어야 한다. 학습 쪽이 예측 결과와 바로 join할 수 있게 CSV로도 남긴다.
      imagesOnly 모드에서도 나온다 — meta는 안 저장해도 조건은 알아야 하기 때문이다. */
+  /* cell은 **맨 뒤에 붙인다** — 종전 16열을 자리로 읽는 스크립트가 있으면 그대로 돌아간다.
+     헤더로 읽는 pandas 쪽은 위치와 무관하다. 12칸 생성이 아니면 빈 값이다. */
   const CSV_COLS = ["file","camera","seed","fire","fire_progress","fog_density",
                     "smoke_particles","steam_k","people","grain","distortion",
-                    "chroma","blur","vignette","expJit","lowres"];
+                    "chroma","blur","vignette","expJit","lowres","cell","smoke_target","steam_lens"];
   const condRows = [CSV_COLS.join(",")];
   try {
     for (let i = 0; i < n && !DATAGEN.abort; i++) {
@@ -8358,7 +8736,9 @@ async function generateDataset(n) {
          상한 2명(주인공 포함 총 3명). 예전엔 3명(총 4명)까지 넣었는데 이 좁은 셀에서는
          서로 비켜다니느라 동선이 뭉개져 학습 이미지로 쓸 장면이 안 나온다. */
       await setExtraCount([0, 1, 1, 1, 2, 2][(Math.random() * 6) | 0]);
-      randomizeScene();
+      const cell = plan && plan[i];
+      DATAGEN.cellKey = cell ? cell.key : "";            // groundTruth의 meta.scene.cell이 읽는다
+      randomizeScene(cell);
       for (let f = 0; f < 4; f++) scene.render();        // 파티클·포즈 안정화
       for (const id of cams) {
         if (DATAGEN.abort) break;
@@ -8371,7 +8751,7 @@ async function generateDataset(n) {
         condRows.push([base + ".png", id, sc.seed, sc.fire ? 1 : 0, sc.fire_progress,
                        sc.fog_density, sc.smoke_particles, sc.steam_k, sc.people,
                        sn.grain, sn.distortion, sn.chroma, sn.blur, sn.vignette,
-                       sn.expJit, sn.lowres].join(","));
+                       sn.expJit, sn.lowres, sc.cell || "", sc.smoke_target, sn.steam_lens].join(","));
         if (!DATAGEN.imagesOnly) {
           await write("gt", base + "_mask.png", gt.mask);
           await write("gt", base + "_inst.png", gt.instMask);
@@ -8383,6 +8763,7 @@ async function generateDataset(n) {
       done = i + 1;
       const per = (performance.now() - t0) / done / 1000;
       setStatus("데이터셋 생성 중… " + done + "/" + n +
+                (cell ? " · " + cell.label : "") +
                 " · 남은 시간 약 " + Math.ceil(per * (n - done)) + "s (샘플당 " + per.toFixed(1) + "s)");
       await new Promise(r => setTimeout(r, 0));
     }
@@ -8397,6 +8778,19 @@ async function generateDataset(n) {
         layout: { images: "images/", labels: "labels/ (YOLO)", gt: "gt/ (mask·inst·depth·meta)" },
         aborted: DATAGEN.abort,
       };
+      /* 12칸 생성이면 칸 정의와 **실제로 찍힌 칸별 장수**를 같이 남긴다.
+         중단됐을 때 어느 칸이 얼마나 찼는지 이 표만 보면 된다. */
+      if (plan) {
+        const filled = {};
+        for (let i = 0; i < done; i++) filled[plan[i].key] = (filled[plan[i].key] || 0) + 1;
+        manifest.cells = {
+          fire: CELL_FIRE.map(f => ({ key:f.key, label:f.label, fire:f.fire, stage_s:f.stage })),
+          fog: CELL_FOG.map(g => ({ key:g.key, label:g.label, steam_lens:g.fog })),
+          per_cell_planned: Math.round(plan.length / (CELL_FIRE.length * CELL_FOG.length)),
+          samples_per_cell: filled,
+          note: "cell은 요청값이다. 실제로 찍힌 값은 conditions.csv의 fire_progress·smoke_particles·steam_k",
+        };
+      }
       await write("", "dataset.json", undefined, JSON.stringify(manifest, null, 1));
       await write("", "conditions.csv", undefined, condRows.join("\n"));
       const fh = await dir.getFileHandle("classes.txt", { create:true });
@@ -8406,6 +8800,7 @@ async function generateDataset(n) {
     }
   } finally {
     DATAGEN.running = false;
+    DATAGEN.cellKey = "";                    // 다음 회차·GT 미리보기에 칸 이름이 새지 않게
     $("gtGenBtn").textContent = "데이터셋 생성";
     if (RUNLOG.cur) {
       RUNLOG.cur.samples = done;
@@ -8414,8 +8809,10 @@ async function generateDataset(n) {
     RUNLOG.finish(DATAGEN.abort ? "사용자 중단" : null);
     restoreAfterDataset();
   }
-  setStatus((DATAGEN.abort ? "⏹ 중단됨 — " : "✅ 데이터셋 완료 — ") + done + "샘플 × " +
-            cams.length + "카메라 · images/labels/gt 구조" + (dir ? "" : " (다운로드 폴더 확인)"));
+  setStatus((DATAGEN.abort ? "■ 중단됨 — " : "데이터셋 완료 — ") + done + "샘플 × " +
+            cams.length + "카메라 · images/labels/gt 구조" +
+            (plan ? " · 12칸 " + (done / 12).toFixed(1) + "장/칸" : "") +
+            (dir ? "" : " (다운로드 폴더 확인)"));
 }
 
 /* ══ 물리 (Havok) — A: 안전 물리 ════════════════════════════════════════
@@ -8721,7 +9118,7 @@ function demoPushCart() {
   person.freeze = false; person.dwellT = 0;
   // 카트 **너머** 지점을 목표로 준다 — 그래야 카트를 밀고 지나간다
   personGo([new V3(c.x + ux * 1.30, 0, c.z + uz * 1.30)], { speed: 0.80 });
-  setStatus("🛒 " + best.label + "를 로봇 쪽으로 밉니다 — 정지 링에 들어가는지 보세요");
+  setStatus(best.label + "를 로봇 쪽으로 밉니다 — 정지 링에 들어가는지 보세요");
   return best;
 }
 /* ══ 미는 자세 보정 — 손이 물건에 닿게 상체를 숙인다 ═══════════════════════
@@ -8882,7 +9279,7 @@ function robotGuardTick() {
     if (hit) break;
   }
   if (hit) {
-    if (!ROBOT_GUARD.blocked) { ROBOT_GUARD.hits++; logConsole("⛔ 작업영역 제한 — " + hit); }
+    if (!ROBOT_GUARD.blocked) { ROBOT_GUARD.hits++; logConsole("작업영역 제한 — " + hit); }
     ROBOT_GUARD.blocked = hit;
     if (ROBOT_GUARD.lastGood) {                       // 직전 안전 포즈로 되돌림
       JOINTS.forEach((j, i) => { j.value = ROBOT_GUARD.lastGood[i]; applyJoint(j); });
@@ -8909,8 +9306,8 @@ function triggerEstop(msg) {
   PHYS.estop = true;
   state.auto = false;
   RUNLOG.onEvent("estop", 0);
-  setStatus("⛔ E-STOP — " + msg);
-  $("physStatus").textContent = "⛔ E-STOP: " + msg + " — 🔓 버튼으로 해제";
+  setStatus("E-STOP — " + msg);
+  $("physStatus").textContent = "E-STOP: " + msg + " — 아래 「E-STOP 해제」 버튼으로 풉니다";
   $("physStatus").style.color = "#ff7b72";
 }
 function clearEstop() {
@@ -8938,7 +9335,7 @@ function spawnDebris() {
       {mass:0.4, friction:0.6, restitution:0.35}, scene);
     PHYS.debris.push({ mesh:m, ag });
   }
-  setStatus("🧪 낙하 물체 5개 — 로봇·설비·바닥과 충돌 (12초 후 제거)");
+  setStatus("낙하 물체 5개 — 로봇·설비·바닥과 충돌 (12초 후 제거)");
   setTimeout(() => {
     for (const d of PHYS.debris) { d.ag.dispose(); d.mesh.dispose(); }
     PHYS.debris.length = 0;
@@ -9791,7 +10188,7 @@ const SEQ_FRY = [
   { k:"ikOff", at:[0, 0],        atY:1.30,  ms:2260, msg:"솥으로 이송 — 통로 횡단", cross:true },
   // 기름면 0.75 — 바닥(atY−0.147)이 잠기도록 atY 0.77 (바닥 0.623)
   { k:"ikOff", at:[0, 0],        atY:0.77,  ms:900,  msg:"솥에 투입 — 기름에 담금", oil:true },
-  { k:"wait",  ms:4500,                     msg:"🍤 튀기는 중 — 노릇하게 익힘", oil:true },
+  { k:"wait",  ms:4500,                     msg:"튀기는 중 — 노릇하게 익힘", oil:true },
   { k:"ikOff", at:[0, 0],        atY:1.30,  ms:900,  msg:"바스켓 1차 인양 — 기름 배출", oil:false },
   // ── 후반부: 익은 것을 꺼내 카트로 (기존) ──
   { k:"ikOff", at:[0, 0],        atY:1.34,  ms:1100, msg:"바스켓 인양 — 기름 배출", oil:false },
@@ -10169,7 +10566,7 @@ function autoIgniteTick() {
   if (AUTO_IGNITE.armed && state.burn >= AUTO_IGNITE.th) {
     AUTO_IGNITE.armed = false;
     setFire(true);
-    setStatus("🔥 눌어붙은 기름이 발화했습니다 — 과열 상태로 교반 없이 방치");
+    setStatus("눌어붙은 기름이 발화했습니다 — 과열 상태로 교반 없이 방치");
   } else if (!AUTO_IGNITE.armed && state.burn <= AUTO_IGNITE.rearm) {
     AUTO_IGNITE.armed = true;                      // 눌음을 걷어냈다 — 재발화 가능 상태로 복귀
   }
@@ -10192,7 +10589,17 @@ function updateCooking(dt) {
     autoIgniteTick();                              // 과열 자동 발화 — burn 갱신 직후에 판정
     bubbles.emitRate = 260 * rate;
     /* C-2: 김 기본 ×2 (66~110 → 132~220) + 표본 배율 k + 퍼프 ×3. 산수는 steam 정의부에 */
-    steam.emitRate = 220 * rate * STEAM.k * (STEAM.puff ? 3 : 1);
+    /* ⚠️ 화재 중에는 김을 끊는다 (2026-08-27). 종전에는 이 줄이 `state.fire`를 안 봐서
+       **불이 나도 배출량이 그대로였다**(실측: 점화 전 308/s → 화재 중 308/s, 김 534개).
+       이 시뮬의 화재는 AUTO_IGNITE가 "눌어붙은 기름이 발화"시키는 **기름 화재**다.
+       기름이 발화점에 닿았으면 수분은 이미 다 날아갔다 — 타는 솥에서 흰 수증기가
+       계속 올라오는 건 물리적으로 틀렸다. 게다가 화재 표본마다 김이 섞여 들어가
+       모델이 "김 = 화재의 동반 신호"로 잘못 배울 수 있다(이 프로젝트가 겨냥하는
+       난제의 정반대다).
+       즉시 0으로 끊지 않고 아래 else와 같은 감쇠(×0.94)를 쓴다 — 발화 직후 1~2초
+       김이 남으며 연기로 넘어가는 전환이 오히려 실제에 가깝다. */
+    steam.emitRate = state.fire ? steam.emitRate * 0.94
+                                : 220 * rate * STEAM.k * (STEAM.puff ? 3 : 1);
   } else {
     bubbles.emitRate *= 0.9; steam.emitRate *= 0.94;
   }
@@ -10714,7 +11121,7 @@ function camSelectsRebuild() {
 }
 
 /* ══ 카메라 전환 — 왼쪽 STAGE 트리 ═══════════════════════════════════════
-   줄을 누르면 주 시점, Shift+클릭(또는 우클릭)이면 PiP. 눈(👁)은 씬 안의 하우징 소품
+   줄을 누르면 주 시점, Shift+클릭(또는 우클릭)이면 PiP. 표시 토글(◉)은 씬 안의 하우징 소품
    표시 토글로 원래 동작 그대로다.
    트리의 카메라 줄은 예전에 CAM1~3으로 **하드코딩**돼 있어서 새로 추가한 카메라가
    영영 나타나지 않았다 — 이제 CAM_DEFS에서 만들어 추가·삭제·이름변경이 그대로 반영된다. */
@@ -10752,7 +11159,8 @@ function camTreeRebuild() {
          ellipsis(…)를 걸 수가 없고, 길어지면 그대로 두 줄이 된다. */
       const nameEl = document.createElement("span");
       nameEl.className = "camname";
-      nameEl.textContent = (id === "free" ? "🎥 " : "📷 ") + camShort(id, label);
+      /* 아이콘 접두를 뺐다 — "자유 시점"은 이름으로 이미 구분되고, PiP 버튼은 카메라 행에만 붙는다. */
+      nameEl.textContent = camShort(id, label);
       div.appendChild(nameEl);
       div.addEventListener("click", e => {
         // 눈·PiP 버튼은 각자 처리한다 — 줄 클릭으로 새어들어가면 시점이 같이 바뀐다
@@ -10780,7 +11188,7 @@ function camTreeRebuild() {
       }
       if (node) {
         const eye = document.createElement("span");
-        eye.className = "eye"; eye.textContent = "👁";
+        eye.className = "eye"; eye.textContent = "◉"; eye.title = "표시 / 숨김";
         eye.title = "씬에 보이는 카메라 본체 표시/숨김";
         eye.addEventListener("click", () => {
           const on = !node.isEnabled();
@@ -10948,7 +11356,8 @@ $("ctrlSel").addEventListener("change", e => setCtrlTarget(e.target.value));
 
 /* 센서 리얼리즘 UI */
 const SN_MAP = [["snGrain","grain",0],["snDist","distortion",2],["snChr","chroma",2],
-                ["snBlur","blur",2],["snVig","vignette",2],["snExp","expJit",2],["snLow","lowres",0]];
+                ["snBlur","blur",2],["snVig","vignette",2],["snExp","expJit",2],["snLow","lowres",0],
+                ["snSteam","steam",2]];
 function sensorUIsync() {
   SN_MAP.forEach(([id, key, dp]) => {
     $(id).value = SENSOR[key];
@@ -10957,7 +11366,15 @@ function sensorUIsync() {
 }
 SN_MAP.forEach(([id, key]) => $(id).addEventListener("input", e => {
   SENSOR[key] = +e.target.value;
-  SENSOR.on = SN_MAP.some(([, k]) => SENSOR[k] > 0.001);
+  /* 김서림 슬라이더를 손으로 움직이면 자동 연동을 끈다 — 안 그러면 다음 프레임에
+     자동이 값을 덮어써서 "슬라이더가 안 먹는다"가 된다. 체크박스로 다시 켠다. */
+  if (key === "steam") { SENSOR.steamAuto = false; const cb = $("snSteamAuto"); if (cb) cb.checked = false; }
+  const any = SN_MAP.some(([, k]) => SENSOR[k] > 0.001);
+  /* 김서림을 0으로 내렸는데 아직 화면에 남아 있으면 **끄지 않고 미룬다** —
+     후처리를 지금 떼면 15초에 걸쳐 걷혀야 할 김이 한 프레임에 사라진다.
+     sensorTick이 다 걷힌 걸 보고 그때 끈다. */
+  if (!any && SENSOR.steamNow > 0.002) { SENSOR._pendingOff = true; SENSOR.on = true; }
+  else { SENSOR._pendingOff = false; SENSOR.on = any; }
   sensorApply(); sensorUIsync();
 }));
 document.querySelectorAll("button.sp").forEach(b =>
@@ -11197,8 +11614,34 @@ $("gtPreviewBtn").addEventListener("click", async () => {
   setStatus("GT 미리보기 저장 — 라벨 " + gt.labels.length + "개: " +
             (gt.labels.map(l => l.label).join(", ") || "없음"));
 });
+/* 12칸 균등 — 켜면 칸당 장수 슬라이더가 나오고 샘플 수는 12 × 칸당으로 고정된다 */
+function gtCellsSync() {
+  const on = $("gtCells").checked, per = +$("gtPerCell").value;
+  $("gtPerCellRow").style.display = on ? "" : "none";
+  $("gtCellsNote").style.display  = on ? "" : "none";
+  $("gtPerCellV").textContent = per;
+  $("gtCount").disabled = on;
+  const cams = (DATAGEN.cams && DATAGEN.cams.length) ? DATAGEN.cams.length : Object.keys(SURV).length;
+  $("gtCountV").textContent = on ? (12 * per) + " (12칸×" + per + " · 이미지 " + (12 * per * cams) + "장)"
+                                 : $("gtCount").value;
+}
+$("snSteamAuto").addEventListener("change", e => {
+  SENSOR.steamAuto = e.target.checked;
+  if (!SENSOR.steamAuto) return;           // 수동으로 넘어갈 땐 현재 값을 그대로 둔다
+  SENSOR.steam = SENSOR.steamGain * Math.min(1, steam.particles.length / SENSOR.steamRef);
+  sensorApply(); sensorUIsync();
+});
+$("gtCells").addEventListener("change", gtCellsSync);
+$("gtPerCell").addEventListener("input", gtCellsSync);
 $("gtGenBtn").addEventListener("click", () => {
-  if (DATAGEN.running) { DATAGEN.abort = true; setStatus("중단 요청 — 현재 샘플까지 저장 후 종료"); }
+  if (DATAGEN.running) { DATAGEN.abort = true; setStatus("중단 요청 — 현재 샘플까지 저장 후 종료"); return; }
+  /* 반대 방향 가드 — demoRun의 짝. 발표 시나리오가 도는 중에 생성을 걸면 표본마다
+     화재·카메라가 데모 타임라인과 싸운다. 「↩ ① 되돌리기」를 먼저 누르게 한다. */
+  if (typeof DEMO !== "undefined" && (DEMO.on || DEMO.presenting)) {
+    setStatus("⚠ 발표 시나리오가 실행 중입니다 — 「↩ ① 되돌리기」를 먼저 누르세요");
+    return;
+  }
+  if ($("gtCells").checked) generateDataset(0, cellPlan(+$("gtPerCell").value));
   else generateDataset(+$("gtCount").value);
 });
 $("trajScenes").addEventListener("input", e => $("trajScenesV").textContent = e.target.value);
@@ -11229,7 +11672,7 @@ $("milOnnxFile").addEventListener("change", async e => {
     info.style.color = "#7ee787";
     logConsole("[ONNX] " + f.name + " 로드 — " + r.ep + " · " + r.imgsz + "px");
   } catch (err) {
-    info.textContent = "✖ 로드 실패: " + (err.message || err); info.style.color = "#ff7b72";
+    info.textContent = "로드 실패: " + (err.message || err); info.style.color = "#ff7b72";
   }
 });
 $("milMode").addEventListener("change", e => {
@@ -11247,7 +11690,7 @@ $("milBtn").addEventListener("click", () => {
   if (!MIL.on) {
     MIL.lastBoxes = null; MIL.lastPersonSeen = null; MIL.tracks = {}; drawOverlay();
     const r = RUNLOG.finish();     // 검증 시작~중지 = 1회차
-    if (r) setStatus("📋 회차 #" + r.id + " 기록 — 응답 " + r.model.resp + "회 · 지연 " +
+    if (r) setStatus("회차 #" + r.id + " 기록 — 응답 " + r.model.resp + "회 · 지연 " +
       (r.model.latMean === null ? "–" : r.model.latMean + "ms") + " · 검출률 " +
       (r.model.detRate === null ? "–" : r.model.detRate) + " · 위험 프레임 " +
       (r.safety.riskPct === null ? "–" : r.safety.riskPct + "%"));
@@ -11324,7 +11767,7 @@ $("runClearBtn").addEventListener("click", () => {
   if (!RUNLOG.runs.length) return setStatus("기록 없음");
   if (!confirm("회차 기록 " + RUNLOG.runs.length + "건을 모두 지웁니다. 계속할까요?")) return;
   RUNLOG.runs = []; RUNLOG.save(); RUNLOG.render();
-  setStatus("🗑 회차 기록 비움");
+  setStatus("회차 기록 비움");
 });
 // 탭을 닫아도 진행 중인 회차가 사라지지 않게 (localStorage 쓰기는 동기라 여기서 가능)
 window.addEventListener("beforeunload", () => { if (RUNLOG.cur) RUNLOG.finish("페이지 종료"); });
@@ -11532,7 +11975,7 @@ function accStart() {
   person.freeze = false;
   personGo([ new V3(0.35,0,2.85), SPILL_AT.clone(), new V3(-0.55,0,1.65) ], { speed:0.75 });
   if (!state.auto) $("autoBtn").click();      // 로봇은 평소처럼 튀김 작업 중
-  setStatus("☠ 사고 시나리오 시작 — 아무 이상 없어 보인다");
+  setStatus("사고 시나리오 시작 — 아무 이상 없어 보인다");
 }
 function accReset() {
   ACC.on = false; ACC.t = 0; ACC.beat = -1; ACC.prone = false; ACC.cartRolled = 0;
@@ -11663,7 +12106,11 @@ scene.registerBeforeRender(() => {
     : Math.max(0, fireLight.intensity - dt/400);
   fpsAcc += engine.getFps(); fpsN++;
   if (fpsN >= 20) {
-    $("fps").textContent = (fpsAcc/fpsN).toFixed(0);
+    /* engine.getFps()는 프레임 간격이 0으로 잡히면 **Infinity**를 돌려준다 — 백그라운드
+       탭·첫 프레임에서 실제로 나와 화면에 "FPS Infinity"가 그대로 찍혔다(실측).
+       발표 중에 보이는 자리라 유한할 때만 쓰고, 아니면 대시로 둔다. */
+    const fpsAvg = fpsAcc / fpsN;
+    $("fps").textContent = Number.isFinite(fpsAvg) ? fpsAvg.toFixed(0) : "–";
     /* 삼각형 수는 메시 구성이 바뀔 때만 다시 센다.
        매번 세면 메시 1000개 × getIndices()를 초당 3회 도는데, 값은 거의 안 변한다.
        메시 개수 + 활성 개수가 같으면 구성이 같다고 본다(가시성 토글은 개수에 잡힌다). */
@@ -11694,7 +12141,7 @@ scene.registerBeforeRender(() => {
         QUALITY.autoDone = true;
         const next = QUALITY.name === "high" ? "medium" : "low";
         QUALITY.apply(next);
-        setStatus("⚙ 프레임이 낮아 화질을 '" + QUALITY.presets[next].label +
+        setStatus("프레임이 낮아 화질을 '" + QUALITY.presets[next].label +
                   "'으로 낮췄습니다 (" + f.toFixed(0) + "fps) — 고급 탭에서 되돌릴 수 있습니다");
       } else if (f >= 45) QUALITY.autoDone = true;   // 충분히 빠르면 더 안 본다
     }
@@ -11707,10 +12154,17 @@ scene.registerBeforeRender(() => {
                     (CPRED.err ? " · 실패 " + CPRED.err : "") +
                     (CPRED.path && performance.now() - CPRED.at < 1000 ? "" : " · ⚠ 응답 없음 → 칼만 대체")
                   : "window.__customPredictor 미등록 → 칼만으로 동작 중");
-    $("pdist").textContent = ((MIL.safety && MIL.on)
-      ? "실제 " + SAFE.trueDist.toFixed(2) + "m · 모델 " + (SAFE.dist > 90 ? "미검출" : SAFE.dist.toFixed(2) + "m")
-      : SAFE.dist.toFixed(2) + "m")
-      + " · Sp " + SAFE.spStop.toFixed(2) + "m (v로봇 " + SAFE.vr.toFixed(2) + "㎧)";   // P4 동적 방호거리
+    /* 하단 지표에서 두 가지를 뺐다 (2026-08-27).
+       · 사람↔로봇 거리 — 상단 관제바(sbDist)와 **같은 값**이라 위아래로 겹쳐 있었다.
+       · Sp(동적 방호거리)·v로봇 — 발표 화면에서 뜻이 통하지 않는 약어다. 값이 필요하면
+         콘솔에서 __sim.SAFE.spStop · __sim.SAFE.vr 로 읽는다(둘 다 export돼 있다).
+       모델 검증 중(MIL.safety)일 때만 실제-vs-모델을 덧붙인다 — 그때만 두 값이 갈리므로
+       나란히 볼 이유가 생긴다. 평소에는 같은 숫자를 두 번 쓰는 것뿐이다. */
+    const milCmp = MIL.safety && MIL.on;
+    $("statsMil").style.display = milCmp ? "" : "none";
+    if (milCmp)
+      $("pdist").textContent = "실제 " + SAFE.trueDist.toFixed(2) + "m · 모델 " +
+        (SAFE.dist > 90 ? "미검출" : SAFE.dist.toFixed(2) + "m");
     updateStatusBar();                                 // 상단 관제 요약 바
     fpsAcc = 0; fpsN = 0;
   }
@@ -11846,9 +12300,10 @@ window.__sim = {
   SURV, capture, captureBoth, applyCameras, camOf, pipRect, swapViews, cyclePip, pickView,
   setView: v => { mainView = v; viewSel.value = v; applyCameras(); },
   setPip:  v => { pipView = v; pipSel.value = v; applyCameras(); },
-  person, personGo, SAFE, setFire, FIRE_FOG, SMOKE_LAYER, fireSeekTo, fireRandomStage,   // SCN 제거 (2026-08-27)
+  person, personGo, SAFE, setFire, FIRE_FOG, SMOKE_LAYER, fireSeekTo, fireRandomStage, fireCheck,   // SCN 제거 (2026-08-27)
   // Ground Truth · 데이터셋
   groundTruth, generateDataset, DATAGEN, randomizeScene, restoreAfterDataset,
+  cellPlan, CELL_FIRE, CELL_FOG,      // 12칸 균등 생성 — __sim.generateDataset(0, __sim.cellPlan(3))
   GT_CLASSES, classOfMesh, showInspector,
   // 물리 · 안전
   PHYS, ROBOT_GUARD, buildRobotGuard, resetBasket, ONNX, onnxLoadModel, onnxInfer, PRED, ENV_RAND, randomizeEnvironment, placeOccluder, setExtraCount, spawnDebris, triggerEstop, clearEstop,
@@ -11876,11 +12331,11 @@ function logConsole(msg) {
   const rows = [
     ["World", null, false],
     ["robot — 교반로봇", scene.getTransformNodeByName("robotRoot"), true],
-    ["🍲 kettle — 교반솥", anchors["kettle"].node, true],
-    ["🧑‍🍳 person — 사람", anchors["person"].node, true],
-    ["🗄 prep — 조리대", anchors["pot2"].node, true],
-    ["🧺 shelf — 선반", anchors["shelf"].node, true],
-    ["🖥 panel — 제어반", anchors["panel"].node, true],
+    ["kettle — 교반솥", anchors["kettle"].node, true],
+    ["person — 사람", anchors["person"].node, true],
+    ["prep — 조리대", anchors["pot2"].node, true],
+    ["shelf — 선반", anchors["shelf"].node, true],
+    ["panel — 제어반", anchors["panel"].node, true],
     // 카메라 줄은 여기 하드코딩하지 않는다 — 아래 camRows에 CAM_DEFS로부터 만든다
   ];
   for (const [label, node, child] of rows) {
@@ -11889,7 +12344,7 @@ function logConsole(msg) {
     div.textContent = (child ? "" : "▾ ") + label;
     if (node) {
       const eye = document.createElement("span");
-      eye.className = "eye"; eye.textContent = "👁";
+      eye.className = "eye"; eye.textContent = "◉"; eye.title = "표시 / 숨김";
       eye.addEventListener("click", () => {
         const on = !node.isEnabled();
         node.setEnabled(on);
@@ -11983,19 +12438,19 @@ initPhysics();   // 비동기 — 파일 없으면 물리만 꺼진 채 계속 �
        종전처럼 둘 다 "발표 시나리오"로 시작하면 find가 첫 번째만 잡아 ②가 고급 탭으로
        흘러간다. 제목을 고칠 때는 이 목록도 같이 고쳐야 한다 — 안 고치면 **에러 없이
        조용히** 섹션이 사라진다(find가 undefined를 돌려주고 그냥 넘어간다). */
-    { id:"show", label:"🎬 발표",  secs:["① 화재 감지","② 사람 동선 감지",
+    { id:"show", label:"발표",  secs:["① 화재 감지","② 사람 동선 감지",
                                         "실영상 패널","샷 리스트","사고 시나리오 (연쇄)"] },
-    { id:"start", label:"🚀 시작", secs:[] },   // 아래 startTabUI()가 내용을 채운다
-    { id:"run",  label:"▶ 실행",   secs:["관절 제어","조리 설정","조리 상태","조작 대상","사람 시나리오 · 화재"] },
-    { id:"cam",  label:"📷 카메라", secs:["카메라 · 모델 입력","시점 프리셋","감시 카메라 관리"] },
+    { id:"start", label:"시작", secs:[] },   // 아래 startTabUI()가 내용을 채운다
+    { id:"run",  label:"실행",   secs:["관절 제어","조리 설정","조리 상태","조작 대상","사람 시나리오 · 화재"] },
+    { id:"cam",  label:"카메라", secs:["카메라 · 모델 입력","시점 프리셋","감시 카메라 관리"] },
     /* 데이터 탭은 "데이터를 만든다 → 모델을 검증한다 → 회차를 비교한다" 순서로 읽히게 둔다.
        센서 리얼리즘·조리실 인원은 데이터셋의 다양성을 정하는 손잡이라 고급이 아니라 여기다.
        (고급에 있으면 데이터 만드는 사람이 영영 못 찾는다) */
-    { id:"data", label:"📊 데이터", secs:["데이터셋 · Ground Truth","궤적 데이터 수집",
+    { id:"data", label:"데이터", secs:["데이터셋 · Ground Truth","궤적 데이터 수집",
                                          "센서 리얼리즘 (CCTV 특성)",
                                          "조리실 인원 (다양성)","모델 검증 (Model-in-the-Loop)",
                                          "궤적 예측","회차 기록 (Run Log)"] },
-    { id:"adv",  label:"⚙ 고급",   secs:["전문가 기능","시각화 표시","화면 품질","물리 · 안전 (Havok)","에셋 임포트 (선택)"] },
+    { id:"adv",  label:"고급",   secs:["전문가 기능","시각화 표시","화면 품질","물리 · 안전 (Havok)","에셋 임포트 (선택)"] },
   ];
   // 섹션 헤더 → [헤더, 다음 헤더 전까지의 형제들] 묶음 수집
   const heads = [...panel.querySelectorAll(":scope > .section")];
@@ -12140,7 +12595,7 @@ initPhysics();   // 비동기 — 파일 없으면 물리만 꺼진 채 계속 �
         <button id="stApproach">사람 접근</button>
       </div>
       <div class="btnrow">
-        <button id="stPush">🛒 카트 밀기 (물리)</button>
+        <button id="stPush">카트 밀기 (물리)</button>
         <button id="stPushBack">↩ 카트 원위치</button>
         <button id="stReset">↺ 리셋</button>
       </div>
@@ -12200,8 +12655,8 @@ initPhysics();   // 비동기 — 파일 없으면 물리만 꺼진 채 계속 �
     chip(document.getElementById("stS5"), `기록 ${RUNLOG.runs.length}건`,
          RUNLOG.runs.length ? "stOk" : "stMuted");
     document.getElementById("stScaleNote").innerHTML = SCALE.verified
-      ? `📏 치수 기준 <b>솥 외경 ${SCALE.fryerM}m</b> (실측 반영됨)`
-      : `📏 <b>치수는 아직 미검증입니다</b> — 솥 외경을 1.25m로 가정 중(±25%).
+      ? `치수 기준 <b>솥 외경 ${SCALE.fryerM}m</b> (실측 반영됨)`
+      : `<b>치수는 아직 미검증입니다</b> — 솥 외경을 1.25m로 가정 중(±25%).
          실측 1건이 생기면 <code>sim.html?fryer=1.18</code> 처럼 열어 전체를 재보정합니다.
          재는 방법: <code>MODEL_HANDOFF.md</code>`;
   };
@@ -12241,7 +12696,11 @@ initPhysics();   // 비동기 — 파일 없으면 물리만 꺼진 채 계속 �
     else if (k === "p") cyclePip();                       // PiP 순환
     else if (k >= "0" && k <= "9" && !e.shiftKey) pickView(+k);   // 0=자유, 1~=카메라
   });
-  try { if (!localStorage.getItem("simHelpSeen")) setTimeout(open, 700); } catch (e) {}
+  /* 첫 방문 자동 팝업을 없앴다 (2026-08-27). 발표용 새 노트북·새 브라우저·시크릿 창은
+     localStorage가 비어 있어 **발표 시작 0.7초 뒤 전체 화면 도움말이 덮였다.**
+     필요한 사람은 우상단 ? 버튼과 H 키로 언제든 연다 — 없어진 기능은 없다.
+     리허설에서 첫 화면을 확인하려면 ?help=1 로 연다. */
+  if (new URLSearchParams(location.search).get("help") === "1") setTimeout(open, 700);
 })();
 
 sensorApply(); sensorUIsync();   // P1 센서 리얼리즘 초기 적용 (기본: 일반 CCTV)
@@ -13191,7 +13650,7 @@ function armContactUpdate(dt) {
       P.pinned = true; P.pinAnchor = null;          // 다음 프레임부터 버둥거림 시작
       P.struckT = STRIKE_COOLDOWN * 2;
       extraAct(P, "hit", false, 1.25);              // 첫 충격 — 이후 struggleUpdate가 이어받는다
-      setStatus("⛔ 끼임 — 조리원이 로봇팔과 설비 사이에 끼었다 (" + who + ")");
+      setStatus("끼임 — 조리원이 로봇팔과 설비 사이에 끼었다 (" + who + ")");
       console.warn("[PINCH] 팔↔사람 끼임 · 침투", (-clr*1000).toFixed(0) + "mm · 탈출로 없음");
     } else {
       P.pinned = false;
@@ -13199,7 +13658,7 @@ function armContactUpdate(dt) {
       P.struckT = STRIKE_COOLDOWN;
       extraAct(P, "hit", false);
       setTimeout(() => { if (P.struckT > 0 && !P.pinned) extraAct(P, "down", false); }, 420);
-      setStatus("⛔ 충돌 — 로봇팔이 조리원을 쳐 넘어뜨림 (" + who + ")");
+      setStatus("충돌 — 로봇팔이 조리원을 쳐 넘어뜨림 (" + who + ")");
       console.warn("[CONTACT] 팔↔사람 충돌 · 침투", (-clr*1000).toFixed(0) + "mm · 밀림",
                    Math.hypot(esc.x - cx, esc.z - cz).toFixed(2) + "m");
     }
@@ -13838,6 +14297,14 @@ function demoTick(dt) {
 
 function demoRun(kind) {
   if (!DEMO_SCRIPTS[kind]) return;
+  /* 데이터셋 생성과 **같은 손잡이를 잡는다** — 둘 다 setFire·카메라·사람·STEAM.k를 매초
+     덮어쓴다. 같이 돌면 발표 화면이 표본마다 튀고, 생성 끝의 restoreAfterDataset()이
+     DEMO.saved 복원까지 밀어버린다(발표자는 왜 화면이 안 돌아오는지 알 수 없다).
+     막고 이유를 말한다 — 조용히 이상하게 도는 것보다 낫다. */
+  if (DATAGEN.running) {
+    setStatus("⚠ 데이터셋 생성 중입니다 — 발표 시나리오는 생성이 끝난 뒤에 실행하세요");
+    return;
+  }
   demoReset(true);
   DEMO.presenting = true;              // 경고 배지를 감춘다 (DEMO.presenting 주석)
   /* 되돌릴 지점을 뜬다 — 사고 시나리오의 ACC.saved와 같은 방식이다.
