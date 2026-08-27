@@ -14718,6 +14718,7 @@ function corrRun(mode) {
   // 로봇 — 바스켓을 쥐고 통로 횡단 단계로 바로 진입
   state.auto = true; state.cycles = 0; state.autoLoop = false;
   if (basketNode) basketNode.setParent(JOINTS[4].node);   // grab 단계 효과(수평 보정·아크의 전제)
+  state.basketHeld = true;   // 통로 횡단 중 손목-수평화(블록 A)가 돌게 한다 — 안 켜면 아크에서 바스켓이 기울어짐
   startStep(crossIdx);
   // 사람은 **로봇이 먼저 출발한 뒤** 진입해야 급후퇴(retract)가 나온다(처음부터 위험구역에 있으면
   // 로봇이 출발 자체를 보류(hold)만 한다). 시작은 위험구역 밖(먼 곳), corrTick이 지연 후 진입시킨다.
