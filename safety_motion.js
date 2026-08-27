@@ -225,7 +225,8 @@
   function validCandidate(candidate) {
     return candidate
       && typeof candidate.safe === "boolean"
-      && Number.isFinite(candidate.clearance);
+      && (Number.isFinite(candidate.clearance)
+          || candidate.clearance === Number.POSITIVE_INFINITY);
   }
 
   function chooseManeuver(options) {
@@ -266,11 +267,86 @@
     return chosen;
   }
 
+  function trajectoryClearance(robotPoints, people, robotRadius, personRadius) {
+    if (!Array.isArray(robotPoints) || robotPoints.length === 0
+        || robotPoints.some(point => !isPoint(point))
+        || !Array.isArray(people)
+        || !Number.isFinite(robotRadius) || robotRadius < 0
+        || !Number.isFinite(personRadius) || personRadius < 0) {
+      return Number.NEGATIVE_INFINITY;
+    }
+    let clearance = Number.POSITIVE_INFINITY;
+    for (const personPath of people) {
+      if (!personPath || !Array.isArray(personPath.points)
+          || personPath.points.length < robotPoints.length
+          || personPath.points.some(point => !isPoint(point))) {
+        return Number.NEGATIVE_INFINITY;
+      }
+      for (let index = 0; index < robotPoints.length; index += 1) {
+        const robot = robotPoints[index];
+        const personPoint = personPath.points[index];
+        const horizontalDistance = Math.hypot(
+          robot.x - personPoint.x,
+          robot.z - personPoint.z,
+        );
+        clearance = Math.min(clearance, horizontalDistance - robotRadius - personRadius);
+      }
+    }
+    return clearance;
+  }
+
+  function armTrajectoryClearance(armSamples, people, linkRadius) {
+    if (!Array.isArray(armSamples) || armSamples.length === 0
+        || !Array.isArray(people)
+        || !Number.isFinite(linkRadius) || linkRadius < 0) {
+      return Number.NEGATIVE_INFINITY;
+    }
+    let clearance = Number.POSITIVE_INFINITY;
+    for (let sampleIndex = 0; sampleIndex < armSamples.length; sampleIndex += 1) {
+      const links = armSamples[sampleIndex];
+      if (!Array.isArray(links) || links.length === 0
+          || links.some(link => !link || !isPoint(link.a) || !isPoint(link.b))) {
+        return Number.NEGATIVE_INFINITY;
+      }
+      for (const personPath of people) {
+        const personPoint = personPath && personPath.points
+          && personPath.points[sampleIndex];
+        const radius = personPath && personPath.radius;
+        const halfHeight = personPath && personPath.halfHeight;
+        if (!isPoint(personPoint)
+            || !Number.isFinite(radius) || radius < 0
+            || !Number.isFinite(halfHeight) || halfHeight < radius) {
+          return Number.NEGATIVE_INFINITY;
+        }
+        const axisHalfHeight = Math.max(0, halfHeight - radius);
+        const bottom = {
+          x: personPoint.x,
+          y: personPoint.y - axisHalfHeight,
+          z: personPoint.z,
+        };
+        const top = {
+          x: personPoint.x,
+          y: personPoint.y + axisHalfHeight,
+          z: personPoint.z,
+        };
+        for (const link of links) {
+          clearance = Math.min(
+            clearance,
+            segmentSegmentDistance(link.a, link.b, bottom, top) - linkRadius - radius,
+          );
+        }
+      }
+    }
+    return clearance;
+  }
+
   return {
     samplePlannedPath,
     segmentSegmentDistance,
     sweptSegmentCapsuleContact,
     approachFactor,
     chooseManeuver,
+    trajectoryClearance,
+    armTrajectoryClearance,
   };
 });

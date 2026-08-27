@@ -127,3 +127,39 @@ test('chooseManeuver holds a conservative mode for at least 300ms', () => {
 test('chooseManeuver fails closed on invalid candidates', () => {
   assert.equal(S.chooseManeuver({ danger: false }).mode, 'STOP');
 });
+
+test('chooseManeuver accepts infinite clearance when no people are present', () => {
+  const result = S.chooseManeuver({
+    danger: false,
+    proceed: { safe: true, clearance: Number.POSITIVE_INFINITY },
+  });
+  assert.equal(result.mode, 'PROCEED');
+});
+
+test('trajectoryClearance scores a candidate against every planned person path', () => {
+  const robot = [
+    { x: 0, y: 1, z: 0 },
+    { x: 1, y: 1, z: 0 },
+  ];
+  const people = [
+    { points: [{ x: 0, y: 0, z: 2 }, { x: 1, y: 0, z: 0.5 }] },
+    { points: [{ x: 3, y: 0, z: 3 }, { x: 3, y: 0, z: 3 }] },
+  ];
+
+  assert.equal(S.trajectoryClearance(robot, people, 0.1, 0.2), 0.2);
+  assert.equal(S.trajectoryClearance([], people, 0.1, 0.2), Number.NEGATIVE_INFINITY);
+});
+
+test('armTrajectoryClearance scores every 3D link against planned capsules', () => {
+  const armSamples = [[{
+    a: { x: 0, y: 1, z: 0 },
+    b: { x: 1, y: 1, z: 0 },
+  }]];
+  const people = [{
+    radius: 0.2,
+    halfHeight: 0.8,
+    points: [{ x: 0.5, y: 0.9, z: 0.5 }],
+  }];
+
+  assert.ok(Math.abs(S.armTrajectoryClearance(armSamples, people, 0.1) - 0.2) < 1e-12);
+});
