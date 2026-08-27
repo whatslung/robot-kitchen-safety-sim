@@ -34,6 +34,28 @@ def test_safety_governor_and_maneuver_arbitration_are_wired():
     assert 'const plannable = s && (s.k === "ik" || s.k === "ikOff" || s.k === "home")' in text
     assert "AVOID.plannedMotion = plannable" in text
     assert "AVOID.pathFactor" in text
+    assert "Math.min(SAFE.targetFactor, AVOID.pathFactor)" in text
+    assert "SAFE.stopped || AVOID.targetFactor === 0" in text
+    assert "AVOID.clearSince" in text
+    assert "clearMs" in text
+
+
+def test_manual_velocity_tracking_is_independent_of_visualization():
+    text = sim_source()
+    assert "function peopleVelocityUpdate" in text
+    assert "peopleVelocityUpdate(dt / 1000)" in text
+
+
+def test_safe_lift_fails_closed_and_replans_every_exit():
+    text = sim_source()
+    assert "checkEnvironment && (!PHYS.ready || !PHYS.links.length)" in text
+    assert "originalFrom:state.stepStartJoints.slice()" in text
+    assert 'AVOID.mode === "RETRACT"' in text
+    assert "state.seqT = state.dur" in text
+    assert "retractPrepared" in text
+    assert "AVOID.lift.originalTo" in text
+    assert 'AVOID.mode = "STOP"' in text
+    assert "clearMsByMode" in text
 
 
 def test_contact_monitor_unifies_main_and_extra_people_with_swept_links():

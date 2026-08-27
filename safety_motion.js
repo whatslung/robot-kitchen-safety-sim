@@ -264,6 +264,16 @@
     if (easingRisk && elapsed < minimum) {
       return { mode: currentMode, reason: "minimum-hold", clearance: chosen.clearance };
     }
+    const releaseClearance = settings.releaseClearance;
+    const perMode = settings.clearMsByMode && settings.clearMsByMode[chosen.mode];
+    const clearMs = Number.isFinite(perMode) ? Math.max(0, perMode)
+      : (Number.isFinite(settings.clearMs) ? Math.max(0, settings.clearMs) : 0);
+    const startsMotion = chosen.mode === "PROCEED"
+      || chosen.mode === "RETRACT" || chosen.mode === "SAFE_LIFT";
+    if (easingRisk && startsMotion && Number.isFinite(releaseClearance)
+        && (chosen.clearance < releaseClearance || clearMs < minimum)) {
+      return { mode: currentMode, reason: "release-hysteresis", clearance: chosen.clearance };
+    }
     return chosen;
   }
 

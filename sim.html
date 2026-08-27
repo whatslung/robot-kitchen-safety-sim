@@ -6717,20 +6717,27 @@ function peopleList() {
   if (typeof EXTRAS !== "undefined") for (const P of EXTRAS) if (P && P.root) out.push(P.root);
   return out;
 }
+function peopleVelocityUpdate(dt) {
+  if (!(dt > 1e-3)) return;
+  const active = new Set(peopleList());
+  for (const node of active) {
+    const p = node.position;
+    let st = PVEL.get(node);
+    if (!st) { PVEL.set(node, { x:p.x, z:p.z, vx:0, vz:0 }); continue; }
+    const ivx = (p.x - st.x) / dt, ivz = (p.z - st.z) / dt;
+    st.vx = st.vx*0.75 + ivx*0.25; st.vz = st.vz*0.75 + ivz*0.25;
+    st.x = p.x; st.z = p.z;
+  }
+  for (const node of PVEL.keys()) if (!active.has(node)) PVEL.delete(node);
+}
 function pmodeArrowsFor(agent, idx, dt) {
   const p = agent.pos;
   /* 속도: GT는 노드 위치 차분 EMA(PVEL), 검출은 트랙이 이미 낸 월드 속도(vWorld).
      (검출 모드엔 Babylon 노드가 없어 위치 차분 대신 트랙 속도를 그대로 쓴다.) */
   let vx, vz;
   if (agent.node) {
-    let st = PVEL.get(agent.node);
-    if (!st) { PVEL.set(agent.node, { x:p.x, z:p.z, vx:0, vz:0 }); return 0; }
-    if (dt > 1e-3) {
-      const ivx = (p.x - st.x)/dt, ivz = (p.z - st.z)/dt;
-      st.vx = st.vx*0.75 + ivx*0.25; st.vz = st.vz*0.75 + ivz*0.25;
-    }
-    st.x = p.x; st.z = p.z;
-    vx = st.vx; vz = st.vz;
+    const st = PVEL.get(agent.node);
+    vx = st ? st.vx : 0; vz = st ? st.vz : 0;
   } else {
     vx = (agent.vel && agent.vel.x) || 0; vz = (agent.vel && agent.vel.z) || 0;
   }
@@ -10470,6 +10477,7 @@ const AVOID = {
   on:true, mode:"PROCEED", eff:"PROCEED", rate:1, reason:"",
   targetFactor:1, appliedFactor:1, since:performance.now(), minHoldMs:300,
   startT:0.06, samples:12, lift:null, plannedMotion:false, pathFactor:1,
+  clearSince:{ PROCEED:null, RETRACT:null, SAFE_LIFT:null },
 };
 
 function safetyPoint(v, yOffset) {
@@ -10534,6 +10542,8 @@ function armLinksSnapshot() {
 function candidateArmSamples(target, count, checkEnvironment) {
   if (!Array.isArray(target) || target.length !== JOINTS.length
       || target.some(v => !Number.isFinite(v))) return { samples:[], environmentSafe:false };
+  if (checkEnvironment && (!PHYS.ready || !PHYS.links.length))
+    return { samples:[], environmentSafe:false };
   const saved = JOINTS.map(j => j.value), samples = [];
   let environmentSafe = true;
   try {
@@ -10577,6 +10587,12 @@ function avoidDecide(dtMs) {
   AVOID.pathFactor = 1;
   AVOID.rate = 1; AVOID.reason = "";
   if (!AVOID.on || !state.auto || !s || !plannable || SAFE.blind) {
+    AVOID.clearSince = { PROCEED:null, RETRACT:null, SAFE_LIFT:null };
+    if (AVOID.lift) {
+      AVOID.mode = "STOP"; AVOID.rate = 0;
+      AVOID.reason = "안전 자세 전환 중 제어 입력 비활성 — 현재 자세 유지";
+      return;
+    }
     AVOID.mode = "PROCEED";
     return;
   }
@@ -10587,12 +10603,14 @@ function avoidDecide(dtMs) {
   const times = [];
   for (let i = 0; i < AVOID.samples; i++) times.push(windowSec * i / (AVOID.samples - 1));
   const occupancy = plannedPeopleOccupancy(times);
-  const proceed = scoreArmCandidate(state.to, occupancy, false);
+  const proceedTarget = AVOID.lift ? AVOID.lift.originalTo : state.to;
+  const proceed = scoreArmCandidate(proceedTarget, occupancy, false);
   AVOID.pathFactor = proceed.safe
     ? (Number.isFinite(proceed.clearance)
       ? clamp((proceed.clearance - SAFE.C) / 0.50, 0.20, 1) : 1)
     : 0;
   const danger = !proceed.safe;
+  const releaseClearance = SAFE.C + 0.15;
   let retract = { safe:false, clearance:Number.NEGATIVE_INFINITY };
   let safeLift = { safe:false, clearance:Number.NEGATIVE_INFINITY };
   let liftAngles = null;
@@ -10606,9 +10624,20 @@ function avoidDecide(dtMs) {
     }
   }
 
+  const candidateByMode = { PROCEED:proceed, RETRACT:retract, SAFE_LIFT:safeLift };
+  const clearMsByMode = {};
+  for (const mode of Object.keys(candidateByMode)) {
+    const candidate = candidateByMode[mode];
+    if (candidate.safe && candidate.clearance >= releaseClearance) {
+      if (AVOID.clearSince[mode] === null) AVOID.clearSince[mode] = now;
+    } else AVOID.clearSince[mode] = null;
+    clearMsByMode[mode] = AVOID.clearSince[mode] === null ? 0 : now - AVOID.clearSince[mode];
+  }
+
   let decision = SafetyMotion.chooseManeuver({
     danger, beforeCross:progress <= AVOID.startT,
     currentMode:AVOID.mode, holdMs:now - AVOID.since, minHoldMs:AVOID.minHoldMs,
+    clearMsByMode, releaseClearance,
     proceed, retract, safeLift,
   });
   /* 안전 자세에 들어간 뒤 위험이 남아 있으면 그 자세를 유지한다. 위험 중 원래 경로로
@@ -10634,13 +10663,26 @@ function avoidDecide(dtMs) {
     if (!liftAngles) { AVOID.mode = "STOP"; AVOID.rate = 0; AVOID.reason = "안전 자세 IK 실패"; }
     else AVOID.lift = {
       from:JOINTS.map(j => j.value), to:liftAngles.slice(), t:0, dur:900,
-      originalTo:state.to.slice(), originalRemain:Math.max(500, state.dur - state.seqT),
+      originalFrom:state.stepStartJoints.slice(), originalTo:state.to.slice(),
+      originalRemain:Math.max(500, state.dur - state.seqT), retractPrepared:false,
     };
-  } else if (AVOID.lift && AVOID.mode === "PROCEED") {
-    state.from = JOINTS.map(j => j.value);
-    state.to = AVOID.lift.originalTo;
-    state.seqT = 0; state.dur = AVOID.lift.originalRemain;
-    AVOID.lift = null;
+  } else if (AVOID.mode === "SAFE_LIFT" && AVOID.lift && AVOID.lift.retractPrepared) {
+    AVOID.lift.from = JOINTS.map(j => j.value);
+    AVOID.lift.t = 0; AVOID.lift.dur = 900; AVOID.lift.retractPrepared = false;
+  } else if (AVOID.lift && AVOID.mode !== "SAFE_LIFT") {
+    if (AVOID.mode === "PROCEED") {
+      state.from = JOINTS.map(j => j.value);
+      state.to = AVOID.lift.originalTo;
+      state.seqT = 0; state.dur = AVOID.lift.originalRemain;
+      AVOID.lift = null;
+    } else if (AVOID.mode === "RETRACT" && !AVOID.lift.retractPrepared) {
+      const current = JOINTS.map(j => j.value);
+      state.from = AVOID.lift.originalFrom;
+      state.to = current;
+      state.dur = Math.max(500, AVOID.lift.originalRemain);
+      state.seqT = state.dur;
+      AVOID.lift.retractPrepared = true;
+    }
   }
 }
 /* ══ 로봇 후보 기동 화살표 (Trajectron++ Fig.1 스타일) ═══════════════════════
@@ -10748,10 +10790,11 @@ function stepUpdate(dt) {
   AVOID.targetFactor = AVOID.mode === "RETRACT" ? 0.45
                      : AVOID.mode === "SAFE_LIFT" ? 0.35
                      : AVOID.mode === "PROCEED"
-                       ? (AVOID.plannedMotion ? AVOID.pathFactor : SAFE.targetFactor) : 0;
+                       ? (AVOID.plannedMotion
+                         ? Math.min(SAFE.targetFactor, AVOID.pathFactor) : SAFE.targetFactor) : 0;
   AVOID.appliedFactor = SafetyMotion.approachFactor(
     AVOID.appliedFactor, AVOID.targetFactor, dt / 1000, 2.5, 0.8,
-    AVOID.targetFactor === 0,
+    SAFE.stopped || AVOID.targetFactor === 0,
   );
   SAFE.appliedFactor = AVOID.appliedFactor;
   SAFE.factor = SAFE.appliedFactor;       // 기존 조리·시각화 코드용 호환 별칭
@@ -10764,6 +10807,7 @@ function stepUpdate(dt) {
     refreshChain(); syncJointUI();
     return;
   }
+  if (AVOID.lift && (AVOID.mode === "STOP" || AVOID.mode === "HOLD")) return;
 
   // 비동작 대기는 안전 정지로 얼리지 않는다. 관절 이동에만 속도 제한을 적용한다.
   const sequenceFactor = s.k === "wait" ? 1 : SAFE.appliedFactor;
@@ -12403,6 +12447,7 @@ scene.registerBeforeRender(() => {
   pushUpdate(dt);              // 사람이 카트에 파고든 만큼 카트를 밀어낸다 (사람 이동 뒤)
   pushPoseUpdate(dt);          // 손이 물건에 닿게 상체를 숙인다 (애니메이션 평가 뒤라야 먹는다)
   resolvePeopleSeparation();   // 사람끼리 겹쳐 서지 않게 — GT 박스가 붙는 프레임 방지
+  peopleVelocityUpdate(dt / 1000); // 시각화가 꺼져도 수동 WASD 미래 궤적에 필요한 실제 속도를 갱신
   workOverlapUpdate(dt);       // 로봇 이송 단계에 배식 담당을 카트로 부른다 (작업 겹침)
   armContactUpdate(dt);        // 팔↔사람 접촉 — 링 판정과 달리 '팔이 향한 방향'을 본다
   accUpdate(dt);

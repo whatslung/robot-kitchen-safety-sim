@@ -163,6 +163,49 @@ test('chooseManeuver holds a conservative mode for at least 300ms', () => {
   assert.equal(S.chooseManeuver({ ...options, holdMs: 300 }).mode, 'PROCEED');
 });
 
+test('chooseManeuver requires release margin to remain clear for 300ms', () => {
+  const options = {
+    danger: false,
+    currentMode: 'HOLD',
+    holdMs: 1000,
+    minHoldMs: 300,
+    releaseClearance: 0.3,
+  };
+  assert.equal(S.chooseManeuver({
+    ...options, clearMs: 1000, proceed: { safe: true, clearance: 0.29 },
+  }).mode, 'HOLD');
+  assert.equal(S.chooseManeuver({
+    ...options, clearMs: 299, proceed: { safe: true, clearance: 0.31 },
+  }).mode, 'HOLD');
+  assert.equal(S.chooseManeuver({
+    ...options, clearMs: 300, proceed: { safe: true, clearance: 0.31 },
+  }).mode, 'PROCEED');
+});
+
+test('chooseManeuver applies release hysteresis to stop-to-motion transitions', () => {
+  const options = {
+    danger: true,
+    beforeCross: false,
+    currentMode: 'STOP',
+    holdMs: 1000,
+    minHoldMs: 300,
+    releaseClearance: 0.3,
+    retract: { safe: true, clearance: 0.31 },
+    safeLift: { safe: true, clearance: 0.4 },
+  };
+  assert.equal(S.chooseManeuver({
+    ...options, clearMsByMode: { RETRACT: 299 },
+  }).mode, 'STOP');
+  assert.equal(S.chooseManeuver({
+    ...options, clearMsByMode: { RETRACT: 300 },
+  }).mode, 'RETRACT');
+  assert.equal(S.chooseManeuver({
+    ...options,
+    retract: { safe: true, clearance: 0.29 },
+    clearMsByMode: { RETRACT: 1000 },
+  }).mode, 'STOP');
+});
+
 test('chooseManeuver fails closed on invalid candidates', () => {
   assert.equal(S.chooseManeuver({ danger: false }).mode, 'STOP');
 });
