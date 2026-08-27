@@ -504,6 +504,171 @@ async def predict(req: Request):
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
+# ── 나디르 다중카메라 월드 융합 파이프라인 (/nadir) ──────────────────────────
+# /detect(카메라별 이미지 검출)와 /predict(월드 궤적 예측) 사이의 빠진 층:
+# 여러 나디르 카메라의 검출을 월드좌표로 올려 융합·추적해 사람별 월드 트랙을 만들고,
+# 그 히스토리로 예측·위험까지 한 번에 돌린다(문서 5-9·5-15의 서버 이식).
+NADIR_DT = 0.4                 # 예측기 학습 간격(초). hist를 이 간격으로 샘플링해 LSTM에 맞춘다.
+NADIR_MERGE = 0.4              # 이보다 가까운 검출은 같은 사람(카메라 간 중복) → 병합(m)
+NADIR_GATE = 0.8              # 트랙↔검출 연관 거리 게이트(m)
+NADIR_MAXAGE = 5              # 이만큼 연속으로 안 보이면 트랙 폐기(coast 상한)
+NADIR_OBS = 8                 # 예측 입력 관측 길이
+
+
+class _WorldTrack:
+    __slots__ = ("id", "pos", "vel", "last_t", "hist", "hist_t", "misses", "px")
+
+    def __init__(self, tid, pos, t):
+        self.id = tid
+        self.pos = pos                 # (x, z) 현재 월드 위치
+        self.vel = (0.0, 0.0)
+        self.last_t = t
+        self.px = pos                  # 예측(등속) 위치 — 매 프레임 갱신
+        self.hist = [pos]              # 0.4s 간격 월드 위치 이력(예측 입력)
+        self.hist_t = t
+        self.misses = 0
+
+
+class _NadirGroup:
+    """나디르 카메라 그룹 하나의 월드 트랙 상태(프레임 간 유지)."""
+    def __init__(self):
+        self.tracks = []
+        self.next_id = 1
+
+    def update(self, world_pts, t):
+        # 1) 예측(등속)
+        for tr in self.tracks:
+            dt = t - tr.last_t
+            tr.px = (tr.pos[0] + tr.vel[0] * dt, tr.pos[1] + tr.vel[1] * dt)
+        # 2) 거리 게이트 그리디 연관
+        import numpy as _np
+        matched_t, matched_d = set(), set()
+        if self.tracks and world_pts:
+            pairs = []
+            for di, d in enumerate(world_pts):
+                for ti, tr in enumerate(self.tracks):
+                    dd = math.hypot(d[0] - tr.px[0], d[1] - tr.px[1])
+                    if dd <= NADIR_GATE:
+                        pairs.append((dd, di, ti))
+            pairs.sort()
+            for dd, di, ti in pairs:
+                if di in matched_d or ti in matched_t:
+                    continue
+                matched_d.add(di); matched_t.add(ti)
+                tr = self.tracks[ti]; d = world_pts[di]
+                gdt = max(1e-3, t - tr.last_t)
+                tr.vel = ((d[0] - tr.pos[0]) / gdt, (d[1] - tr.pos[1]) / gdt)
+                tr.pos = d; tr.last_t = t; tr.misses = 0
+        # 3) 미매칭 검출 → 새 트랙
+        for di, d in enumerate(world_pts):
+            if di in matched_d:
+                continue
+            self.tracks.append(_WorldTrack(self.next_id, d, t)); self.next_id += 1
+        # 4) 미매칭 트랙 → coast(예측 위치 유지) + 만료
+        for ti, tr in enumerate(self.tracks):
+            if ti in matched_t:
+                continue
+            tr.misses += 1
+            tr.pos = tr.px            # 등속 예측으로 위치 유지
+        self.tracks = [tr for tr in self.tracks if tr.misses <= NADIR_MAXAGE]
+        # 5) hist를 NADIR_DT 간격으로 샘플(예측기 dt에 맞춤)
+        for tr in self.tracks:
+            if t - tr.hist_t >= NADIR_DT - 1e-6:
+                tr.hist.append(tr.pos); tr.hist_t = t
+                if len(tr.hist) > NADIR_OBS:
+                    tr.hist = tr.hist[-NADIR_OBS:]
+        return self.tracks
+
+
+NADIR_GROUPS = {}
+
+
+def _map_world(cx, cy, aff):
+    """이미지 정규화(cx,cy) → 월드(X,Z). aff = [[a,b],[c,d],[e,f]] (X=a·cx+c·cy+e, Z=b·cx+d·cy+f)."""
+    return (aff[0][0]*cx + aff[1][0]*cy + aff[2][0],
+            aff[0][1]*cx + aff[1][1]*cy + aff[2][1])
+
+
+def _nadir_response(body):
+    """/nadir 본체 — 순수 함수(테스트 가능). 4대 프레임 → 검출→월드융합→추적→예측→위험."""
+    group_id = body.get("group", "nadir")
+    t = (body["t"] / 1000.0) if body.get("t") is not None else time.monotonic()
+    grp = NADIR_GROUPS.setdefault(group_id, _NadirGroup())
+
+    # 1) 카메라별 검출 → 월드점 pool
+    pooled = []
+    per_cam = []
+    for cam in body["cameras"]:
+        aff = cam["affine"]
+        img = _decode_image(cam["image"]) if MODE.startswith("yolo") else None
+        dets = run_detect(img)
+        cam_out = []
+        for d in dets:
+            wx, wz = _map_world(d["cx"], d["cy"], aff)
+            pooled.append((wx, wz)); cam_out.append({"cam": cam.get("id"), "cx": d["cx"], "cy": d["cy"], "wx": round(wx, 3), "wz": round(wz, 3), "conf": d["conf"]})
+        per_cam.append({"id": cam.get("id"), "n": len(cam_out)})
+
+    # 2) 근접 병합(카메라 간 같은 사람 중복 제거)
+    merged = []
+    for p in pooled:
+        hit = next((i for i, m in enumerate(merged) if math.hypot(p[0]-m[0], p[1]-m[1]) < NADIR_MERGE), None)
+        if hit is None:
+            merged.append([p[0], p[1]])
+        else:
+            merged[hit] = [(merged[hit][0]+p[0])/2, (merged[hit][1]+p[1])/2]
+
+    # 3) 월드 추적 업데이트
+    tracks = grp.update([tuple(m) for m in merged], t)
+
+    # 4) 관측 충분한 트랙만 예측+위험
+    out_tracks = []
+    ready = [tr for tr in tracks if len(tr.hist) >= NADIR_OBS]
+    if ready and body.get("robot") is not None:
+        p = _get_predictor()
+        if p is not None:
+            from trajectory.risk import track_risk, arbitrate
+            robot = (float(body["robot"]["x"]), float(body["robot"]["z"]))
+            stopR = float(body.get("stopR", 3.10)); slowR = float(body.get("slowR", 3.90))
+            horizon = float(body.get("horizon", 4.8)); ksig = float(body.get("safeKsig", 1.0)); tau = float(body.get("safeTau", 0.1))
+            hists = [tr.hist[-NADIR_OBS:] for tr in ready]
+            modes_all = p.predict_batch(hists)
+            risks = []
+            for tr, modes in zip(ready, modes_all):
+                r = track_risk(modes, robot, stopR, slowR, horizon, ksig, tau)
+                risks.append({"id": tr.id, **r})
+                out_tracks.append({"id": tr.id, "pos": [round(tr.pos[0], 3), round(tr.pos[1], 3)],
+                                   "vel": [round(tr.vel[0], 3), round(tr.vel[1], 3)],
+                                   "modes": [_mode_json(m) for m in modes],
+                                   "risk": {k: _round(v) for k, v in r.items()}})
+            worst = arbitrate(risks)
+            if worst is not None:
+                worst = {k: _round(v) for k, v in worst.items()}
+            return {"tracks": out_tracks, "worst": worst, "coverage": len(tracks), "per_cam": per_cam}
+    # 예측기 없거나 관측 부족 — 트랙 위치만
+    for tr in tracks:
+        out_tracks.append({"id": tr.id, "pos": [round(tr.pos[0], 3), round(tr.pos[1], 3)],
+                           "vel": [round(tr.vel[0], 3), round(tr.vel[1], 3)], "obs": len(tr.hist)})
+    return {"tracks": out_tracks, "worst": None, "coverage": len(tracks), "per_cam": per_cam}
+
+
+@app.post("/nadir")
+async def nadir(req: Request):
+    """나디르 다중카메라 월드 융합 → 추적 → 예측 → 위험 (한 번에).
+
+    요청: {"group":"nadir", "t":ms,
+           "cameras":[{"id":"nzNW","image":"data:...","affine":[[a,b],[c,d],[e,f]]}, …],
+           "robot":{x,z}, "stopR","slowR","horizon","safeKsig","safeTau"}
+      affine = 이미지 정규화(cx,cy,1) → 월드(X,Z) 아핀. 시뮬이 카메라 캘리브레이션으로 1회 계산해 보낸다.
+    응답: {"tracks":[{id,pos,vel,modes,risk}], "worst":{id,…}|null, "coverage":N, "per_cam":[…]}
+      좌표는 씬 AU(=m, 모델 학습 단위). 트랙은 프레임 간 유지(그룹별 상태).
+    """
+    try:
+        body = await req.json()
+        return _nadir_response(body)
+    except Exception as e:                # noqa: BLE001
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
 # 시뮬 정적 파일(sim.html·assets·vendor…)도 같은 FastAPI가 서빙한다 →
 # 서버 하나로 시뮬 + 검출을 모두 처리(별도 http.server 불필요, 동일 출처라 CORS도 불필요).
 # 라우트(/detect·/health)를 먼저 등록한 뒤 마운트하므로 그 경로들이 우선한다.
