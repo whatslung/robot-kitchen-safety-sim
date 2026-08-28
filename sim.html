@@ -11570,6 +11570,25 @@ function corrTick(dt) {   // 매 프레임 호출 — 조리 사이클(stepUpdat
     setStatus("⛔ 충돌 — 로봇이 못 보고 팔이 사람을 쳤다  [demo-v27]");
   }
 }
+/* WASD 경량 회피 — codex/pr24-collision-avoidance-rebuild의 "wasd-only-light-avoidance" 사상 이식.
+   codex의 AVOID(PROCEED/RETRACT/SAFE_LIFT/STOP) 모드 머신 대신, 이미 corrTick에서 검증된
+   seqT 되감기 패턴만 얇게 재사용 — CORR 데모가 아닐 때, WASD로 사람을 조작 중이고,
+   사람이 반경에 들어오면 팔이 이송 스텝(ik/ikOff)에서 조금씩 후퇴한다.
+   강도는 corrTick(시나리오)의 절반(1.0+2.5→0.5+1.2) — "light" 회피. */
+function wasdAvoidTick(dt) {
+  if (typeof CORR !== "undefined" && CORR.on) return;                       // 시나리오 데모 중이면 corrTick이 담당
+  if (typeof CTRL === "undefined" || CTRL.target !== "person") return;      // WASD 사람 조작 중일 때만
+  if (!state.dur || !state.auto) return;                                    // 조리 사이클이 돌아야 되감기 의미 있음
+  const b = LAYOUT.robot.base, p = person.node.position;
+  const dist = Math.hypot(p.x - b.x, p.z - b.z);
+  if (dist < 2.6) {
+    const s = SEQ[state.seqIdx];
+    if (s && (s.k === "ik" || s.k === "ikOff")) {
+      const closeness = clamp((2.6 - dist) / 1.4, 0, 1);
+      state.seqT = Math.max(0, state.seqT - (0.5 + 1.2 * closeness) * (dt || 16));
+    }
+  }
+}
 $("corrBefore").addEventListener("click", () => corrStart("before"));
 $("corrAfter").addEventListener("click", () => corrStart("after"));
 $("corrStop").addEventListener("click", () => corrReset(false));
@@ -12389,6 +12408,7 @@ scene.registerBeforeRender(() => {
   robotGuardTick();          // 설비 관통 방지 — 겹치면 직전 안전 포즈로 되돌림
   physWatch();
   if (typeof corrTick === "function") corrTick(dt);   // ② 사람 동선 감지 — 팔 스윙 + 회피/충돌
+  if (typeof wasdAvoidTick === "function") wasdAvoidTick(dt);   // WASD 사람 조작 시 팔 경량 회피(codex 이식)
   if (MIL.on && !MIL.busy) {
     MIL.acc += dt;
     if (MIL.acc >= 1000/MIL.hz) { MIL.acc = 0; milCapture(); }
