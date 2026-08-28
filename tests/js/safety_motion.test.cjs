@@ -131,6 +131,68 @@ test('approachFactor applies an immediate safety stop and fails closed', () => {
   assert.equal(S.approachFactor(Number.NaN, 1, 0.1, 2.5, 0.8, false), 0);
 });
 
+test('motionStopRequired permits only verified escape motion inside the stop radius', () => {
+  for (const mode of ['RETRACT', 'SAFE_LIFT']) {
+    assert.equal(S.motionStopRequired({
+      emergencyStop: false,
+      safetyStopped: true,
+      mode,
+      escapeVerified: true,
+      targetFactor: mode === 'RETRACT' ? 0.65 : 0.6,
+    }), false);
+  }
+  assert.equal(S.motionStopRequired({
+    emergencyStop: false,
+    safetyStopped: false,
+    mode: 'SAFE_LIFT',
+    escapeVerified: false,
+    targetFactor: 0.6,
+  }), true);
+  assert.equal(S.motionStopRequired({
+    emergencyStop: false,
+    safetyStopped: true,
+    mode: 'PROCEED',
+    escapeVerified: true,
+    targetFactor: 1,
+  }), true);
+  assert.equal(S.motionStopRequired({
+    emergencyStop: false,
+    safetyStopped: true,
+    mode: 'SAFE_LIFT',
+    escapeVerified: false,
+    targetFactor: 0.6,
+  }), true);
+});
+
+test('keepVerifiedSafeLift releases an invalidated lift candidate immediately', () => {
+  const retract = { mode: 'RETRACT', reason: 'safe-retract', clearance: 0.4 };
+  assert.deepEqual(S.keepVerifiedSafeLift({
+    currentMode: 'SAFE_LIFT', danger: true, decision: retract,
+    safeLift: { safe: false, clearance: -0.1 },
+  }), retract);
+  assert.deepEqual(S.keepVerifiedSafeLift({
+    currentMode: 'SAFE_LIFT', danger: true, decision: retract,
+    safeLift: { safe: true, clearance: 0.5 },
+  }), { mode: 'SAFE_LIFT', reason: 'hold-safe-lift', clearance: 0.5 });
+});
+
+test('motionStopRequired never bypasses an emergency or zero-speed decision', () => {
+  const verifiedEscape = {
+    safetyStopped: true,
+    mode: 'RETRACT',
+    escapeVerified: true,
+  };
+  assert.equal(S.motionStopRequired({
+    ...verifiedEscape, emergencyStop: true, targetFactor: 0.65,
+  }), true);
+  assert.equal(S.motionStopRequired({
+    ...verifiedEscape, emergencyStop: false, targetFactor: 0,
+  }), true);
+  assert.equal(S.motionStopRequired({
+    ...verifiedEscape, emergencyStop: false, targetFactor: Number.NaN,
+  }), true);
+});
+
 test('chooseManeuver uses the safety candidate priority', () => {
   const safe = clearance => ({ safe: true, clearance });
   const blocked = clearance => ({ safe: false, clearance });

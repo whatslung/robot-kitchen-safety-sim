@@ -231,11 +231,36 @@
     return Math.min(to, from + accelRate * dtSec);
   }
 
+  function motionStopRequired(options) {
+    const settings = options || {};
+    const escapeMode = settings.mode === "RETRACT" || settings.mode === "SAFE_LIFT";
+    const verifiedEscape = settings.escapeVerified === true && escapeMode;
+    return settings.emergencyStop === true
+      || !Number.isFinite(settings.targetFactor)
+      || settings.targetFactor <= 0
+      || (escapeMode && !verifiedEscape)
+      || (settings.safetyStopped === true && !verifiedEscape);
+  }
+
   function validCandidate(candidate) {
     return candidate
       && typeof candidate.safe === "boolean"
       && (Number.isFinite(candidate.clearance)
           || candidate.clearance === Number.POSITIVE_INFINITY);
+  }
+
+  function keepVerifiedSafeLift(options) {
+    const settings = options || {};
+    const decision = settings.decision;
+    if (settings.currentMode === "SAFE_LIFT" && settings.danger === true
+        && decision && decision.mode !== "STOP"
+        && validCandidate(settings.safeLift) && settings.safeLift.safe) {
+      return {
+        mode: "SAFE_LIFT", reason: "hold-safe-lift",
+        clearance: settings.safeLift.clearance,
+      };
+    }
+    return decision;
   }
 
   function chooseManeuver(options) {
@@ -417,6 +442,8 @@
     segmentSegmentDistance,
     sweptSegmentCapsuleContact,
     approachFactor,
+    motionStopRequired,
+    keepVerifiedSafeLift,
     chooseManeuver,
     predictionFresh,
     boxCapsuleForBounds,

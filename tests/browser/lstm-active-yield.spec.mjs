@@ -115,6 +115,8 @@ test('fixed-route LSTM demo moves first, actively yields, and finishes safely', 
       personUpdate(dt);
       armContactUpdate(dt);
       safetyUpdate();
+      mpredObserve(now);
+      mpredTick(now, dt);
       lstmYieldDemoUpdate(now, dt);
     }, 20);
   });
@@ -126,11 +128,19 @@ test('fixed-route LSTM demo moves first, actively yields, and finishes safely', 
     }, null, { timeout: 90000 });
   } catch (error) {
     const snapshot = await page.evaluate(() => ({
-      demo: window.__sim.LSTM_YIELD_DEMO,
+      demo: (() => { const d = window.__sim.LSTM_YIELD_DEMO; return {
+        active:d.active, phase:d.phase, failure:d.failure, observationCount:d.observationCount,
+        predictionUsed:d.predictionUsed, maneuvers:d.maneuvers,
+        enteredStopRadius:d.enteredStopRadius, escapeMotionInsideStop:d.escapeMotionInsideStop,
+        escapeJointDelta:d.escapeJointDelta, minDistance:d.minDistance,
+        maxAvoidStationaryMs:d.maxAvoidStationaryMs, stationarySnapshot:d.stationarySnapshot,
+      }; })(),
       state: { auto:window.__sim.state.auto, seqIdx:window.__sim.state.seqIdx,
         seqT:window.__sim.state.seqT, msg:window.__sim.state.msg,
         basketHeld:window.__sim.state.basketHeld },
-      avoid: window.__sim.AVOID,
+      avoid: { mode:AVOID.mode, reason:AVOID.reason, escapeVerified:AVOID.escapeVerified,
+        targetFactor:AVOID.targetFactor, appliedFactor:AVOID.appliedFactor,
+        predictionReady:AVOID.predictionReady },
       mpred: { ids:[...window.__sim.MPRED.pred.keys()], at:window.__sim.MPRED.at,
         err:window.__sim.MPRED.err, lastErr:window.__sim.MPRED.lastErr,
         busy:window.__sim.MPRED.busy, hist:[...window.__sim.MPRED.hist.keys()],
@@ -152,6 +162,13 @@ test('fixed-route LSTM demo moves first, actively yields, and finishes safely', 
       maxAvoidStationaryMs: demo.maxAvoidStationaryMs,
       stationarySnapshot: demo.stationarySnapshot,
       resumeDelayMs: demo.resumeDelayMs,
+      enteredStopRadius: demo.enteredStopRadius,
+      escapeMotionInsideStop: demo.escapeMotionInsideStop,
+      escapeJointDelta: demo.escapeJointDelta,
+      minDistance: demo.minDistance,
+      finalDistance: Math.hypot(person.node.position.x-LAYOUT.robot.base.x,
+        person.node.position.z-LAYOUT.robot.base.z),
+      nominalSlowRadius: SAFE.NOM_SLOW,
       contact: demo.contact,
       basketDelivered: demo.basketDelivered,
       homeReached: demo.homeReached,
@@ -163,6 +180,11 @@ test('fixed-route LSTM demo moves first, actively yields, and finishes safely', 
   expect(result.maneuvers.some(mode => mode === 'RETRACT' || mode === 'SAFE_LIFT'),
     JSON.stringify(result)).toBe(true);
   expect(result.maxAvoidStationaryMs, JSON.stringify(result)).toBeLessThanOrEqual(800);
+  expect(result.enteredStopRadius, JSON.stringify(result)).toBe(true);
+  expect(result.minDistance, JSON.stringify(result)).toBeLessThan(3.0);
+  expect(result.escapeMotionInsideStop, JSON.stringify(result)).toBe(true);
+  expect(result.escapeJointDelta, JSON.stringify(result)).toBeGreaterThan(1e-5);
+  expect(result.finalDistance, JSON.stringify(result)).toBeGreaterThan(result.nominalSlowRadius);
   expect(result.resumeDelayMs).toBeGreaterThanOrEqual(300);
   // 300 ms policy hysteresis plus rendering/timer scheduling must still resume promptly.
   expect(result.resumeDelayMs).toBeLessThanOrEqual(600);

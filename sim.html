@@ -10485,6 +10485,7 @@ const AVOID = {
   on:true, mode:"PROCEED", eff:"PROCEED", rate:1, reason:"",
   targetFactor:1, appliedFactor:1, since:performance.now(), minHoldMs:300,
   startT:0.06, samples:12, lift:null, plannedMotion:false, pathFactor:1,
+  escapeVerified:false,
   predictionSource:"planned", predictionReady:true,
   clearSince:{ PROCEED:null, RETRACT:null, SAFE_LIFT:null },
 };
@@ -10495,7 +10496,8 @@ const LSTM_YIELD_DEMO = {
   robotFirstMotionMs:null, personStartMs:null, maxAvoidStationaryMs:0,
   stationarySince:null, stationaryAccumMs:0, stationarySnapshot:null, resumeDelayMs:null,
   basketDelivered:false, homeReached:false,
-  lastJointSample:null, hadActiveManeuver:false,
+  lastJointSample:null, hadActiveManeuver:false, enteredStopRadius:false,
+  escapeMotionInsideStop:false, escapeJointDelta:0, minDistance:Number.POSITIVE_INFINITY,
 };
 
 function safetyPoint(v, yOffset) {
@@ -10623,7 +10625,7 @@ function armLinksSnapshot() {
 }
 
 /* 후보 관절 궤적을 실제 Babylon 체인에 잠깐 적용해 3D 링크를 읽고 원래 자세로 복구한다.
-   SAFE_LIFT는 같은 샘플에서 설비 충돌도 검사한다. */
+   검증된 escape로 허용할 RETRACT와 SAFE_LIFT는 같은 샘플에서 설비 충돌도 검사한다. */
 function candidateArmSamples(target, count, checkEnvironment) {
   if (!Array.isArray(target) || target.length !== JOINTS.length
       || target.some(v => !Number.isFinite(v))) return { samples:[], environmentSafe:false };
@@ -10680,6 +10682,7 @@ function avoidDecide(dtMs) {
   const plannable = s && (s.k === "ik" || s.k === "ikOff" || s.k === "home");
   AVOID.plannedMotion = plannable;
   AVOID.pathFactor = 1;
+  AVOID.escapeVerified = false;
   AVOID.rate = 1; AVOID.reason = "";
   if (!AVOID.on || !state.auto || !s || !plannable || SAFE.blind) {
     AVOID.clearSince = { PROCEED:null, RETRACT:null, SAFE_LIFT:null };
@@ -10734,8 +10737,8 @@ function avoidDecide(dtMs) {
   let liftAngles = null;
   if (danger) {
     if (progress > AVOID.startT)
-      retract = scoreArmCandidate(state.stepStartJoints, occupancy, false);
-    if (!retract.safe) {
+      retract = scoreArmCandidate(state.stepStartJoints, occupancy, true);
+    if (!retract.safe || AVOID.mode === "SAFE_LIFT") {
       try {
         liftAngles = ikAngles(T.potHover).angles;
         safeLift = scoreArmCandidate(liftAngles, occupancy, true);
@@ -10746,10 +10749,11 @@ function avoidDecide(dtMs) {
   const candidateByMode = { PROCEED:proceed, RETRACT:retract, SAFE_LIFT:safeLift };
   const clearMsByMode = {};
   const emergencyStop = PHYS.estop;
-  const releaseBlocked = SAFE.stopped || PHYS.estop;
   for (const mode of Object.keys(candidateByMode)) {
     const candidate = candidateByMode[mode];
-    const blockedByStop = releaseBlocked;
+    /* 정지 반경은 원래 경로 재진입만 막는다. 충돌 검증된 escape 후보까지 막으면
+       STOP에서 영원히 빠져나오지 못하므로 RETRACT/SAFE_LIFT의 해제 여유는 누적한다. */
+    const blockedByStop = PHYS.estop || (SAFE.stopped && mode === "PROCEED");
     const blockedByActiveRisk = mode === "PROCEED" && danger;
     if (!blockedByStop && !blockedByActiveRisk
         && candidate.safe && candidate.clearance >= releaseClearance) {
@@ -10767,14 +10771,17 @@ function avoidDecide(dtMs) {
   });
   /* 안전 자세에 들어간 뒤 위험이 남아 있으면 그 자세를 유지한다. 위험 중 원래 경로로
      재진입하면 SAFE_LIFT와 RETRACT 사이를 왕복할 수 있다. STOP 악화만 즉시 허용한다. */
-  if (AVOID.mode === "SAFE_LIFT" && danger && decision.mode !== "STOP") {
-    decision = { mode:"SAFE_LIFT", reason:"hold-safe-lift", clearance:safeLift.clearance };
-  }
+  decision = SafetyMotion.keepVerifiedSafeLift({
+    currentMode:AVOID.mode, danger, decision, safeLift,
+  });
+  const selectedCandidate = candidateByMode[decision.mode];
+  AVOID.escapeVerified = (decision.mode === "RETRACT" || decision.mode === "SAFE_LIFT")
+    && !!selectedCandidate && selectedCandidate.safe === true;
   if (decision.mode !== AVOID.mode) {
     AVOID.mode = decision.mode; AVOID.since = now;
     const labels = {
-      PROCEED:"정상 진행", HOLD:"출발 보류", RETRACT:"후퇴",
-      SAFE_LIFT:"안전 자세", STOP:"비상정지 — 안전 후보 없음",
+      PROCEED:"정상 진행", HOLD:"출발 보류", RETRACT:"후퇴 회피",
+      SAFE_LIFT:"안전 자세 회피", STOP:"안전 후보 없음 — 정지",
     };
     setStatus(labels[AVOID.mode] + " — " + decision.reason);
   }
@@ -10785,7 +10792,10 @@ function avoidDecide(dtMs) {
 
   if (AVOID.mode === "SAFE_LIFT" && !AVOID.lift) {
     if (!liftAngles) { try { liftAngles = ikAngles(T.potHover).angles; } catch (e) {} }
-    if (!liftAngles) { AVOID.mode = "STOP"; AVOID.rate = 0; AVOID.reason = "안전 자세 IK 실패"; }
+    if (!liftAngles) {
+      AVOID.mode = "STOP"; AVOID.rate = 0; AVOID.escapeVerified = false;
+      AVOID.reason = "안전 자세 IK 실패";
+    }
     else AVOID.lift = {
       from:JOINTS.map(j => j.value), to:liftAngles.slice(), t:0, dur:900,
       originalFrom:state.stepStartJoints.slice(), originalTo:state.to.slice(),
@@ -10917,9 +10927,14 @@ function stepUpdate(dt) {
                      : AVOID.mode === "PROCEED"
                        ? (AVOID.plannedMotion
                          ? Math.min(SAFE.targetFactor, AVOID.pathFactor) : SAFE.targetFactor) : 0;
+  const motionStopRequired = SafetyMotion.motionStopRequired({
+    emergencyStop:PHYS.estop, safetyStopped:SAFE.stopped, mode:AVOID.mode,
+    escapeVerified:AVOID.escapeVerified, targetFactor:AVOID.targetFactor,
+  });
+  const effectiveTargetFactor = motionStopRequired ? 0 : AVOID.targetFactor;
   AVOID.appliedFactor = SafetyMotion.approachFactor(
-    AVOID.appliedFactor, AVOID.targetFactor, dt / 1000, 2.5, 0.8,
-    SAFE.stopped || AVOID.targetFactor === 0,
+    AVOID.appliedFactor, effectiveTargetFactor, dt / 1000, 2.5, 0.8,
+    motionStopRequired,
   );
   SAFE.appliedFactor = AVOID.appliedFactor;
   SAFE.factor = SAFE.appliedFactor;       // 기존 조리·시각화 코드용 호환 별칭
@@ -11368,13 +11383,14 @@ function startAutoWork() {
 
 function lstmYieldDemoRoute() {
   /* 관측 구간은 로봇을 향한 직선이라 LSTM이 위험 진입을 선제 예측한다. 실제 고정
-     동선은 gate에서 바깥쪽으로 꺾은 뒤 공칭 SSM 정지반경(3.1m) 밖을 횡단한다.
-     따라서 로봇은 예측 때문에 능동 회피하지만 사람 몸 때문에 오래 정지하지 않는다. */
+     동선은 slow 반경 밖에서 시작해 gate에서 꺾은 뒤 공칭 SSM 정지반경 안으로
+     0.45m 진입한다. 팔의 실제 캡슐과는 떨어져 있으므로 검증된 회피가 눈에 보인다. */
   const B = LAYOUT.robot.base, room = LAYOUT.room, approachZ = B.z + 0.50;
   let fallback = null;
-  for (const gateOffset of [SAFE.NOM_STOP+0.65, 4.10, 4.45]) {
-    for (const bypassOffset of [SAFE.NOM_STOP+0.04, 3.45, 3.80, 4.15, 4.50]) {
-      for (const exitOffset of [-1.50, -2.00, -2.50, -3.00]) {
+  for (const gateOffset of [SAFE.NOM_SLOW+0.25, 4.35, 4.55]) {
+    for (const bypassOffset of [SAFE.NOM_STOP-0.45, SAFE.NOM_STOP-0.25,
+      SAFE.NOM_STOP+0.04, 3.45, 3.80, 4.15, 4.50]) {
+      for (const exitOffset of [-3.00, -2.50, -2.00, -1.50]) {
         const gateX = B.x + gateOffset, bypassZ = B.z + bypassOffset;
         const route = {
           start:new V3(Math.min(room.x1-0.45, gateX+1.05), 0, approachZ),
@@ -11415,8 +11431,9 @@ function demoRouteSamples(route, step) {
 function demoSafeCrossingPath(gate, preferredBypass, preferredExit) {
   if (!NAV.ready) return null;
   const B = LAYOUT.robot.base, room = LAYOUT.room;
-  const zOffsets = [preferredBypass, SAFE.NOM_STOP+0.04, 3.45, 3.80, 4.15, 4.50];
-  const xOffsets = [preferredExit, -1.50, -2.00, -2.50, -3.00];
+  const zOffsets = [preferredBypass, SAFE.NOM_STOP-0.45, SAFE.NOM_STOP-0.25,
+    SAFE.NOM_STOP+0.04, 3.45, 3.80, 4.15, 4.50];
+  const xOffsets = [preferredExit, -3.00, -2.50, -2.00, -1.50];
   /* navPath 자체가 동일 충돌 격자에서 대각 모서리와 직선 단축을 검증한다. 여기서
      연속 AABB를 다시 적용하면 밀 수 있는 카트까지 하드 벽으로 보아 모든 길을 지운다. */
   const clear = points => points.length > 1
@@ -11425,7 +11442,8 @@ function demoSafeCrossingPath(gate, preferredBypass, preferredExit) {
     const bend = new V3(gate.x, 0, B.z+zOffset);
     const exit = new V3(B.x+xOffset, 0, B.z+zOffset);
     if (bend.x >= room.x1-0.40 || bend.z >= room.z1-0.40
-        || exit.x <= room.x0+0.40 || exit.z >= room.z1-0.40) continue;
+        || exit.x <= room.x0+0.40 || exit.z >= room.z1-0.40
+        || Math.hypot(exit.x-B.x, exit.z-B.z) < SAFE.NOM_SLOW+0.05) continue;
     const first = navPath(gate, bend), second = navPath(bend, exit);
     if (!first || !second) continue;
     const points = [gate, ...first, ...second];
@@ -11434,7 +11452,8 @@ function demoSafeCrossingPath(gate, preferredBypass, preferredExit) {
   /* 설비가 원호 레인을 끊으면 A*가 통로 전체에서 직접 우회로를 찾게 한다. */
   for (const zOffset of [...new Set(zOffsets)]) for (const xOffset of [...new Set(xOffsets)]) {
     const exit = new V3(B.x+xOffset, 0, B.z+zOffset);
-    if (exit.x <= room.x0+0.40 || exit.z >= room.z1-0.40) continue;
+    if (exit.x <= room.x0+0.40 || exit.z >= room.z1-0.40
+        || Math.hypot(exit.x-B.x, exit.z-B.z) < SAFE.NOM_SLOW+0.05) continue;
     const path = navPath(gate, exit);
     if (path && clear([gate, ...path])) return path;
   }
@@ -11443,7 +11462,7 @@ function demoSafeCrossingPath(gate, preferredBypass, preferredExit) {
     if (!navOpen(i, j)) continue;
     const point = new V3(NAV.x0+(i+0.5)*NAV.cell, 0, NAV.z0+(j+0.5)*NAV.cell);
     if (point.x >= B.x-0.50 || point.z <= B.z+1.00) continue;
-    cells.push({ point, score:Math.abs(point.z-(B.z+SAFE.NOM_STOP))
+    cells.push({ point, score:Math.abs(point.z-(B.z+SAFE.NOM_STOP-0.45))
       + Math.abs(point.x-(B.x-2.00))*0.2 });
   }
   cells.sort((a,b) => a.score-b.score);
@@ -11573,7 +11592,8 @@ function restoreLstmYieldDemoSettings(restorePerson) {
   MPRED.reqId++;
   MPRED.hist.delete("gt:0"); MPRED.pred.delete("gt:0");
   AVOID.mode = "PROCEED"; AVOID.eff = "PROCEED"; AVOID.rate = 1;
-  AVOID.reason = ""; AVOID.lift = null; AVOID.since = performance.now();
+  AVOID.reason = ""; AVOID.lift = null; AVOID.escapeVerified = false;
+  AVOID.since = performance.now();
   AVOID.clearSince = { PROCEED:null, RETRACT:null, SAFE_LIFT:null };
   AVOID.targetFactor = 1; AVOID.appliedFactor = 1; AVOID.pathFactor = 1;
   SAFE.appliedFactor = 1; SAFE.factor = 1;
@@ -11619,6 +11639,8 @@ function startLstmYieldDemo() {
     stationarySince:null, stationaryAccumMs:0, stationarySnapshot:null, resumeDelayMs:null,
     basketDelivered:false, homeReached:false,
     lastJointSample:JOINTS.map(j => j.value), hadActiveManeuver:false,
+    enteredStopRadius:false, escapeMotionInsideStop:false, escapeJointDelta:0,
+    minDistance:Number.POSITIVE_INFINITY,
     saved:{ model:PRED.model, predictionSource:AVOID.predictionSource,
       autoLoop:state.autoLoop, arrows:RARR.on, personPos:person.node.position.clone(),
       personPath:person.path.slice(), personPi:person.pi, personMode:person.mode,
@@ -11658,6 +11680,14 @@ function lstmYieldDemoUpdate(now, dtMs) {
       && joints.some((value, index) => Math.abs(value-D.saved.startJoints[index]) > 1e-4))
     D.robotFirstMotionMs = now-D.startedAt;
   D.lastJointSample = joints;
+  D.minDistance = Math.min(D.minDistance, SAFE.dist);
+  if (SAFE.dist < SAFE.stopR) D.enteredStopRadius = true;
+  if (SAFE.dist < SAFE.stopR && AVOID.escapeVerified
+      && (AVOID.mode === "RETRACT" || AVOID.mode === "SAFE_LIFT")) {
+    D.escapeJointDelta = Math.max(D.escapeJointDelta, jointMotion);
+    if (jointMotion > 1e-5 && SAFE.appliedFactor > 0.05)
+      D.escapeMotionInsideStop = true;
+  }
   if (PHYS.estop || (person.armStruckT || 0) > 0) D.contact = true;
   if (D.contact) {
     state.auto = false; person.mode = "idle"; person.path = [];
@@ -11690,7 +11720,7 @@ function lstmYieldDemoUpdate(now, dtMs) {
       AVOID.predictionSource = "lstm";
       D.predictionUsed = true; D.phase = "crossing";
       personGo(crossingPath.map(point => point.clone()), { speed:0.62 });
-      setStatus("LSTM 예측 활성 — 능동 회피 중 고정 동선이 안전거리 밖을 통과합니다");
+      setStatus("LSTM 예측 활성 — 사람이 정지 반경 안으로 진입하고 로봇이 능동 회피합니다");
     } else if (now - D.personStartedAt > 6500) {
       state.auto = false; person.mode = "idle"; person.path = [];
       finishLstmYieldDemo("failed", "LSTM 예측 실패 — 위험영역 밖에서 시연 중단", false);
@@ -11712,7 +11742,8 @@ function lstmYieldDemoUpdate(now, dtMs) {
       D.resumeDelayMs = now-AVOID.clearSince.PROCEED;
     if (person.mode === "idle" || V3.Distance(person.node.position, D.route.exit) < 0.10) {
       D.phase = "clearing";
-      setStatus("경로 해제 — 0.3초 확인 후 로봇 작업 복귀");
+      AVOID.predictionSource = "current-only";
+      setStatus("사람이 안전반경 밖으로 이탈 — 0.3초 확인 후 로봇 작업 복귀");
     }
   }
   const step = SEQ[state.seqIdx];
@@ -12904,9 +12935,12 @@ function setCell(id, dot, cls, text) {
   el.innerHTML = (dot === false ? "" : '<span class="dot ' + dot + '"></span>') + text;
 }
 const safetyModeLabels = { PROCEED:"정상 진행", SLOW:"감속", HOLD:"출발 보류",
-  RETRACT:"후퇴", SAFE_LIFT:"안전 자세", STOP:"비상정지" };
+  RETRACT:"후퇴 회피", SAFE_LIFT:"안전 자세 회피", STOP:"안전 정지" };
 function updateStatusBar() {
-  const activeMode = AVOID.mode !== "PROCEED" ? AVOID.mode
+  const invalidEscape = (AVOID.mode === "RETRACT" || AVOID.mode === "SAFE_LIFT")
+    && !AVOID.escapeVerified;
+  const activeMode = invalidEscape ? "STOP"
+                   : AVOID.mode !== "PROCEED" ? AVOID.mode
                    : (SAFE.stopped ? "STOP"
                    : (SAFE.appliedFactor < 0.99 ? "SLOW" : "PROCEED"));
   const speedText = " · 속도 " + Math.round(SAFE.appliedFactor * 100) + "%";
@@ -12917,7 +12951,7 @@ function updateStatusBar() {
     setCell("sbRobot", "idle", "", "대기");
     setCell("sbSafe", "ok", "", "대기");       // 멈춘 로봇을 '감속 중'으로 표시하지 않는다
   } else {
-    const severe = activeMode === "STOP" || SAFE.stopped;
+    const severe = activeMode === "STOP";
     const caution = activeMode !== "PROCEED";
     setCell("sbRobot", severe ? "bad" : (caution ? "warn" : "ok"), "",
             safetyModeLabels[activeMode] + speedText);

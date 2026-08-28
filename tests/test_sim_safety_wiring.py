@@ -51,7 +51,11 @@ def test_safety_governor_and_maneuver_arbitration_are_wired():
     assert "AVOID.plannedMotion = plannable" in text
     assert "AVOID.pathFactor" in text
     assert "Math.min(SAFE.targetFactor, AVOID.pathFactor)" in text
-    assert "SAFE.stopped || AVOID.targetFactor === 0" in text
+    assert "SafetyMotion.motionStopRequired" in text
+    assert "AVOID.escapeVerified" in text
+    assert "SafetyMotion.keepVerifiedSafeLift" in text
+    assert "effectiveTargetFactor" in text
+    assert "SAFE.stopped || AVOID.targetFactor === 0" not in text
     assert "AVOID.clearSince" in text
     assert "clearMs" in text
 
@@ -128,9 +132,8 @@ def test_lstm_yield_demo_starts_robot_before_the_person_and_restores_route_block
     assert "MPRED.reqId++;" in text
     assert "record.requestAt >= D.personStartedAt + 7 * 400" in text
     assert "const emergencyStop = PHYS.estop" in text
-    assert "const releaseBlocked = SAFE.stopped || PHYS.estop" in text
+    assert 'const blockedByStop = PHYS.estop || (SAFE.stopped && mode === "PROCEED")' in text
     assert "const danger = !proceed.safe || learnedRisk || SAFE.stopped" in text
-    assert "const blockedByStop = releaseBlocked" in text
     assert "basketNode.getChildMeshes(false)" in text
     assert "if (!contact) continue;" in text
     assert "if (!moving || !contact) continue;" not in text
@@ -142,6 +145,11 @@ def test_lstm_yield_demo_starts_robot_before_the_person_and_restores_route_block
     assert "function currentSafetyPeopleOccupancy(times)" in text
     assert "for (const target of safetyPeople())" in text
     assert "learned.concat(currentSafetyPeopleOccupancy(times))" in text
+    assert "SAFE.NOM_SLOW+0.25" in text
+    assert "SAFE.NOM_STOP-0.45" in text
+    assert "enteredStopRadius:false" in text
+    assert "escapeMotionInsideStop:false" in text
+    assert "D.minDistance = Math.min(D.minDistance, SAFE.dist)" in text
 
 
 def test_safe_lift_candidate_is_scored_even_before_cross_progress():
@@ -152,6 +160,7 @@ def test_safe_lift_candidate_is_scored_even_before_cross_progress():
     assert "if (danger)" in candidates
     assert "if (progress > AVOID.startT)" in candidates
     assert candidates.index("if (progress > AVOID.startT)") < candidates.index("ikAngles(T.potHover)")
+    assert 'retract = scoreArmCandidate(state.stepStartJoints, occupancy, true)' in candidates
 
 
 def test_normal_auto_button_uses_shared_start_without_enabling_lstm_source():
@@ -172,8 +181,11 @@ def test_status_bar_shows_selected_mode_and_applied_speed():
     text = sim_source()
     assert "const safetyModeLabels" in text
     assert "Math.round(SAFE.appliedFactor * 100)" in text
-    assert 'SAFE_LIFT:"안전 자세"' in text
+    assert 'SAFE_LIFT:"안전 자세 회피"' in text
     assert "if (PHYS.estop)" in text
     assert '"비상정지 · 속도 0%"' in text
-    assert 'const activeMode = AVOID.mode !== "PROCEED" ? AVOID.mode' in text
+    assert 'const activeMode = invalidEscape ? "STOP"' in text
+    assert 'const invalidEscape = (AVOID.mode === "RETRACT" || AVOID.mode === "SAFE_LIFT")' in text
     assert ': (SAFE.stopped ? "STOP"' in text
+    assert 'const severe = activeMode === "STOP"' in text
+    assert 'activeMode === "STOP" || SAFE.stopped' not in text
