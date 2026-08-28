@@ -11460,7 +11460,7 @@ function corrStart(mode) {
     corrVizOn(true);
     person.node.position.set(2.4, 0, 1.20); person.node.rotation.y = -Math.PI / 2;
     personGo([new V3(2.4, 0, 1.20), new V3(-0.5, 0, 1.20), new V3(2.4, 0, 1.20)], { loop:true, speed:1.2 });
-    setStatus("▶ 회피 — 조리원이 일정 동선으로 왕복. 로봇이 궤적을 예측해 팔을 편 채 좌우로 실시간 회피 → 지나가면 작업 재개.  [demo-v13]");
+    setStatus("▶ 회피 — 조리원이 일정 동선으로 왕복. 로봇이 궤적을 예측해 팔을 편 채 바스켓 우측으로 회피 → 지나가면 작업 재개.  [demo-v14]");
   } else {
     // 충돌: 로봇이 사람을 못 봄(SAFE.blind) + 스크립트로 통로를 걸어들어감(빠르게 — 대기 짧게)
     SAFE.blind = true;
@@ -11479,11 +11479,11 @@ function corrTick() {   // 매 프레임 호출 — 회피 기동(after) / 충�
     const danger = SAFE.factor < 0.5;   // 사람이 감속/정지 반경 안 → 예측 회피 발동
     if (danger) {
       if (!CORR.dodging) { CORR.dodging = true; state.auto = false; state.stirring = false; }
-      // 좌우 실시간 회피 — 팔을 **펴서(구부리지 않고)** 사람 반대편으로 미끄러진다.
-      //   사람이 동쪽이면 팔은 서쪽, 서쪽이면 동쪽. 사람 x를 실시간 반영해 좌우로 트래킹.
-      const px = person.node.position.x;
-      const dodgeX = clamp(-0.25 - (px + 0.25) * 0.55, -0.72, 0.18);
-      solveIK(new V3(dodgeX, 1.02, 0.98), 14);   // 통로 앞으로 편 팔이 좌우로 이동(반경 유지 → 안 구부러짐)
+      // 바스켓 **우측(화면 오른쪽=+x)**으로 팔을 편 채 뺀다(뒤쪽=+z 아님, 구부리지 않음).
+      //   사람이 가까울수록 더 오른쪽으로. +x는 리치 한계라 편 자세가 유지된다(reach≈1.6m).
+      const near = clamp((0.5 - SAFE.factor) / 0.5, 0, 1);   // 0(멀다)~1(코앞)
+      const dodgeX = 0.02 + near * 0.26;                     // 작업점 부근 → 바스켓 우측으로
+      solveIK(new V3(dodgeX, 1.02, 0.36), 14);               // z는 앞쪽 유지(뒤로 안 감), x만 우측으로
       if (state.basketHeld && basketNode) {       // 캐리 중이면 손목 수평 유지
         JOINTS[3].value = clamp(-(JOINTS[1].value + JOINTS[2].value), JOINTS[3].min, JOINTS[3].max);
         JOINTS[4].value = 0; applyJoint(JOINTS[3]); applyJoint(JOINTS[4]);
