@@ -571,16 +571,20 @@
   <div class="hint" id="demoNote">정상 조리 → 수증기 → 화재 →
     <b>before</b>: 못 보고 쓰러짐 · <b>after</b>: 감지 → 대피 → 진화</div>
 
-  <!-- ② 사람 동선 감지 — chanwoo가 별도 브랜치에서 작업 중(PR #24: 통로 회피 데모).
-       자리를 **미리 비워 둔다.** 그쪽 버튼(corrBefore/corrAfter/corrStop)이 머지되면
-       이 안내문을 지우고 그 btnrow를 여기 넣으면 끝난다 — 발표 탭 구조를 다시 안 건드린다.
-       ⚠️ 그때 두 가지를 맞춘다: ① 섹션 제목을 「② 사람 동선 감지」로 (브랜치 쪽은
-          "통로 회피 데모"라 TABS 목록에 안 걸려 **조용히 ⚙고급으로 떨어진다**) ·
-          ② corrStop 라벨을 「↩ ② 되돌리기」로 (안 그러면 되돌리기가 이 탭에 셋이 된다).
-       ⚠️ 여기 가짜 버튼을 두지 않는다. 눌러도 아무 일 없는 버튼이 발표 자리에 있으면
-          안 만든 것보다 나쁘다. -->
-  <div class="section">② 사람 동선 감지 <span class="note" style="font-weight:400">발표 시나리오</span></div>
-  <div class="hint" id="demo2Note">사람 동선 회피 시연은 준비 중입니다.</div>
+  <!-- ② 사람 동선 감지 — PR #24(통로 회피 데모) 머지 완료.
+       origin/main이 예약해 둔 자리에 브랜치의 실버튼을 넣었다. 머지 지침대로
+       ① 섹션 제목을 「② 사람 동선 감지」로 맞춰 TABS 매칭(startsWith)에 걸리게 하고
+       ② corrStop 라벨을 「↩ ② 되돌리기」로 바꿔 이 탭에 되돌리기가 겹치지 않게 했다. -->
+  <div class="section">② 사람 동선 감지 <span class="note" style="font-weight:400">발표 모드 · 실 회피기동</span></div>
+  <div class="btnrow">
+    <button id="corrBefore" class="danger">▶ 충돌 (회피 OFF)</button>
+    <button id="corrAfter" class="primary">▶ 회피 (회피 ON)</button>
+    <button id="corrStop">↩ ② 되돌리기</button>
+  </div>
+  <div class="note">로봇이 바스켓을 들고 통로를 크게 가로지를 때 사람이 들어옵니다.
+    <b>충돌</b>: 회피 없이 휩쓸어 사람이 밀림 · <b>회피</b>: 예측 → 급후퇴로 살림.
+    고스트(피하지 않았다면)·예측→결정 인과선이 함께 표시됩니다.
+    <b>발표 모드</b>라 이송 속도·동작을 과장합니다(ISO 안전 판정은 불변).</div>
 
   <div class="section">사고 시나리오 (연쇄)</div>
   <div class="btnrow">
@@ -10464,19 +10468,10 @@ const AVOID = { on:true, mode:"proceed", eff:"proceed", rate:1, reason:"", holdM
                    (실측: 보류 98%, "2.1s 내 2.99m 접근 예측"). 실제로 가까워질 때만 반응. */
                 margin:0.35,        // 정지 반경에 더할 여유(m)
                 startT:0.06 };      // 이 진행도 이하면 '아직 출발 전'으로 보고 hold
-/* 예측 시간창 안에서 사람이 로봇 베이스에 얼마나 가까워질 수 있는지(m). σ 보정 포함. */
-function avoidMinDist(window) {
-  const bx = LAYOUT.robot.base.x, bz = LAYOUT.robot.base.z;
-  let min = Infinity;
-  const mix = PRED.mix || [];
-  for (const g of mix) {
-    if (g.t > window) continue;
-    if (g.w < 0.25) continue;        // 가중치 낮은 가설까지 보면 상시 보류가 된다
-    const d = SCALE.m(Math.hypot(g.x - bx, g.z - bz)) - SCALE.m(Math.max(g.sAlong, g.sAcross));
-    if (d < min) min = d;
-  }
-  return min;
-}
+/* 예측 시간창 안에서 사람이 로봇 베이스에 얼마나 가까워질 수 있는지(m). σ 보정 포함.
+   최근접 침범점 계산은 avoidMinPoint 한 곳에 두고, 거리만 필요한 여기서는 그 점의 d를 쓴다
+   (판정 규약을 한 곳에서만 바꾸도록 — 인과선 표시와 회피 판정이 어긋나지 않게). */
+function avoidMinDist(window) { const p = avoidMinPoint(window); return p ? p.d : Infinity; }
 function avoidDecide(dtMs) {
   const s = SEQ[state.seqIdx];
   AVOID.rate = 1; AVOID.mode = "proceed"; AVOID.reason = "";
@@ -10497,6 +10492,34 @@ function avoidDecide(dtMs) {
     AVOID.mode = "retract"; AVOID.rate = -1; AVOID.retractMs += dtMs;
     AVOID.reason = "후퇴 — 횡단 중 " + dmin.toFixed(2) + "m 접근 예측";
   }
+}
+/* ══ 발표 모드 — 통로 회피를 극적으로 (2026-08-25) ═══════════════════════════
+   연구용 기본은 ISO 협동속도(0.5 m/s)라 팔 몸짓이 작아 회피가 안 극적이다. 발표 모드는
+   **통로 횡단 단계 한정으로만** 이송을 큰 아크로 확대하고 속도를 올리며, 회피 발동 시
+   급후퇴한다. ISO 안전링·정지/감속 판정·학습 데이터는 **불변**(발표 모드는 팔의 이동
+   경로·속도·연출만 과장한다). 기본 꺼짐 — 끄면 기존과 100% 동일. */
+const PRESENT = { on:false, transit:2.4, retractRate:2.6,
+                  /* 솥 → 높이 들기 → 통로 건너 카트 쪽. 프로토타입에서 IK 도달성 확인한 3점.
+                     베지어 제어점(절대좌표, 솥이 원점이라 상대=절대). */
+                  arc:[ new V3(0, 0.80, 0), new V3(0.05, 1.55, 0.95), new V3(0.55, 0.95, 1.95) ] };
+function presentArc(t) {
+  const p = PRESENT.arc, a = (1-t)*(1-t), b = 2*(1-t)*t, c = t*t;
+  return new V3(p[0].x*a + p[1].x*b + p[2].x*c,
+                p[0].y*a + p[1].y*b + p[2].y*c,
+                p[0].z*a + p[1].z*b + p[2].z*c);
+}
+/* 예측 혼합에서 로봇 경로에 가장 깊이 침범하는 가설의 지점 — 인과선의 시작점.
+   avoidMinDist와 같은 규약(σ 보정·가중치 하한)이되 거리 대신 좌표를 돌려준다. */
+function avoidMinPoint(window) {
+  const bx = LAYOUT.robot.base.x, bz = LAYOUT.robot.base.z;
+  let best = null, min = Infinity;
+  const mix = PRED.mix || [];
+  for (const g of mix) {
+    if (g.t > window || g.w < 0.25) continue;
+    const d = SCALE.m(Math.hypot(g.x - bx, g.z - bz)) - SCALE.m(Math.max(g.sAlong, g.sAcross));
+    if (d < min) { min = d; best = { x:g.x, z:g.z, d, t:g.t }; }
+  }
+  return best;
 }
 /* ══ 로봇 후보 기동 화살표 (Trajectron++ Fig.1 스타일) ═══════════════════════
    Fig.1에서 **음영은 자기 차량(제어 주체)의 후보 기동**, 화살표는 예측 대상의 행동 모드다.
@@ -10595,16 +10618,86 @@ function robotArrowsUpdate() {
                           new V3(f.x - px*h, p.y, f.z - pz*h)], c, w);
   }
 }
+/* ══ 고스트 "피하지 않았다면" + 예측→결정 인과선 (2026-08-25) ═══════════════════
+   발표 모드 통로 횡단에서 회피가 발동한 순간에만 그린다. 고스트는 로봇이 회피 안 했다면
+   지금부터 갔을 큰 아크(현재 t→1)를 붉은 점선 + 끝점 링으로, 인과선은 사람 예측 구름이
+   로봇 경로에 가장 깊이 침범하는 지점에서 팔 끝(TCP)까지 잇는다. 둘 다 주석 레이어라
+   (renderingGroupId 1) 로봇 동작·안전 판정·학습 데이터에 영향이 없다. */
+const GHOST  = { on:true, line:null, ring:null, col:"#f85149" };
+const CAUSAL = { on:true, line:null, marker:null, col:"#e3b341" };
+function ghostHide()  { if (GHOST.line)  GHOST.line.setEnabled(false);  if (GHOST.ring)   GHOST.ring.setEnabled(false); }
+function causalHide() { if (CAUSAL.line) CAUSAL.line.setEnabled(false); if (CAUSAL.marker) CAUSAL.marker.setEnabled(false); }
+function dramaActive() {
+  const s = SEQ[state.seqIdx];
+  return PRESENT.on && state.auto && !vizSuppressed && s && s.cross && AVOID.mode !== "proceed";
+}
+function ghostUpdate() {
+  if (!GHOST.on || !dramaActive()) { ghostHide(); return; }
+  const t0 = state.dur ? clamp(state.seqT / state.dur, 0, 1) : 0;
+  const pts = [], N = 12;
+  for (let i = 0; i <= N; i++) { const p = presentArc(t0 + (1 - t0) * (i / N)); pts.push(new V3(p.x, p.y, p.z)); }
+  const col = C3.FromHexString(GHOST.col);
+  if (!GHOST.line) {
+    GHOST.line = BABYLON.CreateGreasedLine("ghostLine", { points: pts, updatable: true }, { width: 0.055, color: col }, scene);
+    GHOST.line.isPickable = false; GHOST.line.renderingGroupId = 1;
+    try { const g = GHOST.line.greasedLineMaterial; if (g) { g.useDash = true; g.dashCount = 24; g.dashRatio = 0.45; } } catch (e) {}
+  } else { GHOST.line.setPoints(pts); }
+  GHOST.line.setEnabled(true);
+  const end = presentArc(1);
+  if (!GHOST.ring) {
+    GHOST.ring = BABYLON.MeshBuilder.CreateTorus("ghostRing", { diameter: 0.52, thickness: 0.05, tessellation: 20 }, scene);
+    const m = new BABYLON.StandardMaterial("ghostRingMat", scene);
+    m.emissiveColor = col; m.diffuseColor = col; m.alpha = 0.34; m.disableLighting = true;
+    GHOST.ring.material = m; GHOST.ring.isPickable = false; GHOST.ring.renderingGroupId = 1;
+  }
+  GHOST.ring.position.set(end.x, end.y - 0.10, end.z);
+  GHOST.ring.setEnabled(true);
+}
+function causalUpdate() {
+  if (!CAUSAL.on || !dramaActive()) { causalHide(); return; }
+  // 회피 판정(avoidDecide)과 **같은 시간창**을 써야 인과선이 실제 결정을 부른 침범점을 가리킨다.
+  const remain = state.dur ? (state.dur - state.seqT) / 1000 : 0;
+  const win = Math.max(0.4, Math.min(remain, PRED.vizHorizon || 3));
+  const mp = avoidMinPoint(win);
+  if (!mp) { causalHide(); return; }
+  const tcp = tipPos(), y = 0.12;
+  const pts = [new V3(mp.x, y, mp.z), new V3(tcp.x, y, tcp.z)];
+  const col = C3.FromHexString(CAUSAL.col);
+  if (!CAUSAL.line) {
+    CAUSAL.line = BABYLON.CreateGreasedLine("causalLine", { points: pts, updatable: true }, { width: 0.05, color: col }, scene);
+    CAUSAL.line.isPickable = false; CAUSAL.line.renderingGroupId = 1;
+  } else { CAUSAL.line.setPoints(pts); }
+  CAUSAL.line.setEnabled(true);
+  if (!CAUSAL.marker) {
+    CAUSAL.marker = BABYLON.MeshBuilder.CreateDisc("causalMk", { radius: 0.16, tessellation: 20 }, scene);
+    CAUSAL.marker.rotation.x = Math.PI / 2;
+    const m = new BABYLON.StandardMaterial("causalMkMat", scene);
+    m.emissiveColor = col; m.diffuseColor = col; m.alpha = 0.6; m.disableLighting = true;
+    CAUSAL.marker.material = m; CAUSAL.marker.isPickable = false; CAUSAL.marker.renderingGroupId = 1;
+  }
+  CAUSAL.marker.position.set(mp.x, y, mp.z);
+  CAUSAL.marker.setEnabled(true);
+}
 function stepUpdate(dt) {
   if (!state.auto) return;
   const s = SEQ[state.seqIdx];
   if (!s) return;
   avoidDecide(dt);
   // 안전 구역: 접근 시 감속, 진입 시 정지 · AVOID.rate: 1 진행 / 0 대기(hold) / -1 후퇴(retract)
-  state.seqT = Math.max(0, state.seqT + dt * SAFE.factor * AVOID.rate);
+  // 발표 모드 통로 횡단: 이송을 빠르게, 후퇴는 급하게(반응형 감속에 안 묶이는 결정적 후퇴).
+  let rate = SAFE.factor * AVOID.rate;
+  if (PRESENT.on && s.cross) {
+    rate = (AVOID.mode === "retract") ? -PRESENT.retractRate
+                                      : SAFE.factor * AVOID.rate * PRESENT.transit;
+  }
+  state.seqT = Math.max(0, state.seqT + dt * rate);
   const t = clamp(state.seqT / state.dur, 0, 1);
   state.stirring = false;
-  if (s.k === "ik" || s.k === "ikOff" || s.k === "home") {
+  if (PRESENT.on && s.cross && (s.k === "ik" || s.k === "ikOff")) {
+    // 큰 아크를 매 프레임 IK로 추종(관절 lerp 대신). 손목 수평 보정은 아래 캐리 블록이 잡는다.
+    solveIK(presentArc(t), 12);
+    refreshChain();
+  } else if (s.k === "ik" || s.k === "ikOff" || s.k === "home") {
     const e = ease(t);
     JOINTS.forEach((j,i) => { j.value = lerp(state.from[i], state.to[i], e); applyJoint(j); });
     refreshChain();
@@ -10624,7 +10717,15 @@ function stepUpdate(dt) {
     JOINTS[4].value = 0;   // 캐리 중 롤 금지 — 포크가 지그 주위로 비틀리는 것 방지
     applyJoint(JOINTS[3]); applyJoint(JOINTS[4]); refreshChain();
   }
-  if (t >= 1) startStep(state.seqIdx + 1);
+  // ⚠️ 여기 있던 "(2) 바스켓 요-추종 수평화"(basketNode.rotationQuaternion 매 프레임 덮어쓰기)는
+  //    머지 때 뺐다. main #29가 파지 모델을 **포크-지그 강체**로 바꾸면서 위 손목-수평화 블록으로
+  //    대체했고, 그 주석이 "위치를 매 프레임 다시 잡지 않는다"라고 못박았다 — 요-추종은 그와
+  //    직접 충돌해 파지가 풀린 것처럼 비틀린다. PR#24의 통로 회피 루프만 아래에 살린다.
+  if (t >= 1) {
+    // 통로 회피 데모(발표 모드): 통로 횡단을 반복해 사람이 지나갈 때마다 회피가 나오게 한다.
+    if (PRESENT.on && CORR.on && s.cross) state.seqT = 0;
+    else startStep(state.seqIdx + 1);
+  }
 }
 function stepStir(s, t, dt) {
   // 원형 교반 — 매 프레임 IK로 궤적 추종 (짧은 반복이면 충분: 목표가 조금씩만 움직인다)
@@ -12230,6 +12331,8 @@ scene.registerBeforeRender(() => {
   accUpdate(dt);
   safetyUpdate();
   robotArrowsUpdate();       // 로봇 후보 기동 화살표(선택된 기동 강조)
+  ghostUpdate();             // 발표 모드: "피하지 않았다면" 고스트 궤적
+  causalUpdate();            // 발표 모드: 예측 침범점 → 로봇 결정 인과선
   sensorTick(now);
   robotGuardTick();          // 설비 관통 방지 — 겹치면 직전 안전 포즈로 되돌림
   physWatch();
@@ -14615,6 +14718,121 @@ function demoReset(quiet) {
   if (!quiet) demoSay("되돌림 — 초기 상태");
 }
 
+/* ══ 통로 회피 데모 — 발표 모드 실 회피기동 (2026-08-25) ═══════════════════════
+   로봇이 바스켓을 들고 통로를 큰 아크로 가로지를 때 사람이 걸어 들어온다.
+     before(회피 OFF) — 휩쓸어 접촉 → 사람 밀림·쓰러짐(주인공은 접촉 물리 대상이 아니라
+                        여기서 직접 처리한다).
+     after (회피 ON)  — 예측 침범 → 급후퇴로 살림. 고스트·인과선이 함께 표시된다.
+   되돌리기는 발표 모드·회피·표시·카메라·사람 위치를 전부 원복한다. */
+const CORR = { on:false, mode:null, t:0, hit:false, saved:null };
+const CORR_VIZ = ["vizRarr", "vizDens", "vizLine", "vizPmode"];   // 데모가 켜는 표시 토글(원복 대상)
+function corrRun(mode) {
+  demoReset(true);                                 // 화재 데모 상태와 겹치지 않게 정리
+  corrReset(true);
+  const crossIdx = SEQ.findIndex(s => s.cross);
+  if (crossIdx < 0) { setStatus("이 배치엔 통로 횡단 단계가 없어 통로 회피 데모를 못 켠다"); return; }
+  CORR.saved = {
+    pos: person.node.position.clone(), rotY: person.node.rotation.y, view: mainView,
+    present: PRESENT.on, avoid: AVOID.on, autoLoop: state.autoLoop, auto: state.auto, cycles: state.cycles,
+    viz: CORR_VIZ.map(id => { const el = $(id); return el ? el.checked : null; }),
+    cam: { target: camera.target.clone(), alpha: camera.alpha, beta: camera.beta, radius: camera.radius },
+  };
+  PRESENT.on = true;
+  AVOID.on = (mode === "after");
+  // 표시 켜기(체크박스 경유 — 배선까지 돈다). 고스트·인과선은 내부 기본 on.
+  CORR_VIZ.forEach(id => {
+    const el = $(id); if (el && !el.checked) { el.checked = true; el.dispatchEvent(new Event("change")); }
+  });
+  // 카메라 — 통로가 보이는 극적 3/4 저각(로봇·사람을 한 프레임에)
+  DEMO.follow = null;
+  mainView = "free";
+  if (typeof viewSel !== "undefined" && viewSel) viewSel.value = "free";
+  applyCameras();
+  camera.setTarget(new V3(0.35, 0.80, 1.15));
+  camera.alpha = -0.42; camera.beta = 1.14; camera.radius = 4.7;
+  // 로봇 — 바스켓을 쥐고 통로 횡단 단계로 바로 진입
+  state.auto = true; state.cycles = 0; state.autoLoop = false;
+  if (basketNode) basketNode.setParent(JOINTS[4].node);   // grab 단계 효과(수평 보정·아크의 전제)
+  state.basketHeld = true;   // 통로 횡단 중 손목-수평화(블록 A)가 돌게 한다 — 안 켜면 아크에서 바스켓이 기울어짐
+  startStep(crossIdx);
+  // 사람은 **로봇이 먼저 출발한 뒤** 진입해야 급후퇴(retract)가 나온다(처음부터 위험구역에 있으면
+  // 로봇이 출발 자체를 보류(hold)만 한다). 시작은 위험구역 밖(먼 곳), corrTick이 지연 후 진입시킨다.
+  person.node.position.set(2.90, 0, 2.70);
+  person.node.rotation.y = Math.PI;
+  person.freeze = false;
+  person.mode = "idle"; person.path = [];
+  CORR.on = true; CORR.mode = mode; CORR.t = 0; CORR.hit = false; CORR.launched = false;
+  setStatus(mode === "after" ? "▶ 통로 회피 (회피 ON) — 예측 → 급후퇴"
+                             : "▶ 통로 회피 (회피 OFF) — 충돌 예고");
+}
+function corrTick(dt) {
+  if (!CORR.on) return;
+  CORR.t += dt;
+  // 로봇이 먼저 통로로 나간 뒤(≈0.5s) 사람을 통로로 들여보낸다 → 예측 침범 → 급후퇴.
+  //  after: 통로를 왕복(반복 접근 → 매번 후퇴가 나온다) · before: 한 번 가로질러 팔에 맞는다.
+  if (!CORR.launched && CORR.t > 500) {
+    CORR.launched = true;
+    // A는 위험구역 밖(로봇 베이스에서 멀다) → 사람이 A에 있을 땐 팔이 크게 나가고,
+    // B(가깝다)로 걸어오면 접근이 예측돼 급후퇴한다. 이 왕복이 회피를 선명하게 보여준다.
+    const A = new V3(2.60, 0, 1.50), B = new V3(-0.30, 0, 1.45);
+    if (CORR.mode === "after") personGo([A, B], { loop:true, speed:1.05 });
+    else                       personGo([A, B],  { speed:1.20 });
+  }
+  // before: 팔이 사람에 닿으면 밀어내고 쓰러뜨린다(주인공은 armContactUpdate 대상이 아니다)
+  if (CORR.mode === "before" && !CORR.hit && state.auto) {
+    const p = person.node.position;
+    if (armClearance(p.x, p.z) < 0) {
+      CORR.hit = true;
+      const tcp = tipPos();
+      let nx = p.x - tcp.x, nz = p.z - tcp.z; const nl = Math.hypot(nx, nz) || 1; nx /= nl; nz /= nl;
+      person.node.position.set(p.x + nx * 0.5, 0, p.z + nz * 0.5);
+      person.node.rotation.y = Math.atan2(-nx, -nz);
+      person.mode = "idle"; person.path = [];
+      if (typeof personFall === "function") personFall();
+      if (typeof triggerEstop === "function") triggerEstop("팔↔사람 접촉");
+      state.auto = false;   // 접촉 후 팔을 멈춘다 — 쓰러진 사람 위를 계속 휩쓸지 않게
+      setStatus("⛔ 충돌 — 회피 없이 팔이 사람을 밀었다");
+    }
+  }
+}
+function corrReset(quiet) {
+  const had = CORR.on || CORR.saved;
+  CORR.on = false; CORR.mode = null; CORR.t = 0; CORR.hit = false;
+  if (had) {
+    demoStandUp();
+    person.freeze = false; person.mode = "idle"; person.path = []; person.pi = 0;
+    if (typeof clearEstop === "function") clearEstop();
+    if (typeof resetBasket === "function") resetBasket();
+  }
+  if (CORR.saved) {
+    PRESENT.on = CORR.saved.present;
+    AVOID.on = CORR.saved.avoid;
+    state.autoLoop = CORR.saved.autoLoop;
+    // 로봇 가동 상태도 원복 — 데모 전 로봇이 멈춰 있었으면 되돌리기 후에도 멈춰 있어야 한다.
+    if (CORR.saved.auto !== undefined) state.auto = CORR.saved.auto;
+    if (CORR.saved.cycles !== undefined) state.cycles = CORR.saved.cycles;
+    person.node.position.copyFrom(CORR.saved.pos);
+    person.node.rotation.y = CORR.saved.rotY;
+    // 시각화 토글 원복(체크박스 경유 — 배선까지 돈다). 데모가 켠 오버레이가 남지 않게 한다.
+    if (CORR.saved.viz) CORR_VIZ.forEach((id, i) => {
+      const el = $(id), want = CORR.saved.viz[i];
+      if (el && want !== null && el.checked !== want) { el.checked = want; el.dispatchEvent(new Event("change")); }
+    });
+    if (CORR.saved.view && CORR.saved.view !== mainView) {
+      mainView = CORR.saved.view;
+      if (typeof viewSel !== "undefined" && viewSel) viewSel.value = mainView;
+      applyCameras();
+    }
+    // 자유 시점이면 데모가 바꾼 카메라 포즈를 원래대로 되돌린다.
+    if (CORR.saved.cam && mainView === "free") {
+      camera.setTarget(CORR.saved.cam.target);
+      camera.alpha = CORR.saved.cam.alpha; camera.beta = CORR.saved.cam.beta; camera.radius = CORR.saved.cam.radius;
+    }
+    CORR.saved = null;
+  }
+  if (!quiet) setStatus("되돌림 — 통로 회피 데모 종료");
+}
+
 /* 자체 시계로 돈다. 공용 렌더 루프(registerBeforeRender 본체)에 줄을 더하지 않아
    팀원 작업과 충돌하지 않는다. dt 상한 60ms는 본체와 같은 규칙 — 탭이 쉬다 돌아올 때
    한 프레임에 비트가 여러 개 건너뛰는 것을 막는다. */
@@ -14626,6 +14844,7 @@ function demoReset(quiet) {
     last = now;
     doorTick(dt);
     demoTick(dt);
+    corrTick(dt);
     vidTick(dt);
     shotTick(dt);
   });
@@ -15209,9 +15428,21 @@ $("demoBefore").addEventListener("click", () => demoRun("before"));
 $("demoAfter").addEventListener("click",  () => demoRun("after"));
 $("demoStop").addEventListener("click",   () => demoReset(false));
 
+$("corrBefore").addEventListener("click", () => corrRun("before"));
+$("corrAfter").addEventListener("click",  () => corrRun("after"));
+$("corrStop").addEventListener("click",   () => corrReset(false));
+
 // 콘솔에서도 돌릴 수 있게 — 발표 리허설 때 버튼을 못 찾는 상황 방지
 window.__sim.demoRun = demoRun;
 window.__sim.demoReset = demoReset;
+window.__sim.corrRun = corrRun;
+window.__sim.corrReset = corrReset;
+window.__sim.CORR = CORR;
+window.__sim.PRESENT = PRESENT;
+window.__sim.presentArc = presentArc;
+window.__sim.avoidMinPoint = avoidMinPoint;
+window.__sim.GHOST = GHOST;
+window.__sim.CAUSAL = CAUSAL;
 window.__sim.DEMO = DEMO;
 window.__sim.DEMO_SCRIPTS = DEMO_SCRIPTS;
 window.__sim.demoExtinguish = demoExtinguish;   // 진화 페이드 — 리허설·검증용
