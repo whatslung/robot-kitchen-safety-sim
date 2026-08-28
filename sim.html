@@ -1535,6 +1535,10 @@ MAT.food2   = pbr("food2","#b8c47a", {metallic:0.0, roughness:0.85});      // �
 
 /* ══ 앵커 — 교체 가능 지점 ═══════════════════════════════════════════════ */
 const anchors = {};   // name -> { node, placeholders:[], imported:null, align:{...} }
+/* GLB 모드의 실제 보이는 설비를 편집 앵커 아래에 묶는 루트.
+   절차형 placeholder 앵커와 실제 GLB 루트를 따로 두면 기즈모는 움직이는데 화면은 그대로인
+   가짜 편집이 된다. loadAssets()가 실제 메시를 분류한 뒤 이 표를 채운다. */
+const CORE_VISUALS = {};
 function makeAnchor(name, pos, parent) {
   const n = new BABYLON.TransformNode("anchor." + name, scene);
   if (pos) n.position.copyFrom(pos);
@@ -4557,7 +4561,7 @@ function buildPersonColliders() {
      ※ 이건 밀기를 넣기 전부터 있던 구멍이다 — 예전에는 사람이 바스켓 카트를 그냥
        통과해 걸었고, 아무것도 안 움직이니 눈에 안 띄었을 뿐이다.
      회전한 상자의 AABB 반너비로 넣는다(yaw를 반영하지 않으면 비스듬한 카트가 덜 막힌다). */
-  for (const b of PUSH.bodies) {
+  for (const b of [...PUSH.bodies, ...PHYS.coreBodies]) {
     const yaw = b.box.rotationQuaternion ? b.box.rotationQuaternion.toEulerAngles().y
                                          : b.box.rotation.y;
     const ca = Math.abs(Math.cos(yaw)), sa = Math.abs(Math.sin(yaw));
@@ -6355,6 +6359,25 @@ async function loadAssets() {
     seg.receiveShadows = true; shadows.addShadowCaster(seg);
     seg.isPickable = false;
     console.log("[DUCT] 로봇↔키오스크 배선덕트 연결 — 끊겨 있던 0.42m 구간 보강");
+  })();
+  /* 실제 GLB 중앙 설비를 anchor.kettle 아래 하나의 편집 엔티티로 묶는다.
+     바닥 덕트·안전 테이프·환기 후드는 건물 고정물이라 제외하고, 카트·키오스크는 이미
+     각자의 이동 루트로 분리돼 있다. setParent는 월드 변환을 보존하므로 화면은 안 튄다. */
+  (function () {
+    const group = new BABYLON.TransformNode("editorGroup.kettle", scene);
+    group.parent = anchors.kettle.node;
+    const fixedBuilding = /^(FloorDuct|ZoneTape|Hood)/;
+    const parts = kitchenStaticRoot.getChildMeshes(false)
+      .filter(m => m.isVisible && m.isEnabled() && !fixedBuilding.test(m.name || ""));
+    parts.forEach(m => m.setParent(group));
+    const lidPivot = scene.getTransformNodeByName("lidPivot");
+    if (lidPivot) lidPivot.setParent(group);
+    if (lidNode) lidNode.setParent(group);
+    CORE_VISUALS.kettle = group;
+    if (PHYS.ready) buildCoreStaticColliders(true);
+    sceneEditorCollect();
+    sceneEditorStageRefresh();
+    console.log("[EDITOR] 중앙 작업셀 GLB " + parts.length + "개 메시를 실제 편집 앵커에 연결");
   })();
   /* 사람 충돌 박스 자동 수집 — GLB 설비가 다 올라온 뒤라야 전부 잡힌다.
      수집 직후 동선을 검증해서, 새로 생긴 박스가 스테이션을 막지 않는지 확인한다. */
@@ -9056,7 +9079,21 @@ async function generateDataset(n, plan) {
    ② 낙하 물체 강체 동역학 (정적 환경 + 키네마틱 로봇/사람과 충돌)
    파일이 없으면 물리만 조용히 꺼지고 시뮬레이터는 완전 동작한다. */
 const PHYS = { ready:false, estop:false, links:[], personCap:null, debris:[], propCols:null, propAg:null,
-               characters:[] };
+               coreCols:[], coreAg:[], coreBodies:[], characters:[] };
+
+/* 중앙 설비는 ENV_PROPS와 달리 로봇 목표·조리 파티클에 연결돼 있다. 그 연결을 유지하는
+   편집 단위만 등록한다. GLB 기본 모드에서는 실제로 보이는 중앙 튀김솥/작업셀 하나가
+   대상이고, 절차형 모드에서는 작업대·선반·패널도 각각 독립 엔티티다. */
+const CORE_BODY_DEF = [
+  { id:"core.kettle", label:"중앙 튀김솥/작업셀", anchor:"kettle", mass:480,
+    fallbackSize:[1.82,1.15,1.42], fallbackCenter:[0,0.575,0], stations:["kettle"] },
+  { id:"core.prep", label:"중앙 조리대", anchor:"pot2", mass:85,
+    fallbackSize:[0.62,0.66,0.52], fallbackCenter:[0,0.33,0], stations:["prep"], proceduralOnly:true },
+  { id:"core.shelf", label:"중앙 선반", anchor:"shelf", mass:55,
+    fallbackSize:[0.68,0.76,0.50], fallbackCenter:[0,0.38,0], stations:["shelf"], proceduralOnly:true },
+  { id:"core.panel", label:"중앙 제어반", anchor:"panel", mass:28,
+    fallbackSize:[0.38,1.64,0.24], fallbackCenter:[0,0.82,0], stations:["panel"], proceduralOnly:true },
+];
 
 async function initPhysics() {
   const loadScript = src => new Promise((res, rej) => {
@@ -9094,8 +9131,8 @@ function invisibleBox(name, size, pos, parent) {
 }
 function buildColliders() {
   const ST = BABYLON.PhysicsShapeType, MO = BABYLON.PhysicsMotionType;
-  // 정적 환경 — 바닥·튀김솥·조리대·선반·패널 기둥·페데스탈
-  const F = LAYOUT.fryer, P = LAYOUT.prep, S = LAYOUT.shelf, PA = LAYOUT.panel, RM = LAYOUT.room;
+  // 영구 정적 환경 — 바닥·벽·로봇 페데스탈. 중앙 설비는 아래에서 별도 수명주기로 만든다.
+  const RM = LAYOUT.room;
   const rcx = (RM.x0+RM.x1)/2, rcz = (RM.z0+RM.z1)/2, rW = RM.x1-RM.x0, rD = RM.z1-RM.z0;
   const statics = [
     invisibleBox("col_floor", [rW,0.1,rD],          [rcx,-0.05,rcz]),
@@ -9104,13 +9141,10 @@ function buildColliders() {
     invisibleBox("col_wallE", [0.1,RM.h,rD],        [RM.x1+0.05,RM.h/2,rcz]),
     invisibleBox("col_wallN", [rW,RM.h,0.1],        [rcx,RM.h/2,RM.z0-0.05]),
     invisibleBox("col_wallS", [rW,RM.h,0.1],        [rcx,RM.h/2,RM.z1+0.05]),
-    invisibleBox("col_fryer", [F.w+0.06,F.rimY,F.d+0.06], [F.pos.x,F.rimY/2,F.pos.z]),
-    invisibleBox("col_prep",  [0.62,P.topY,0.52],   [P.pos.x,P.topY/2,P.pos.z]),
-    invisibleBox("col_shelf", [0.68,S.topY,0.50],   [S.pos.x,S.topY/2,S.pos.z]),
-    invisibleBox("col_panel", [0.10,1.30,0.10],     [PA.pos.x,0.65,PA.pos.z]),
     invisibleBox("col_ped",   [0.34,0.44,0.34],     [R.base.x,0.22,R.base.z]),
   ];
   for (const m of statics) new BABYLON.PhysicsAggregate(m, ST.BOX, {mass:0, friction:0.7, restitution:0.15}, scene);
+  buildCoreStaticColliders(true);
 
   // 로봇 링크 — 관절 노드에 부착된 보이지 않는 콜라이더 (ANIMATED: 노드를 따라감)
   const linkDefs = [
@@ -9212,6 +9246,48 @@ function characterPhysicsStep(dt) {
     const centerAfter = c.controller.getPosition();
     c.root.position.set(centerAfter.x, centerAfter.y-c.height/2, centerAfter.z);
     c.lastRoot.copyFrom(c.root.position);
+  }
+}
+
+/* 중앙 설비 Static collider도 별도 수명주기로 관리한다. 그래야 Body를 Dynamic으로
+   바꿀 때 같은 자리에 옛 mass=0 collider가 남아 새 강체를 붙잡는 일이 없다. */
+function buildCoreStaticColliders(rebuild) {
+  if (!scene.getPhysicsEngine()) return;
+  if (rebuild) {
+    PHYS.coreAg.forEach(ag => ag.dispose());
+    PHYS.coreCols.forEach(m => m.dispose());
+    PHYS.coreAg.length = 0; PHYS.coreCols.length = 0;
+  } else if (PHYS.coreCols.length) return;
+  const ST = BABYLON.PhysicsShapeType;
+  for (const def of CORE_BODY_DEF) {
+    if (def.proceduralOnly && ASSETS.enabled) continue;
+    if (PHYS.coreBodies.some(b => b.id === def.id)) continue;
+    const holder = anchors[def.anchor] && anchors[def.anchor].node;
+    if (!holder) continue;
+    const visual = CORE_VISUALS[def.anchor] || holder;
+    let x0=Infinity, x1=-Infinity, y0=Infinity, y1=-Infinity, z0=Infinity, z1=-Infinity, count=0;
+    for (const m of visual.getChildMeshes ? visual.getChildMeshes(false) : []) {
+      if (!m.isEnabled() || !m.isVisible || !m.getTotalVertices || !m.getTotalVertices()) continue;
+      m.computeWorldMatrix(true);
+      const bb = m.getBoundingInfo().boundingBox;
+      x0=Math.min(x0,bb.minimumWorld.x); x1=Math.max(x1,bb.maximumWorld.x);
+      y0=Math.min(y0,bb.minimumWorld.y); y1=Math.max(y1,bb.maximumWorld.y);
+      z0=Math.min(z0,bb.minimumWorld.z); z1=Math.max(z1,bb.maximumWorld.z); count++;
+    }
+    if (!count) {
+      holder.computeWorldMatrix(true);
+      const c = BABYLON.Vector3.TransformCoordinates(V3.FromArray(def.fallbackCenter), holder.getWorldMatrix());
+      x0=c.x-def.fallbackSize[0]/2; x1=c.x+def.fallbackSize[0]/2;
+      y0=c.y-def.fallbackSize[1]/2; y1=c.y+def.fallbackSize[1]/2;
+      z0=c.z-def.fallbackSize[2]/2; z1=c.z+def.fallbackSize[2]/2;
+    }
+    const size = [Math.max(0.05,x1-x0), Math.max(0.05,y1-y0), Math.max(0.05,z1-z0)];
+    const box = invisibleBox("col_" + def.id.replace(/\./g,"_"), size,
+                             [(x0+x1)/2,(y0+y1)/2,(z0+z1)/2]);
+    const ag = new BABYLON.PhysicsAggregate(box, ST.BOX,
+      { mass:0, friction:0.7, restitution:0.05 }, scene);
+    box.metadata = { coreId:def.id };
+    PHYS.coreCols.push(box); PHYS.coreAg.push(ag);
   }
 }
 
@@ -9348,10 +9424,10 @@ function buildStaticPropColliders(rebuild) {
    주변 설비는 각 GLB의 envProp_N 루트 단위로 선택한다. 자식 손잡이·바퀴를 클릭해도
    설비 전체가 선택되는 것이 Blender/Unity의 오브젝트 선택과 같은 규약이다.
 
-   중앙 작업셀·로봇·사람은 선택과 하이라이트는 되지만 이동은 잠근다. 이 노드들은
-   로봇 목표점·화재·바스켓 작업 시퀀스와 결합돼 있어 메시만 옮기면 현재 구현이 깨진다.
-   주변 설비는 편집 확정 때 정적 콜라이더, 동적 Havok 바디, 사람 통행 격자와 로봇
-   장애물 목록을 실제 새 변환에서 다시 만든다. */
+   중앙 작업셀은 보이는 GLB·로봇 목표점·조리 파티클·충돌체를 같은 앵커에 연결한 뒤
+   편집한다. 로봇 관절과 사람 동선 변환은 각자 Articulated/Character 단계가 필요하므로
+   변환은 잠그고 전용 물리만 제공한다. 주변 설비는 편집 확정 때 정적 콜라이더, 동적
+   Havok 바디, 사람 통행 격자와 로봇 장애물 목록을 실제 새 변환에서 다시 만든다. */
 const SCENE_EDITOR = {
   enabled:false, mode:"move", local:false, selection:null, entries:[],
   gizmo:null, highlight:null, dragging:false, dragChange:null,
@@ -9382,22 +9458,35 @@ function sceneEditorCollect() {
     if (node) entries.push({ id, label, node, editable:false, reason, character:character || null,
                              physicsEditable:!!character });
   };
-  addLocked("core.workcell", "중앙 로봇 작업셀", kitchenStaticRoot,
-            "로봇 목표점·솥·바스켓 시퀀스와 결합된 핵심 작업셀");
   addLocked("core.robot", "교반 로봇", scene.getTransformNodeByName("robotRoot"),
             "관절 계층과 안전 콜라이더가 연결된 동작 객체");
   const mainPersonNode = anchors.person && anchors.person.node;
   addLocked("core.person", "조리원", mainPersonNode,
             "동선·애니메이션과 연결되어 변환은 잠금 · 중력은 편집 가능",
             PHYS.characters.find(c => c.root === mainPersonNode));
-  addLocked("core.kettle", "교반솥", anchors.kettle && anchors.kettle.node,
-            "로봇 목표점·화재·바스켓 시퀀스가 연결된 핵심 설비");
-  addLocked("core.prep", "중앙 조리대", anchors.pot2 && anchors.pot2.node,
-            "로봇 작업 목표점과 연결된 핵심 설비");
-  addLocked("core.shelf", "중앙 선반", anchors.shelf && anchors.shelf.node,
-            "로봇 작업 목표점과 연결된 핵심 설비");
-  addLocked("core.panel", "중앙 제어반", anchors.panel && anchors.panel.node,
-            "로봇 작업 목표점과 연결된 핵심 설비");
+  for (const def of CORE_BODY_DEF) {
+    if (def.proceduralOnly && ASSETS.enabled) continue;
+    if (ASSETS.enabled && def.anchor === "kettle" && !CORE_VISUALS.kettle) continue;
+    const holder = anchors[def.anchor] && anchors[def.anchor].node;
+    if (!holder) continue;
+    if (!def.localState) {
+      holder.computeWorldMatrix(true);
+      const inv = holder.getWorldMatrix().clone(); inv.invert();
+      def.localState = { stations:{}, targets:{}, emitters:{} };
+      for (const key of def.stations) if (STATION[key])
+        def.localState.stations[key] = BABYLON.Vector3.TransformCoordinates(STATION[key].pos, inv);
+      if (def.id === "core.kettle") {
+        for (const [key, p] of Object.entries(LAYOUT.targets))
+          def.localState.targets[key] = BABYLON.Vector3.TransformCoordinates(p, inv);
+        for (const [key, ps] of Object.entries({ bubbles, steam, firePS, fsmoke }))
+          def.localState.emitters[key] = BABYLON.Vector3.TransformCoordinates(ps.emitter, inv);
+        def.localState.fireLight = BABYLON.Vector3.TransformCoordinates(fireLight.position, inv);
+      }
+    }
+    const dynamic = PHYS.coreBodies.find(b => b.id === def.id) || null;
+    entries.push({ id:def.id, label:def.label, node:dynamic ? dynamic.box : holder,
+                   holder, core:def, editable:true, dynamic });
+  }
   for (const [key, node] of Object.entries(robotGlb))
     addLocked("robot." + key, "로봇 모델 " + key, node, "로봇 관절 피벗에 연결된 모델");
   const cook = scene.getTransformNodeByName("cookHolder");
@@ -9423,6 +9512,7 @@ function sceneEditorCollect() {
 }
 function sceneEditorOwnedStations(entry) {
   if (!entry || !entry.editable) return [];
+  if (entry.core) return entry.core.stations.slice();
   const ignore = new Set(["shelf","prep","kettle","panel","aisle","door","cartPick"]);
   const editable = SCENE_EDITOR.entries.filter(e => e.editable);
   const owned = [];
@@ -9437,6 +9527,32 @@ function sceneEditorOwnedStations(entry) {
     if (nearest === entry && best <= 2.8) owned.push(key);
   }
   return owned;
+}
+function sceneEditorSyncCore(entry) {
+  const def = entry && entry.core;
+  if (!def || !def.localState) return;
+  const holder = entry.holder;
+  holder.computeWorldMatrix(true);
+  const world = holder.getWorldMatrix();
+  const absolute = holder.getAbsolutePosition();
+  for (const [key, local] of Object.entries(def.localState.stations)) {
+    if (!STATION[key]) continue;
+    const p = BABYLON.Vector3.TransformCoordinates(local, world);
+    STATION[key].pos.copyFrom(p);
+  }
+  if (def.id === "core.kettle") {
+    LAYOUT.fryer.pos.copyFrom(absolute);
+    for (const [key, local] of Object.entries(def.localState.targets)) {
+      const p = BABYLON.Vector3.TransformCoordinates(local, world);
+      if (LAYOUT.targets[key]) LAYOUT.targets[key].copyFrom(p);
+    }
+    const systems = { bubbles, steam, firePS, fsmoke };
+    for (const [key, local] of Object.entries(def.localState.emitters))
+      systems[key].emitter = BABYLON.Vector3.TransformCoordinates(local, world);
+    fireLight.position.copyFrom(BABYLON.Vector3.TransformCoordinates(def.localState.fireLight, world));
+  } else if (def.id === "core.prep") LAYOUT.prep.pos.copyFrom(absolute);
+  else if (def.id === "core.shelf") LAYOUT.shelf.pos.copyFrom(absolute);
+  else if (def.id === "core.panel") LAYOUT.panel.pos.copyFrom(absolute);
 }
 function sceneEditorBeginChange() {
   const entry = SCENE_EDITOR.selection;
@@ -9461,6 +9577,17 @@ function sceneEditorTransformsDiffer(a, b) {
 }
 function sceneEditorSyncEntry(entry) {
   if (!entry || !entry.editable) return;
+  if (entry.core) {
+    sceneEditorSyncCore(entry);
+    if (entry.dynamic) {
+      entry.dynamic.home.copyFrom(entry.node.position);
+      const q = entry.node.rotationQuaternion
+        ? entry.node.rotationQuaternion : BABYLON.Quaternion.FromEulerAngles(
+            entry.node.rotation.x, entry.node.rotation.y, entry.node.rotation.z);
+      entry.dynamic.homeYaw = q.toEulerAngles().y;
+    }
+    return;
+  }
   /* ENV_PROPS.pos는 설비 바닥의 holder 좌표다. 동적 설비의 편집 노드는 중심 높이에 있는
      proxy box이므로 그 좌표를 저장하면 다음 배치에서 카트가 공중에 뜬다. */
   entry.holder.computeWorldMatrix(true);
@@ -9483,6 +9610,7 @@ function sceneEditorSyncEntry(entry) {
   }
 }
 function sceneEditorRebuildWorld() {
+  if (PHYS.ready) buildCoreStaticColliders(true);
   if (PHYS.ready) buildStaticPropColliders(true);
   buildPersonColliders();
   buildNavGrid();
@@ -9553,7 +9681,7 @@ function sceneEditorRedo() {
 function sceneEditorRebuildPushBodies(target) {
   if (!PHYS.ready) return;
   const ST = BABYLON.PhysicsShapeType;
-  for (const b of target ? [target] : PUSH.bodies) {
+  for (const b of target ? [target] : [...PUSH.bodies, ...PHYS.coreBodies]) {
     /* DYNAMIC 바디를 폐기할 때 Havok의 마지막 월드 변환이 연결 노드에 한 번 되써질 수 있다.
        그러면 방금 기즈모/Inspector로 정한 위치가 이전 물리 위치로 돌아간다. 사용자가 정한
        로컬 변환을 폐기 전에 보관하고, 폐기 직후 복원한 좌표에서 새 바디를 만든다. */
@@ -9598,6 +9726,71 @@ function sceneEditorSetBodyType(entry, bodyType, record = true) {
   const stationKeys = sceneEditorOwnedStations(entry);
   const before = sceneEditorTransform(entry, stationKeys);
   const id = entry.id, holder = entry.holder, prop = entry.prop;
+
+  if (entry.core) {
+    const def = entry.core;
+    if (bodyType === "dynamic") {
+      const visual = CORE_VISUALS[def.anchor] || holder;
+      let x0=Infinity, x1=-Infinity, y0=Infinity, y1=-Infinity, z0=Infinity, z1=-Infinity, count=0;
+      for (const m of visual.getChildMeshes ? visual.getChildMeshes(false) : []) {
+        if (!m.isEnabled() || !m.isVisible || !m.getTotalVertices || !m.getTotalVertices()) continue;
+        m.computeWorldMatrix(true);
+        const bb = m.getBoundingInfo().boundingBox;
+        x0=Math.min(x0,bb.minimumWorld.x); x1=Math.max(x1,bb.maximumWorld.x);
+        y0=Math.min(y0,bb.minimumWorld.y); y1=Math.max(y1,bb.maximumWorld.y);
+        z0=Math.min(z0,bb.minimumWorld.z); z1=Math.max(z1,bb.maximumWorld.z); count++;
+      }
+      if (!count) throw new Error("동적 바디를 만들 중앙 설비 메시가 없습니다: " + id);
+      const w=x1-x0, ht=y1-y0, d=z1-z0;
+      if (w < 0.05 || ht < 0.05 || d < 0.05)
+        throw new Error("중앙 설비 동적 바디 크기가 유효하지 않습니다: " + id);
+      const box = BABYLON.MeshBuilder.CreateBox("col_core_dynamic_" + def.anchor,
+        { width:w, height:ht, depth:d }, scene);
+      box.position.set((x0+x1)/2,(y0+y1)/2,(z0+z1)/2);
+      box.rotationQuaternion = BABYLON.Quaternion.Identity();
+      box.isVisible = false; box.isPickable = false;
+      holder.metadata = Object.assign(holder.metadata || {}, { physicsDynamic:true });
+      holder.setParent(box);
+      const ag = new BABYLON.PhysicsAggregate(box, BABYLON.PhysicsShapeType.BOX,
+        { mass:def.mass, friction:0.62, restitution:0.02 }, scene);
+      ag.body.setLinearDamping(0.45); ag.body.setAngularDamping(0.8);
+      ag.body.setMassProperties({ mass:def.mass });
+      const dynamic = {
+        id, kind:"core", box, ag, holder, label:def.label,
+        half:[w/2,d/2,ht/2], maxV:1.4, mass:def.mass,
+        friction:0.62, damping:0.45, baseSize:[w,ht,d],
+        home:box.position.clone(), homeYaw:0,
+        gravityEnabled:true, gravityDefault:true,
+        upright:false, converted:false, sceneEditing:false,
+        size:[+w.toFixed(2),+ht.toFixed(2),+d.toFixed(2)]
+      };
+      PHYS.coreBodies.push(dynamic);
+    } else {
+      const dynamic = entry.dynamic;
+      sceneEditorFreezePushBodies(dynamic);
+      sceneEditorSyncCore(entry);
+      holder.computeWorldMatrix(true);
+      holder.setParent(null);
+      holder.metadata = Object.assign(holder.metadata || {}, { physicsDynamic:false });
+      dynamic.ag.dispose(); dynamic.box.dispose();
+      const at = PHYS.coreBodies.indexOf(dynamic);
+      if (at >= 0) PHYS.coreBodies.splice(at, 1);
+    }
+    sceneEditorRebuildWorld();
+    const fresh = sceneEditorCollect().find(e => e.id === id);
+    if (!fresh) throw new Error("중앙 설비 물리 타입 변경 후 오브젝트를 찾을 수 없습니다: " + id);
+    sceneEditorSyncEntry(fresh);
+    const after = sceneEditorTransform(fresh, stationKeys);
+    if (record && sceneEditorTransformsDiffer(before, after)) {
+      SCENE_EDITOR.undo.push({ entryId:id, before, after });
+      if (SCENE_EDITOR.undo.length > 50) SCENE_EDITOR.undo.shift();
+      SCENE_EDITOR.redo.length = 0;
+    }
+    sceneEditorSelect(fresh);
+    setStatus(fresh.label + " — Body " + (bodyType === "dynamic"
+      ? "Dynamic · 실제 Havok 중력 ON · 작업 기준점 동기화" : "Static · 현재 위치에 고정"));
+    return fresh;
+  }
 
   if (bodyType === "dynamic") {
     let x0=Infinity, x1=-Infinity, y0=Infinity, y1=-Infinity, z0=Infinity, z1=-Infinity, count=0;
@@ -10118,6 +10311,42 @@ function sceneEditorStageRefresh() {
   const box = document.getElementById("editorEnvRows");
   if (!box) return;
   const allEntries = sceneEditorCollect();
+  const coreBox = document.getElementById("editorCoreRows");
+  if (coreBox) {
+    coreBox.replaceChildren();
+    for (const e of allEntries.filter(e => e.core)) {
+      const row = document.createElement("div");
+      row.className = "snode child editable" +
+        (SCENE_EDITOR.selection && SCENE_EDITOR.selection.id === e.id ? " selected" : "");
+      row.dataset.editorId = e.id; row.title = "클릭하여 핵심 설비 선택";
+      const name = document.createElement("span");
+      name.className = "objname"; name.textContent = e.label; name.title = e.label;
+      row.appendChild(name);
+      const badge = document.createElement("button");
+      badge.type = "button"; badge.className = "physbadge";
+      badge.classList.add(e.dynamic && e.dynamic.sceneEditing ? "dragging" :
+                          e.dynamic && e.dynamic.gravityEnabled ? "dynamic" : "off");
+      badge.textContent = e.dynamic
+        ? (e.dynamic.sceneEditing ? "배치 중" : e.dynamic.gravityEnabled ? "중력 켬" : "중력 끔")
+        : "중력 켜기";
+      badge.title = e.dynamic ? "이 핵심 설비의 중력을 개별 전환합니다" :
+        "실제 Dynamic Havok 바디를 만들고 작업 기준점을 함께 이동합니다";
+      badge.disabled = !SCENE_EDITOR.enabled || !!(e.dynamic && e.dynamic.sceneEditing);
+      badge.addEventListener("click", ev => {
+        ev.stopPropagation();
+        const current = sceneEditorCollect().find(x => x.id === e.id);
+        if (!SCENE_EDITOR.enabled || !current) return;
+        sceneEditorSelect(current);
+        if (current.dynamic) sceneEditorSetGravity(current, !current.dynamic.gravityEnabled);
+        else sceneEditorSetBodyType(current, "dynamic", true);
+      });
+      row.appendChild(badge);
+      row.addEventListener("click", () => {
+        if (SCENE_EDITOR.enabled) sceneEditorSelect(sceneEditorCollect().find(x => x.id === e.id));
+      });
+      coreBox.appendChild(row);
+    }
+  }
   const peopleBox = document.getElementById("editorPeopleRows");
   if (peopleBox) {
     peopleBox.replaceChildren();
@@ -10149,7 +10378,7 @@ function sceneEditorStageRefresh() {
       peopleBox.appendChild(row);
     }
   }
-  const entries = allEntries.filter(e => e.editable);
+  const entries = allEntries.filter(e => e.editable && e.id.startsWith("env."));
   box.replaceChildren();
   for (const e of entries) {
     const row = document.createElement("div");
@@ -10185,6 +10414,13 @@ function sceneEditorStageRefresh() {
     row.classList.toggle("selected", !!SCENE_EDITOR.selection && row.dataset.editorId === SCENE_EDITOR.selection.id));
 }
 function sceneEditorTick() {
+  for (const def of CORE_BODY_DEF) {
+    const dynamic = PHYS.coreBodies.find(b => b.id === def.id);
+    if (!dynamic) continue;
+    const entry = SCENE_EDITOR.entries.find(e => e.id === def.id) ||
+      { id:def.id, core:def, holder:dynamic.holder, node:dynamic.box, dynamic };
+    sceneEditorSyncCore(entry);
+  }
   if (!SCENE_EDITOR.enabled) return;
   const main = camOf(mainView);
   if (SCENE_EDITOR.gizmo && SCENE_EDITOR.renderCamera !== main) {
@@ -11382,13 +11618,13 @@ const SEQ_FRY = [
   { k:"ikOff", at:[-0.482 + CART_PULL.x, 2.281 + CART_PULL.z], atY:1.20,  ms:2000, msg:"카트 상공으로 이동 — 통로 횡단", cross:true, lvl:true },
   { k:"ikOff", at:[-0.482 + CART_PULL.x, 2.281 + CART_PULL.z], atY:1.030, ms:700,  msg:"포크 진입 — 바스켓 지그에 맞춤", lvl:true },
   { k:"ikOff", at:[-0.482 + CART_PULL.x, 2.281 + CART_PULL.z], atY:1.30,  ms:800,  msg:"지그 물어 들어올림 (생 재료)", grab:true, fresh:true },
-  { k:"ikOff", at:[0, 0],        atY:1.30,  ms:2260, msg:"솥으로 이송 — 통로 횡단", cross:true },
+  { k:"ikOff", kettle:true,      atY:1.30,  ms:2260, msg:"솥으로 이송 — 통로 횡단", cross:true },
   // 기름면 0.75 — 바닥(atY−0.147)이 잠기도록 atY 0.77 (바닥 0.623)
-  { k:"ikOff", at:[0, 0],        atY:0.77,  ms:900,  msg:"솥에 투입 — 기름에 담금", oil:true },
+  { k:"ikOff", kettle:true,      atY:0.77,  ms:900,  msg:"솥에 투입 — 기름에 담금", oil:true },
   { k:"wait",  ms:4500,                     msg:"튀기는 중 — 노릇하게 익힘", oil:true },
-  { k:"ikOff", at:[0, 0],        atY:1.30,  ms:900,  msg:"바스켓 1차 인양 — 기름 배출", oil:false },
+  { k:"ikOff", kettle:true,      atY:1.30,  ms:900,  msg:"바스켓 1차 인양 — 기름 배출", oil:false },
   // ── 후반부: 익은 것을 꺼내 카트로 (기존) ──
-  { k:"ikOff", at:[0, 0],        atY:1.34,  ms:1100, msg:"바스켓 인양 — 기름 배출", oil:false },
+  { k:"ikOff", kettle:true,      atY:1.34,  ms:1100, msg:"바스켓 인양 — 기름 배출", oil:false },
   { k:"shake", ms:800, n:3,         msg:"기름 털기" },
   /* 카트가 통로로 나가면서 이송 거리가 길어졌다 — 중간 경유를 통로 쪽으로 더 뺀다.
      이 구간이 **팔이 사람 다니는 바닥 위를 지나는 구간**이고, 그래서 이 연구가
@@ -11488,10 +11724,11 @@ function startStep(i) {
   } else if (s.k === "ikOff") {
     state.from = JOINTS.map(j => j.value);
     const ep = effector().getAbsolutePosition();
+    const at = s.kettle ? [LAYOUT.fryer.pos.x, LAYOUT.fryer.pos.z] : s.at;
     // at: 수평 절대좌표(정렬·하강의 중심 고정), atY: 절대 높이, off: 현재 기준 상대 오프셋
-    const tgt = new V3(s.at ? s.at[0] : ep.x + s.off[0],
+    const tgt = new V3(at ? at[0] : ep.x + s.off[0],
                        (s.atY !== undefined) ? s.atY : ep.y + s.off[1],
-                       s.at ? s.at[1] : ep.z + s.off[2]);
+                       at ? at[1] : ep.z + s.off[2]);
     // 파지 중·파지 접근(lvl) 스텝은 수평 손목(ikLevelAngles) — 포크가 바에 정렬된 채 접근/운반.
     // 접근을 일반 IK로 하면 포크가 바에서 40cm+ 떨어진 채 파지돼 바스켓이 순간이동한다(2026-08-26 실측 0.68m).
     state.to = ((basketNode && state.basketHeld) || s.lvl) ? ikLevelAngles(tgt) : ikAngles(tgt).angles;
@@ -11788,9 +12025,12 @@ function stepStir(s, t, dt) {
   // 원형 교반 — 매 프레임 IK로 궤적 추종 (짧은 반복이면 충분: 목표가 조금씩만 움직인다)
   const F = LAYOUT.fryer;
   const th = t * Math.PI * 2 * s.turns * s.dir;
-  const tgt = new V3(F.pos.x + Math.cos(th) * F.stirR,
-                     F.oilY + 0.03,
-                     F.pos.z + Math.sin(th) * F.stirR);
+  const local = new V3(Math.cos(th) * F.stirR, F.oilY + 0.03,
+                       Math.sin(th) * F.stirR);
+  const kettle = anchors.kettle && anchors.kettle.node;
+  if (kettle) kettle.computeWorldMatrix(true);
+  const tgt = kettle ? BABYLON.Vector3.TransformCoordinates(local, kettle.getWorldMatrix())
+                     : new V3(F.pos.x + local.x, local.y, F.pos.z + local.z);
   solveIK(tgt, 8);
   syncJointUI();
   state.stirring = SAFE.factor > 0;
@@ -13726,10 +13966,6 @@ function logConsole(msg) {
   const rows = [
     ["World", null, false],
     ["robot — 교반로봇", scene.getTransformNodeByName("robotRoot"), true, "core.robot"],
-    ["kettle — 교반솥", anchors["kettle"].node, true, "core.kettle"],
-    ["prep — 조리대", anchors["pot2"].node, true, "core.prep"],
-    ["shelf — 선반", anchors["shelf"].node, true, "core.shelf"],
-    ["panel — 제어반", anchors["panel"].node, true, "core.panel"],
     // 카메라 줄은 여기 하드코딩하지 않는다 — 아래 camRows에 CAM_DEFS로부터 만든다
   ];
   for (const [label, node, child, editorId] of rows) {
@@ -13756,6 +13992,15 @@ function logConsole(msg) {
     }
     tree.appendChild(div);
   }
+  const coreHead = document.createElement("div");
+  coreHead.className = "snode"; coreHead.textContent = "▾ 핵심 설비 (작업 기준점 연동)";
+  coreHead.style.marginTop = "6px"; tree.appendChild(coreHead);
+  const coreHint = document.createElement("div");
+  coreHint.className = "streehint";
+  coreHint.textContent = "이동·중력·충돌체와 로봇 작업 좌표를 함께 갱신";
+  tree.appendChild(coreHint);
+  const coreRows = document.createElement("div");
+  coreRows.id = "editorCoreRows"; tree.appendChild(coreRows);
   const peopleHead = document.createElement("div");
   peopleHead.className = "snode"; peopleHead.textContent = "▾ 사람 (Character Controller)";
   peopleHead.style.marginTop = "6px"; tree.appendChild(peopleHead);
