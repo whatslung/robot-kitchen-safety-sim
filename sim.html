@@ -10477,6 +10477,7 @@ const AVOID = {
   on:true, mode:"PROCEED", eff:"PROCEED", rate:1, reason:"",
   targetFactor:1, appliedFactor:1, since:performance.now(), minHoldMs:300,
   startT:0.06, samples:12, lift:null, plannedMotion:false, pathFactor:1,
+  predictionSource:"planned", predictionReady:true,
   clearSince:{ PROCEED:null, RETRACT:null, SAFE_LIFT:null },
 };
 
@@ -10513,6 +10514,34 @@ function plannedPeopleOccupancy(times) {
     out.push(plannedAgentOccupancy(P.id || P.role, P.root, P.path, P.pi, P.speed, P.mode, times, false));
   }
   return out;
+}
+
+/* 전용 시연의 회피 입력. 사람의 계획 경로는 읽지 않고 gt:0의 실제 LSTM 모드만
+   시간축으로 샘플링한다. 모드별 σ는 반경에 더해 다중 경로 모두를 보수적으로 피한다. */
+function learnedPeopleOccupancy(times, now) {
+  const record = MPRED.pred.get("gt:0");
+  if (!SafetyMotion.predictionFresh(record, now, 1000)
+      || !Array.isArray(times) || !Array.isArray(record.modes)) return null;
+  const out = [];
+  for (let index = 0; index < record.modes.length; index++) {
+    const mode = record.modes[index];
+    if (!mode || !Array.isArray(mode.path) || !mode.path.length
+        || !Array.isArray(mode.sigma) || !mode.sigma.length) continue;
+    const points = [], sigmas = [];
+    let valid = true;
+    for (const t of times) {
+      const pos = modePosAt(mode, t), sigma = modeSigAt(mode, t);
+      if (!pos || pos.length < 2 || !pos.every(Number.isFinite)
+          || !Number.isFinite(sigma) || sigma < 0) { valid = false; break; }
+      points.push({ x:pos[0], y:person.node.position.y + 0.90, z:pos[1] });
+      sigmas.push(sigma);
+    }
+    if (!valid) continue;
+    const uncertainty = Math.max(...sigmas) * Math.max(0, PRED.safeKsig || 0);
+    const radius = PERSON_R + uncertainty;
+    out.push({ id:"lstm:gt:0:"+index, radius, halfHeight:Math.max(0.90, radius), points });
+  }
+  return out.length ? out : null;
 }
 
 function plannedMinimumBaseDistance(windowSec) {
@@ -10626,7 +10655,20 @@ function avoidDecide(dtMs) {
   const windowSec = Math.min(remain, PRED.vizHorizon);
   const times = [];
   for (let i = 0; i < AVOID.samples; i++) times.push(windowSec * i / (AVOID.samples - 1));
-  const occupancy = plannedPeopleOccupancy(times);
+  const occupancy = AVOID.predictionSource === "lstm"
+    ? learnedPeopleOccupancy(times, now)
+    : plannedPeopleOccupancy(times);
+  AVOID.predictionReady = AVOID.predictionSource !== "lstm" || !!occupancy;
+  if (!occupancy) {
+    AVOID.pathFactor = 0; AVOID.rate = 0;
+    AVOID.clearSince = { PROCEED:null, RETRACT:null, SAFE_LIFT:null };
+    if (AVOID.mode !== "STOP") {
+      AVOID.mode = "STOP"; AVOID.since = now;
+      setStatus("LSTM 예측 대기 — 위험영역 밖에서 사람 정지");
+    }
+    AVOID.reason = "fresh-lstm-unavailable";
+    return;
+  }
   const proceedTarget = AVOID.lift ? AVOID.lift.originalTo : state.to;
   const proceed = scoreArmCandidate(proceedTarget, occupancy, false);
   AVOID.pathFactor = proceed.safe
@@ -10659,6 +10701,7 @@ function avoidDecide(dtMs) {
   }
 
   let decision = SafetyMotion.chooseManeuver({
+    emergencyStop:SAFE.stopped || PHYS.estop,
     danger, beforeCross:progress <= AVOID.startT,
     currentMode:AVOID.mode, holdMs:now - AVOID.since, minHoldMs:AVOID.minHoldMs,
     clearMsByMode, releaseClearance,
@@ -12678,7 +12721,8 @@ window.__sim = {
   get extras() { return EXTRAS; },
   tipPos, autoCook: () => $("autoBtn").click(),
   snap: () => { const d = {}; JOINTS.forEach(j => d[j.label] = +(j.value).toFixed(4)); return d; },
-  RUNLOG, SCALE, REACH, PRED, CPRED,   // 회차 기록 / 절대 스케일 / 팔 반경 / 궤적 예측
+  RUNLOG, SCALE, REACH, PRED, CPRED, MPRED, AVOID,
+  learnedPeopleOccupancy,   // 회차 기록 / 절대 스케일 / 팔 반경 / 궤적 예측
   // 카메라·사람·안전·화재
   SURV, capture, captureBoth, applyCameras, camOf, pipRect, swapViews, cyclePip, pickView,
   setView: v => { mainView = v; viewSel.value = v; applyCameras(); },

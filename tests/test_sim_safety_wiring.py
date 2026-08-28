@@ -22,6 +22,22 @@ def test_default_avoidance_uses_simulator_planned_paths():
     assert "P.path" in text
 
 
+def test_dedicated_demo_uses_only_fresh_lstm_occupancy():
+    text = sim_source()
+    start = text.index("function learnedPeopleOccupancy")
+    end = text.index("function plannedMinimumBaseDistance", start)
+    learned = text[start:end]
+    assert 'MPRED.pred.get("gt:0")' in learned
+    assert "SafetyMotion.predictionFresh" in learned
+    assert "modePosAt" in learned
+    assert "modeSigAt" in learned
+    assert "plannedPeopleOccupancy" not in learned
+    assert "person.path" not in learned
+    assert 'AVOID.predictionSource === "lstm"' in text
+    assert 'predictionSource:"planned"' in text
+    assert "AVOID.predictionReady" in text
+
+
 def test_safety_governor_and_maneuver_arbitration_are_wired():
     text = sim_source()
     assert "SafetyMotion.approachFactor" in text
