@@ -92,6 +92,45 @@ def test_held_basket_is_part_of_candidate_and_swept_contact_geometry():
     assert "link.radius ?? linkRadius" in (Path(__file__).parents[1] / "safety_motion.js").read_text(encoding="utf-8")
 
 
+def test_lstm_yield_demo_starts_robot_before_the_person_and_restores_racks():
+    text = sim_source()
+    assert 'id="lstmYieldBtn"' in text
+    assert "function startAutoWork" in text
+    assert "startAutoWork();" in text
+    assert "personStartDueAt:0" in text
+    assert "LSTM_YIELD_DEMO.startedAt + 400" in text
+    assert "observationCount >= 8" in text
+    assert "function lstmYieldDemoRoute" in text
+    assert "function disableBlockingDemoRacks" in text
+    assert 'ENV_PROPS[index].f === "env_rack.glb"' in text
+    assert "buildPersonColliders();" in text
+    assert "buildNavGrid();" in text
+    assert "function restoreDemoRacks" in text
+    assert 'AVOID.predictionSource = "lstm"' in text
+    assert 'AVOID.predictionSource = "current-only"' in text
+    assert "lstmYieldDemoUpdate(now);" in text
+    assert 'AVOID.mode === "RETRACT" ? 0.65' in text
+    assert 'AVOID.mode === "SAFE_LIFT" ? 0.60' in text
+
+
+def test_safe_lift_candidate_is_scored_even_before_cross_progress():
+    text = sim_source()
+    start = text.index("let retract =", text.index("function avoidDecide"))
+    end = text.index("const candidateByMode", start)
+    candidates = text[start:end]
+    assert "if (danger)" in candidates
+    assert "if (progress > AVOID.startT)" in candidates
+    assert candidates.index("if (progress > AVOID.startT)") < candidates.index("ikAngles(T.potHover)")
+
+
+def test_normal_auto_button_uses_shared_start_without_enabling_lstm_source():
+    text = sim_source()
+    handler = text[text.index('$("autoBtn").addEventListener'):]
+    handler = handler[:handler.index('$("stopBtn").addEventListener')]
+    assert "startAutoWork()" in handler
+    assert 'predictionSource = "lstm"' not in handler
+
+
 def test_robot_contact_accidents_are_routed_to_run_tab():
     text = sim_source()
     run_tab = next(line for line in text.splitlines() if '{ id:"run"' in line)

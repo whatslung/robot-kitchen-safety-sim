@@ -329,6 +329,9 @@
     <button id="autoBtn" class="primary">▶ 자동 작업</button>
     <button id="stopBtn" class="danger">■ 정지</button>
   </div>
+  <div class="btnrow">
+    <button id="lstmYieldBtn" class="primary">▶ 고정 동선 LSTM 회피</button>
+  </div>
   <!-- 연속 작업이 기본 — 1회만 돌면 '로봇이 움직이는 동안 사람이 접근하는 순간'이
        아예 안 만들어진다(실측: 겹친 프레임 0건). 그 순간이 이 연구의 관측 대상이다. -->
   <label class="row" style="cursor:pointer"><input type="checkbox" id="autoLoop" checked
@@ -4490,7 +4493,7 @@ function buildPersonColliders() {
                     b.half[0]*sa + b.half[1]*ca]);
   }
   for (const m of scene.meshes) {
-    if (!m.getTotalVertices || !m.getTotalVertices() || !m.isVisible) continue;
+    if (!m.getTotalVertices || !m.getTotalVertices() || !m.isVisible || !m.isEnabled()) continue;
     if (SKIP.test(m.name || "")) continue;
     m.computeWorldMatrix(true);
     const b = m.getBoundingInfo().boundingBox;
@@ -10480,6 +10483,11 @@ const AVOID = {
   predictionSource:"planned", predictionReady:true,
   clearSince:{ PROCEED:null, RETRACT:null, SAFE_LIFT:null },
 };
+const LSTM_YIELD_DEMO = {
+  active:false, phase:"idle", startedAt:0, personStartDueAt:0, personStartedAt:0,
+  observationCount:0, predictionUsed:false, maneuvers:[], contact:false,
+  completed:false, failure:null, route:null, racks:[], saved:null,
+};
 
 function safetyPoint(v, yOffset) {
   return { x:v.x, y:v.y + (yOffset || 0), z:v.z };
@@ -10514,6 +10522,12 @@ function plannedPeopleOccupancy(times) {
     out.push(plannedAgentOccupancy(P.id || P.role, P.root, P.path, P.pi, P.speed, P.mode, times, false));
   }
   return out;
+}
+
+function currentPeopleOccupancy(times) {
+  return [plannedAgentOccupancy(
+    "main", person.node, null, 0, 0, "idle", times, false,
+  )];
 }
 
 /* 전용 시연의 회피 입력. 사람의 계획 경로는 읽지 않고 gt:0의 실제 LSTM 모드만
@@ -10657,7 +10671,8 @@ function avoidDecide(dtMs) {
   for (let i = 0; i < AVOID.samples; i++) times.push(windowSec * i / (AVOID.samples - 1));
   const occupancy = AVOID.predictionSource === "lstm"
     ? learnedPeopleOccupancy(times, now)
-    : plannedPeopleOccupancy(times);
+    : (AVOID.predictionSource === "current-only"
+      ? currentPeopleOccupancy(times) : plannedPeopleOccupancy(times));
   AVOID.predictionReady = AVOID.predictionSource !== "lstm" || !!occupancy;
   if (!occupancy) {
     AVOID.pathFactor = 0; AVOID.rate = 0;
@@ -10680,8 +10695,9 @@ function avoidDecide(dtMs) {
   let retract = { safe:false, clearance:Number.NEGATIVE_INFINITY };
   let safeLift = { safe:false, clearance:Number.NEGATIVE_INFINITY };
   let liftAngles = null;
-  if (danger && progress > AVOID.startT) {
-    retract = scoreArmCandidate(state.stepStartJoints, occupancy, false);
+  if (danger) {
+    if (progress > AVOID.startT)
+      retract = scoreArmCandidate(state.stepStartJoints, occupancy, false);
     if (!retract.safe) {
       try {
         liftAngles = ikAngles(T.potHover).angles;
@@ -10854,8 +10870,8 @@ function stepUpdate(dt) {
   const s = SEQ[state.seqIdx];
   if (!s) return;
   avoidDecide(dt);
-  AVOID.targetFactor = AVOID.mode === "RETRACT" ? 0.45
-                     : AVOID.mode === "SAFE_LIFT" ? 0.35
+  AVOID.targetFactor = AVOID.mode === "RETRACT" ? 0.65
+                     : AVOID.mode === "SAFE_LIFT" ? 0.60
                      : AVOID.mode === "PROCEED"
                        ? (AVOID.plannedMotion
                          ? Math.min(SAFE.targetFactor, AVOID.pathFactor) : SAFE.targetFactor) : 0;
@@ -11295,7 +11311,7 @@ $("autoLoop").addEventListener("change", e => {
   state.autoLoop = e.target.checked;
   setStatus(state.autoLoop ? "연속 작업 — 사이클을 반복합니다" : "연속 작업 해제 — 1회만 실행");
 });
-$("autoBtn").addEventListener("click", () => {
+function startAutoWork() {
   state.auto = true; state.inOil = false; state.cycles = 0;
   state.cook = 0; state.burn = 0;                  // 새 사이클은 생 재료로 시작
   JOINTS.forEach(j => { j.value = j.home; applyJoint(j); }); refreshChain();
@@ -11306,8 +11322,174 @@ $("autoBtn").addEventListener("click", () => {
      연속 작업 루프는 이미 resetBasket()을 부르는데 이 버튼 경로만 빠져 있었다. */
   if (typeof resetBasket === "function") resetBasket();
   startStep(0);
+}
+
+function lstmYieldDemoRoute() {
+  const B = LAYOUT.robot.base, z = B.z + 0.60;
+  return {
+    start:new V3(B.x + 3.40, 0, z), gate:new V3(B.x + 1.75, 0, z),
+    cross:new V3(B.x - 0.20, 0, z), exit:new V3(B.x - 0.20, 0, B.z + 2.70),
+  };
+}
+function demoRouteSamples(route, step) {
+  const points = [route.start, route.gate, route.cross, route.exit], out = [];
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i], b = points[i+1];
+    const n = Math.max(1, Math.ceil(V3.Distance(a,b)/(step || 0.12)));
+    for (let k = 0; k <= n; k++) out.push(V3.Lerp(a, b, k/n));
+  }
+  return out;
+}
+function demoRouteBlocked(route) {
+  return demoRouteSamples(route).some(point => {
+    const probe = point.clone();
+    return resolvePersonCollision(probe)
+      || Math.hypot(probe.x-point.x, probe.z-point.z) > 1e-4;
+  });
+}
+function restoreDemoRacks() {
+  if (!LSTM_YIELD_DEMO.racks.length) return;
+  for (const item of LSTM_YIELD_DEMO.racks) {
+    item.holder.setEnabled(true);
+    if (item.collider) item.collider.setEnabled(true);
+  }
+  LSTM_YIELD_DEMO.racks = [];
+  buildPersonColliders();
+  buildNavGrid();
+}
+function disableBlockingDemoRacks(route) {
+  restoreDemoRacks();
+  if (!demoRouteBlocked(route)) return true;
+  const samples = demoRouteSamples(route), margin = PERSON_R + 0.08;
+  for (let index = 0; index < ENV_PROPS.length; index++) {
+    if (ENV_PROPS[index].f === "env_rack.glb") {
+      const holder = scene.getTransformNodeByName("envProp_" + index);
+      if (!holder || !holder.isEnabled()) continue;
+      const bounds = holder.getHierarchyBoundingVectors(true);
+      if (!bounds || !samples.some(p => p.x >= bounds.min.x-margin && p.x <= bounds.max.x+margin
+          && p.z >= bounds.min.z-margin && p.z <= bounds.max.z+margin)) continue;
+      const collider = scene.getMeshByName("col_env_" + index);
+      holder.setEnabled(false);
+      if (collider) collider.setEnabled(false);
+      LSTM_YIELD_DEMO.racks.push({ index, holder, collider });
+    }
+  }
+  buildPersonColliders();
+  buildNavGrid();
+  return !demoRouteBlocked(route);
+}
+function restoreLstmYieldDemoSettings(restorePerson) {
+  const saved = LSTM_YIELD_DEMO.saved;
+  if (saved) {
+    PRED.model = saved.model; $("predModel").value = saved.model;
+    AVOID.predictionSource = saved.predictionSource;
+    state.autoLoop = saved.autoLoop; $("autoLoop").checked = saved.autoLoop;
+    RARR.on = saved.arrows; $("vizRarr").checked = saved.arrows;
+    if (restorePerson) {
+      person.node.position.copyFrom(saved.personPos);
+      person.path = saved.personPath; person.pi = saved.personPi; person.mode = saved.personMode;
+    }
+  } else AVOID.predictionSource = "planned";
+  restoreDemoRacks();
+  LSTM_YIELD_DEMO.saved = null;
+}
+function finishLstmYieldDemo(phase, message, restorePerson) {
+  LSTM_YIELD_DEMO.active = false; LSTM_YIELD_DEMO.phase = phase;
+  if (phase === "complete") LSTM_YIELD_DEMO.completed = true;
+  if (phase === "failed") LSTM_YIELD_DEMO.failure = message;
+  restoreLstmYieldDemoSettings(!!restorePerson);
+  if (message) setStatus(message);
+}
+function startLstmYieldDemo() {
+  if (LSTM_YIELD_DEMO.active) finishLstmYieldDemo("cancelled", null, true);
+  if (BACKEND.ok !== true || typeof window.__customPredictor !== "function") {
+    setStatus("LSTM 서버 필요 — backend/detect_server.py --port 8001 로 실행하세요");
+    return false;
+  }
+  const route = lstmYieldDemoRoute();
+  if (!disableBlockingDemoRacks(route)) {
+    restoreDemoRacks();
+    setStatus("LSTM 시연 경로 실패 — 선반 외 설비가 고정 동선을 막습니다");
+    return false;
+  }
+  const now = performance.now();
+  Object.assign(LSTM_YIELD_DEMO, {
+    active:true, phase:"robot-lead", startedAt:now, personStartDueAt:now + 400,
+    personStartedAt:0, observationCount:0, predictionUsed:false, maneuvers:[],
+    contact:false, completed:false, failure:null, route,
+    saved:{ model:PRED.model, predictionSource:AVOID.predictionSource,
+      autoLoop:state.autoLoop, arrows:RARR.on, personPos:person.node.position.clone(),
+      personPath:person.path.slice(), personPi:person.pi, personMode:person.mode },
+  });
+  MPRED.hist.delete("gt:0"); MPRED.pred.delete("gt:0");
+  PRED.model = "custom"; $("predModel").value = "custom";
+  AVOID.predictionSource = "current-only";
+  state.autoLoop = false; $("autoLoop").checked = false;
+  RARR.on = true; $("vizRarr").checked = true;
+  person.node.position.copyFrom(route.start);
+  person.mode = "idle"; person.path = []; person.pi = 0; person.dwellT = 0;
+  startAutoWork();
+  setStatus("로봇 선행 작업 — 사람은 0.4초 뒤 출발");
+  return true;
+}
+function lstmYieldDemoUpdate(now) {
+  const D = LSTM_YIELD_DEMO;
+  if (!D.active) return;
+  if (PHYS.estop || (person.armStruckT || 0) > 0) D.contact = true;
+  if (D.contact) {
+    state.auto = false; person.mode = "idle"; person.path = [];
+    finishLstmYieldDemo("failed", "시연 실패 — 로봇 또는 바스켓 접촉", false);
+    return;
+  }
+  if (D.phase === "robot-lead" && now >= LSTM_YIELD_DEMO.startedAt + 400) {
+    D.personStartedAt = now;
+    personGo([D.route.gate.clone()], { speed:0.55 });
+    D.phase = "observing";
+    setStatus("LSTM 관측 1/8 — 로봇 작업과 동시에 보행");
+  }
+  if (D.phase === "observing") {
+    const count = Math.min(8, 1 + Math.floor((now - D.personStartedAt) / 400));
+    if (count !== D.observationCount) {
+      D.observationCount = count;
+      setStatus("LSTM 관측 " + count + "/8 — 고정 동선 접근");
+    }
+    const record = MPRED.pred.get("gt:0");
+    if (D.observationCount >= 8 && SafetyMotion.predictionFresh(record, now, 1000)) {
+      AVOID.predictionSource = "lstm";
+      D.predictionUsed = true; D.phase = "crossing";
+      personGo([D.route.cross.clone(), D.route.exit.clone()], { speed:0.62 });
+      setStatus("LSTM 예측 활성 — 고정 동선이 로봇 작업영역을 교차합니다");
+    } else if (now - D.personStartedAt > 6500) {
+      state.auto = false; person.mode = "idle"; person.path = [];
+      finishLstmYieldDemo("failed", "LSTM 예측 실패 — 위험영역 밖에서 시연 중단", false);
+      return;
+    }
+  }
+  if (D.phase === "crossing") {
+    if ((AVOID.mode === "RETRACT" || AVOID.mode === "SAFE_LIFT")
+        && !D.maneuvers.includes(AVOID.mode)) D.maneuvers.push(AVOID.mode);
+    if (person.mode === "idle" || V3.Distance(person.node.position, D.route.exit) < 0.10) {
+      D.phase = "clearing";
+      setStatus("경로 해제 — 0.3초 확인 후 로봇 작업 복귀");
+    }
+  }
+  if (D.phase === "clearing" && !state.auto && !state.basketHeld) {
+    const home = JOINTS.every(j => Math.abs(j.value-j.home) < 0.03);
+    finishLstmYieldDemo(home ? "complete" : "failed",
+      home ? "시연 완료 — 충돌 없이 바스켓 카트 거치·홈 복귀"
+           : "시연 실패 — 작업 종료 자세 불일치", false);
+  }
+}
+
+$("autoBtn").addEventListener("click", () => {
+  if (LSTM_YIELD_DEMO.active) finishLstmYieldDemo("cancelled", null, true);
+  startAutoWork();
 });
-$("stopBtn").addEventListener("click", () => { state.auto = false; setStatus("정지"); });
+$("lstmYieldBtn").addEventListener("click", startLstmYieldDemo);
+$("stopBtn").addEventListener("click", () => {
+  if (LSTM_YIELD_DEMO.active) finishLstmYieldDemo("cancelled", null, false);
+  state.auto = false; setStatus("정지");
+});
 $("homeBtn").addEventListener("click", () => {
   state.auto = false;
   JOINTS.forEach(j => { j.value = j.home; applyJoint(j); });
@@ -11326,6 +11508,8 @@ function resetBasket() {
   basketNode.rotation.set(0, basketNode.__homeYaw || 0, 0);
 }
 $("resetBtn").addEventListener("click", () => {
+  if (LSTM_YIELD_DEMO.active || LSTM_YIELD_DEMO.racks.length)
+    finishLstmYieldDemo("cancelled", null, false);
   state.auto = false; state.cook = 0; state.burn = 0; state.inOil = false;
   JOINTS.forEach(j => { j.value = j.home; applyJoint(j); });
   refreshChain(); syncJointUI();
@@ -12519,6 +12703,7 @@ scene.registerBeforeRender(() => {
   armContactUpdate(dt);        // 팔↔사람 접촉 — 링 판정과 달리 '팔이 향한 방향'을 본다
   accUpdate(dt);
   safetyUpdate();
+  lstmYieldDemoUpdate(now);
   robotArrowsUpdate();       // 로봇 후보 기동 화살표(선택된 기동 강조)
   sensorTick(now);
   robotGuardTick();          // 설비 관통 방지 — 겹치면 직전 안전 포즈로 되돌림
@@ -12722,7 +12907,8 @@ window.__sim = {
   tipPos, autoCook: () => $("autoBtn").click(),
   snap: () => { const d = {}; JOINTS.forEach(j => d[j.label] = +(j.value).toFixed(4)); return d; },
   RUNLOG, SCALE, REACH, PRED, CPRED, MPRED, AVOID,
-  learnedPeopleOccupancy,   // 회차 기록 / 절대 스케일 / 팔 반경 / 궤적 예측
+  learnedPeopleOccupancy, LSTM_YIELD_DEMO, startLstmYieldDemo, lstmYieldDemoUpdate,
+  // 회차 기록 / 절대 스케일 / 팔 반경 / 궤적 예측
   // 카메라·사람·안전·화재
   SURV, capture, captureBoth, applyCameras, camOf, pipRect, swapViews, cyclePip, pickView,
   setView: v => { mainView = v; viewSel.value = v; applyCameras(); },
