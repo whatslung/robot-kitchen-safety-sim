@@ -140,7 +140,7 @@ test('chooseManeuver uses the safety candidate priority', () => {
   };
 
   assert.equal(S.chooseManeuver({ ...base, danger: false }).mode, 'PROCEED');
-  assert.equal(S.chooseManeuver({ ...base, danger: true, beforeCross: true }).mode, 'HOLD');
+  assert.equal(S.chooseManeuver({ ...base, danger: true, beforeCross: true }).mode, 'SAFE_LIFT');
   assert.equal(S.chooseManeuver({ ...base, danger: true, beforeCross: false }).mode, 'RETRACT');
   assert.equal(S.chooseManeuver({
     ...base, danger: true, beforeCross: false, retract: blocked(-0.1),
@@ -149,6 +149,41 @@ test('chooseManeuver uses the safety candidate priority', () => {
     ...base, danger: true, beforeCross: false,
     retract: blocked(-0.1), safeLift: blocked(-0.2),
   }).mode, 'STOP');
+});
+
+test('chooseManeuver actively yields before crossing when a lift is verified safe', () => {
+  const result = S.chooseManeuver({
+    danger: true,
+    beforeCross: true,
+    currentMode: 'PROCEED',
+    holdMs: 1000,
+    safeLift: { safe: true, clearance: 0.42 },
+  });
+
+  assert.equal(result.mode, 'SAFE_LIFT');
+  assert.equal(result.reason, 'safe-lift-before-cross');
+});
+
+test('chooseManeuver never overrides an emergency stop with active motion', () => {
+  const result = S.chooseManeuver({
+    emergencyStop: true,
+    danger: true,
+    beforeCross: false,
+    currentMode: 'PROCEED',
+    holdMs: 1000,
+    retract: { safe: true, clearance: 0.4 },
+    safeLift: { safe: true, clearance: 0.5 },
+  });
+
+  assert.equal(result.mode, 'STOP');
+  assert.equal(result.reason, 'emergency-stop');
+});
+
+test('predictionFresh accepts only finite prediction timestamps younger than the limit', () => {
+  assert.equal(S.predictionFresh({ at: 4001 }, 5000), true);
+  assert.equal(S.predictionFresh({ at: 4000 }, 5000), false);
+  assert.equal(S.predictionFresh({ at: Number.NaN }, 5000), false);
+  assert.equal(S.predictionFresh(null, 5000), false);
 });
 
 test('chooseManeuver holds a conservative mode for at least 300ms', () => {

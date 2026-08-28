@@ -236,12 +236,20 @@
       ? settings.currentMode : "PROCEED";
     let chosen;
 
-    if (settings.danger === false) {
+    if (settings.emergencyStop === true) {
+      chosen = { mode: "STOP", reason: "emergency-stop", clearance: null };
+    } else if (settings.danger === false) {
       chosen = validCandidate(settings.proceed) && settings.proceed.safe
         ? { mode: "PROCEED", reason: "path-clear", clearance: settings.proceed.clearance }
         : { mode: "STOP", reason: "invalid-or-blocked-proceed", clearance: null };
     } else if (settings.danger === true && settings.beforeCross === true) {
-      chosen = { mode: "HOLD", reason: "danger-before-cross", clearance: null };
+      chosen = validCandidate(settings.safeLift) && settings.safeLift.safe
+        ? {
+          mode: "SAFE_LIFT",
+          reason: "safe-lift-before-cross",
+          clearance: settings.safeLift.clearance,
+        }
+        : { mode: "HOLD", reason: "no-safe-moving-candidate", clearance: null };
     } else if (settings.danger === true && settings.beforeCross === false) {
       if (validCandidate(settings.retract) && settings.retract.safe) {
         chosen = {
@@ -275,6 +283,17 @@
       return { mode: currentMode, reason: "release-hysteresis", clearance: chosen.clearance };
     }
     return chosen;
+  }
+
+  function predictionFresh(record, nowMs, maxAgeMs) {
+    const limit = maxAgeMs === undefined ? 1000 : maxAgeMs;
+    return !!record
+      && Number.isFinite(record.at)
+      && Number.isFinite(nowMs)
+      && Number.isFinite(limit)
+      && limit >= 0
+      && nowMs >= record.at
+      && nowMs - record.at < limit;
   }
 
   function trajectoryClearance(robotPoints, people, robotRadius, personRadius) {
@@ -356,6 +375,7 @@
     sweptSegmentCapsuleContact,
     approachFactor,
     chooseManeuver,
+    predictionFresh,
     trajectoryClearance,
     armTrajectoryClearance,
   };
