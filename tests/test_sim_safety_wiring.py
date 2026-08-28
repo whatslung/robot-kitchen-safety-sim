@@ -78,7 +78,8 @@ def test_contact_monitor_unifies_main_and_extra_people_with_swept_links():
     text = sim_source()
     assert "function safetyPeople" in text
     assert "const ARM_SWEEP" in text
-    assert "for (const target of safetyPeople())" in text
+    assert "const targets = safetyPeople();" in text
+    assert "for (const target of targets)" in text
     assert "SafetyMotion.sweptSegmentCapsuleContact" in text
     assert 'kind:"main"' in text
     assert 'kind:"extra"' in text
@@ -97,6 +98,7 @@ def test_lstm_yield_demo_starts_robot_before_the_person_and_restores_racks():
     assert 'id="lstmYieldBtn"' in text
     assert "function startAutoWork" in text
     assert "startAutoWork();" in text
+    assert "stepUpdate(16);" in text
     assert "personStartDueAt:0" in text
     assert "LSTM_YIELD_DEMO.startedAt + 400" in text
     assert "observationCount >= 8" in text
@@ -108,9 +110,30 @@ def test_lstm_yield_demo_starts_robot_before_the_person_and_restores_racks():
     assert "function restoreDemoRacks" in text
     assert 'AVOID.predictionSource = "lstm"' in text
     assert 'AVOID.predictionSource = "current-only"' in text
-    assert "lstmYieldDemoUpdate(now);" in text
+    assert "lstmYieldDemoUpdate(now, dt);" in text
+    assert 'AVOID.predictionSource === "lstm" ? 2.0 : 0.4' in text
+    assert "learnedRecord.risk.tEntryStop" in text
+    assert "const danger = !proceed.safe || learnedRisk" in text
     assert 'AVOID.mode === "RETRACT" ? 0.65' in text
     assert 'AVOID.mode === "SAFE_LIFT" ? 0.60' in text
+    assert "const complete = home && D.basketDelivered" in text
+    assert "MPRED.reqId++;" in text
+    assert "record.requestAt >= D.personStartedAt + 7 * 400" in text
+    assert "const emergencyStop = PHYS.estop" in text
+    assert "const releaseBlocked = SAFE.stopped || PHYS.estop" in text
+    assert "const danger = !proceed.safe || learnedRisk || SAFE.stopped" in text
+    assert "const blockedByStop = releaseBlocked" in text
+    assert "basketNode.getChildMeshes(false)" in text
+    assert "if (!contact) continue;" in text
+    assert "if (!moving || !contact) continue;" not in text
+    assert "&& !SAFE.stopped" not in text
+    assert 'finishLstmYieldDemo("cancelled", null, true)' in text
+    assert "function resetArmSweepBaseline" in text
+    assert 'finishLstmYieldDemo("failed", "LSTM 예측 중단' in text
+    assert "function demoSafeCrossingPath" in text
+    assert "function currentSafetyPeopleOccupancy(times)" in text
+    assert "for (const target of safetyPeople())" in text
+    assert "learned.concat(currentSafetyPeopleOccupancy(times))" in text
 
 
 def test_safe_lift_candidate_is_scored_even_before_cross_progress():

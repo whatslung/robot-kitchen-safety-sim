@@ -42,6 +42,15 @@
     const dd = dot(u, w);
     const ee = dot(v, w);
     const epsilon = 1e-12;
+    if (aa < epsilon && cc < epsilon) return Math.hypot(w.x, w.y, w.z);
+    if (aa < epsilon) {
+      const t = Math.min(1, Math.max(0, ee / cc));
+      return Math.hypot(w.x - t * v.x, w.y - t * v.y, w.z - t * v.z);
+    }
+    if (cc < epsilon) {
+      const s = Math.min(1, Math.max(0, -dd / aa));
+      return Math.hypot(w.x + s * u.x, w.y + s * u.y, w.z + s * u.z);
+    }
     let numeratorS;
     let denominatorS = aa * cc - bb * bb;
     let numeratorT;
@@ -324,6 +333,36 @@
     return clearance;
   }
 
+  /* One capsule that contains an entire axis-aligned box. The segment follows the
+     longest box axis and the radius spans the diagonal of the other two axes. */
+  function boxCapsuleForBounds(bounds, minimumRadius) {
+    const min = bounds && bounds.min;
+    const max = bounds && bounds.max;
+    const floorRadius = minimumRadius === undefined ? 0 : minimumRadius;
+    if (!isPoint(min) || !isPoint(max) || !Number.isFinite(floorRadius)
+        || floorRadius < 0 || max.x < min.x || max.y < min.y || max.z < min.z) {
+      const invalid = { x: Number.NaN, y: Number.NaN, z: Number.NaN };
+      return { a: invalid, b: invalid, radius: Number.NaN };
+    }
+    const center = {
+      x: (min.x + max.x) / 2,
+      y: (min.y + max.y) / 2,
+      z: (min.z + max.z) / 2,
+    };
+    const half = {
+      x: (max.x - min.x) / 2,
+      y: (max.y - min.y) / 2,
+      z: (max.z - min.z) / 2,
+    };
+    const axis = half.x >= half.y && half.x >= half.z ? "x"
+      : (half.y >= half.z ? "y" : "z");
+    const other = axis === "x" ? [half.y, half.z]
+      : (axis === "y" ? [half.x, half.z] : [half.x, half.y]);
+    const a = copyPoint(center), b = copyPoint(center);
+    a[axis] -= half[axis]; b[axis] += half[axis];
+    return { a, b, radius: Math.max(floorRadius, Math.hypot(other[0], other[1])) };
+  }
+
   function armTrajectoryClearance(armSamples, people, linkRadius) {
     if (!Array.isArray(armSamples) || armSamples.length === 0
         || !Array.isArray(people)
@@ -380,6 +419,7 @@
     approachFactor,
     chooseManeuver,
     predictionFresh,
+    boxCapsuleForBounds,
     trajectoryClearance,
     armTrajectoryClearance,
   };

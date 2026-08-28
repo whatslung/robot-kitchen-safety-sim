@@ -36,6 +36,12 @@ uv run python backend/detect_server.py --port 8001
 
 → <http://127.0.0.1:8001/sim.html?person=1>
 
+LSTM 회피 시연은 위 주소에서 **`▶ 고정 동선 LSTM 회피`**를 누른다. 로봇이 먼저
+작업을 시작하고, 0.4초 뒤 사람이 고정 동선으로 접근하면 학습형 궤적 예측을 이용해
+팔을 실시간으로 후퇴하거나 안전 자세로 들어 올린 뒤 다시 작업을 이어간다. 이 시연은
+`/predict`가 필요하므로 방법 A의 정적 서버에서는 실행되지 않는다. 일반 자동 작업은
+기존 계획 궤적을 사용하며, WASD 조작은 실시간 반응을 별도로 확인할 때 쓸 수 있다.
+
 가중치는 로컬 `training/`에 있으면 그걸, 없으면 허깅페이스에서 자동으로 받는다 —
 팀원은 파일 전달 없이 위 두 줄만 실행하면 된다. 두 모델 모두 공개 저장소다:
 검출은 [`chanubc/robot-kitchen-nadir-yolo11s`](https://huggingface.co/chanubc/robot-kitchen-nadir-yolo11s),

@@ -295,3 +295,19 @@ test('armTrajectoryClearance honors a payload segment radius larger than the arm
 
   assert.ok(Math.abs(S.armTrajectoryClearance(armSamples, people, 0.1) + 0.1) < 1e-12);
 });
+
+test('boxCapsuleForBounds conservatively contains every AABB corner', () => {
+  const bounds = {
+    min: { x: -0.6, y: 0.2, z: -0.4 },
+    max: { x: 0.8, y: 0.8, z: 0.5 },
+  };
+  const capsule = S.boxCapsuleForBounds(bounds, 0.09);
+  assert.ok(capsule.radius >= 0.09);
+  for (const x of [bounds.min.x, bounds.max.x])
+    for (const y of [bounds.min.y, bounds.max.y])
+      for (const z of [bounds.min.z, bounds.max.z]) {
+        const corner = { x, y, z };
+        assert.ok(S.segmentSegmentDistance(capsule.a, capsule.b, corner, corner)
+          <= capsule.radius + 1e-12);
+      }
+});

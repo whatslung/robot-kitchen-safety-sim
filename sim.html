@@ -6558,6 +6558,7 @@ function mpredTick(now, dtMs) {
   if (!tracks.length) return;
   MPRED.lastN = tracks.length;
   const reqId = ++MPRED.reqId;
+  const requestAt = now;
   MPRED.busy = true;
   const t0 = performance.now();
   fetch("/predict", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -6572,7 +6573,7 @@ function mpredTick(now, dtMs) {
       for (const t of (j.tracks || [])) {
         const modes = (t.modes || []).map(m => ({
           path: m.path.map(([x, z], i) => ({ t: 0.4 * (i + 1), x, z })), w: m.w, sigma: m.sigma }));
-        next.set(t.id, { modes, risk: t.risk, at });
+        next.set(t.id, { modes, risk: t.risk, at, requestAt });
       }
       MPRED.pred = next; MPRED.worst = j.worst || null;
       MPRED.at = at; MPRED.lastMs = at - t0;
@@ -10487,6 +10488,10 @@ const LSTM_YIELD_DEMO = {
   active:false, phase:"idle", startedAt:0, personStartDueAt:0, personStartedAt:0,
   observationCount:0, predictionUsed:false, maneuvers:[], contact:false,
   completed:false, failure:null, route:null, racks:[], saved:null,
+  robotFirstMotionMs:null, personStartMs:null, maxAvoidStationaryMs:0,
+  stationarySince:null, stationaryAccumMs:0, stationarySnapshot:null, resumeDelayMs:null,
+  basketDelivered:false, homeReached:false,
+  lastJointSample:null, hadActiveManeuver:false,
 };
 
 function safetyPoint(v, yOffset) {
@@ -10528,6 +10533,23 @@ function currentPeopleOccupancy(times) {
   return [plannedAgentOccupancy(
     "main", person.node, null, 0, 0, "idle", times, false,
   )];
+}
+
+/* 회피 자세도 현재 사람 위치를 통과하면 안 된다. LSTM은 주 사람의 미래만
+   예측하므로, 현재 보이는 모든 사람(추가 작업자 포함)을 전 시간축에 합친다. */
+function currentSafetyPeopleOccupancy(times) {
+  const out = [];
+  for (const target of safetyPeople()) {
+    out.push({
+      id:"current:" + target.id,
+      radius:target.radius,
+      halfHeight:target.halfHeight,
+      points:times.map(() => ({
+        x:target.center.x, y:target.center.y, z:target.center.z,
+      })),
+    });
+  }
+  return out;
 }
 
 /* 전용 시연의 회피 입력. 사람의 계획 경로는 읽지 않고 gt:0의 실제 LSTM 모드만
@@ -10582,16 +10604,8 @@ function basketPayloadSegments() {
     const invalid = { x:Number.NaN, y:Number.NaN, z:Number.NaN };
     return [{ a:invalid, b:invalid, radius:Number.NaN, kind:"basket" }];
   }
-  const center = { x:(min.x+max.x)/2, y:(min.y+max.y)/2, z:(min.z+max.z)/2 };
-  const halfX = (max.x-min.x)/2, halfY = (max.y-min.y)/2, halfZ = (max.z-min.z)/2;
-  const radius = Math.max(ARM_R, Math.min(halfX, halfZ, Math.max(halfY, SCALE.au(0.12))));
-  const xReach = Math.max(0, halfX-radius), zReach = Math.max(0, halfZ-radius);
-  return [
-    { a:{x:center.x-xReach,y:center.y,z:center.z},
-      b:{x:center.x+xReach,y:center.y,z:center.z}, radius, kind:"basket" },
-    { a:{x:center.x,y:center.y,z:center.z-zReach},
-      b:{x:center.x,y:center.y,z:center.z+zReach}, radius, kind:"basket" },
-  ];
+  const capsule = SafetyMotion.boxCapsuleForBounds({ min, max }, ARM_R);
+  return [{ ...capsule, kind:"basket" }];
 }
 
 function armLinksSnapshot() {
@@ -10621,11 +10635,21 @@ function candidateArmSamples(target, count, checkEnvironment) {
       refreshChain();
       samples.push(armLinksSnapshot());
       if (checkEnvironment && PHYS.links.length && ROBOT_GUARD.obstacles) {
+        const payloadMeshes = state.basketHeld && basketNode
+          ? basketNode.getChildMeshes(false).filter(mesh => mesh.isEnabled()) : [];
         for (const link of PHYS.links) {
           link.mesh.computeWorldMatrix(true);
           for (const obstacle of ROBOT_GUARD.obstacles) {
             obstacle.computeWorldMatrix(true);
             if (link.mesh.intersectsMesh(obstacle, true)) { environmentSafe = false; break; }
+          }
+          if (!environmentSafe) break;
+        }
+        for (const payloadMesh of payloadMeshes) {
+          payloadMesh.computeWorldMatrix(true);
+          for (const obstacle of ROBOT_GUARD.obstacles) {
+            obstacle.computeWorldMatrix(true);
+            if (payloadMesh.intersectsMesh(obstacle, true)) { environmentSafe = false; break; }
           }
           if (!environmentSafe) break;
         }
@@ -10666,13 +10690,17 @@ function avoidDecide(dtMs) {
 
   const progress = state.dur ? clamp(state.seqT / state.dur, 0, 1) : 0;
   const remain = state.dur ? Math.max(0.4, (state.dur - state.seqT) / 1000) : 0.4;
-  const windowSec = Math.min(remain, PRED.vizHorizon);
+  const minimumWindow = AVOID.predictionSource === "lstm" ? 2.0 : 0.4;
+  const windowSec = Math.min(Math.max(remain, minimumWindow), PRED.vizHorizon);
   const times = [];
   for (let i = 0; i < AVOID.samples; i++) times.push(windowSec * i / (AVOID.samples - 1));
-  const occupancy = AVOID.predictionSource === "lstm"
+  const learned = AVOID.predictionSource === "lstm"
     ? learnedPeopleOccupancy(times, now)
     : (AVOID.predictionSource === "current-only"
       ? currentPeopleOccupancy(times) : plannedPeopleOccupancy(times));
+  const occupancy = AVOID.predictionSource === "lstm" && learned
+    ? learned.concat(currentSafetyPeopleOccupancy(times))
+    : learned;
   AVOID.predictionReady = AVOID.predictionSource !== "lstm" || !!occupancy;
   if (!occupancy) {
     AVOID.pathFactor = 0; AVOID.rate = 0;
@@ -10690,7 +10718,12 @@ function avoidDecide(dtMs) {
     ? (Number.isFinite(proceed.clearance)
       ? clamp((proceed.clearance - SAFE.C) / 0.50, 0.20, 1) : 1)
     : 0;
-  const danger = !proceed.safe;
+  const learnedRecord = AVOID.predictionSource === "lstm" ? MPRED.pred.get("gt:0") : null;
+  const learnedEntry = learnedRecord && learnedRecord.risk && learnedRecord.risk.tEntryStop;
+  const learnedRisk = Number.isFinite(learnedEntry) && learnedEntry >= 0 && learnedEntry <= windowSec;
+  /* 물리 E-STOP은 절대 정지지만 SSM 진입은 검증된 escape motion을 허용한다.
+     후보가 사람/설비와 안전하지 않으면 chooseManeuver가 그대로 STOP을 선택한다. */
+  const danger = !proceed.safe || learnedRisk || SAFE.stopped;
   const releaseClearance = SAFE.C + 0.15;
   let retract = { safe:false, clearance:Number.NEGATIVE_INFINITY };
   let safeLift = { safe:false, clearance:Number.NEGATIVE_INFINITY };
@@ -10708,16 +10741,21 @@ function avoidDecide(dtMs) {
 
   const candidateByMode = { PROCEED:proceed, RETRACT:retract, SAFE_LIFT:safeLift };
   const clearMsByMode = {};
+  const emergencyStop = PHYS.estop;
+  const releaseBlocked = SAFE.stopped || PHYS.estop;
   for (const mode of Object.keys(candidateByMode)) {
     const candidate = candidateByMode[mode];
-    if (candidate.safe && candidate.clearance >= releaseClearance) {
+    const blockedByStop = releaseBlocked;
+    const blockedByActiveRisk = mode === "PROCEED" && danger;
+    if (!blockedByStop && !blockedByActiveRisk
+        && candidate.safe && candidate.clearance >= releaseClearance) {
       if (AVOID.clearSince[mode] === null) AVOID.clearSince[mode] = now;
     } else AVOID.clearSince[mode] = null;
     clearMsByMode[mode] = AVOID.clearSince[mode] === null ? 0 : now - AVOID.clearSince[mode];
   }
 
   let decision = SafetyMotion.chooseManeuver({
-    emergencyStop:SAFE.stopped || PHYS.estop,
+    emergencyStop,
     danger, beforeCross:progress <= AVOID.startT,
     currentMode:AVOID.mode, holdMs:now - AVOID.since, minHoldMs:AVOID.minHoldMs,
     clearMsByMode, releaseClearance,
@@ -11325,20 +11363,87 @@ function startAutoWork() {
 }
 
 function lstmYieldDemoRoute() {
-  const B = LAYOUT.robot.base, z = B.z + 0.60;
-  return {
-    start:new V3(B.x + 3.40, 0, z), gate:new V3(B.x + 1.75, 0, z),
-    cross:new V3(B.x - 0.20, 0, z), exit:new V3(B.x - 0.20, 0, B.z + 2.70),
-  };
+  /* 관측 구간은 로봇을 향한 직선이라 LSTM이 위험 진입을 선제 예측한다. 실제 고정
+     동선은 gate에서 바깥쪽으로 꺾은 뒤 공칭 SSM 정지반경(3.1m) 밖을 횡단한다.
+     따라서 로봇은 예측 때문에 능동 회피하지만 사람 몸 때문에 오래 정지하지 않는다. */
+  const B = LAYOUT.robot.base, room = LAYOUT.room, approachZ = B.z + 0.50;
+  let fallback = null;
+  for (const gateOffset of [SAFE.NOM_STOP+0.65, 4.10, 4.45]) {
+    for (const bypassOffset of [SAFE.NOM_STOP+0.04, 3.45, 3.80, 4.15, 4.50]) {
+      for (const exitOffset of [-1.50, -2.00, -2.50, -3.00]) {
+        const gateX = B.x + gateOffset, bypassZ = B.z + bypassOffset;
+        const route = {
+          start:new V3(Math.min(room.x1-0.45, gateX+1.05), 0, approachZ),
+          gate:new V3(gateX, 0, approachZ), bend:new V3(gateX, 0, bypassZ),
+          cross:new V3(B.x-0.20, 0, bypassZ), exit:new V3(B.x+exitOffset, 0, bypassZ),
+        };
+        if (!fallback) fallback = route;
+        const crossingPath = demoSafeCrossingPath(route.gate, bypassOffset, exitOffset);
+        if (crossingPath) {
+          route.crossingPath = crossingPath;
+          route.bend = crossingPath[0];
+          route.cross = crossingPath[Math.max(0, crossingPath.length-2)];
+          route.exit = crossingPath[crossingPath.length-1];
+        }
+        const points = Object.values(route);
+        if (points.every(p => p.x > room.x0+0.40 && p.x < room.x1-0.40
+            && p.z > room.z0+0.40 && p.z < room.z1-0.40)
+            && !demoRouteBlocked(route)) return route;
+      }
+    }
+  }
+  return fallback;
 }
 function demoRouteSamples(route, step) {
-  const points = [route.start, route.gate, route.cross, route.exit], out = [];
+  const points = [route.start, route.gate,
+    ...(route.crossingPath || [route.bend, route.cross, route.exit])], out = [];
   for (let i = 0; i < points.length - 1; i++) {
     const a = points[i], b = points[i+1];
     const n = Math.max(1, Math.ceil(V3.Distance(a,b)/(step || 0.12)));
     for (let k = 0; k <= n; k++) out.push(V3.Lerp(a, b, k/n));
   }
   return out;
+}
+function demoSafeCrossingPath(gate, preferredBypass, preferredExit) {
+  if (!NAV.ready) return null;
+  const B = LAYOUT.robot.base, room = LAYOUT.room;
+  const zOffsets = [preferredBypass, SAFE.NOM_STOP+0.04, 3.45, 3.80, 4.15, 4.50];
+  const xOffsets = [preferredExit, -1.50, -2.00, -2.50, -3.00];
+  /* navPath 자체가 동일 충돌 격자에서 대각 모서리와 직선 단축을 검증한다. 여기서
+     연속 AABB를 다시 적용하면 밀 수 있는 카트까지 하드 벽으로 보아 모든 길을 지운다. */
+  const clear = points => points.length > 1
+    && points.every(point => [point.x,point.y,point.z].every(Number.isFinite));
+  for (const zOffset of [...new Set(zOffsets)]) for (const xOffset of [...new Set(xOffsets)]) {
+    const bend = new V3(gate.x, 0, B.z+zOffset);
+    const exit = new V3(B.x+xOffset, 0, B.z+zOffset);
+    if (bend.x >= room.x1-0.40 || bend.z >= room.z1-0.40
+        || exit.x <= room.x0+0.40 || exit.z >= room.z1-0.40) continue;
+    const first = navPath(gate, bend), second = navPath(bend, exit);
+    if (!first || !second) continue;
+    const points = [gate, ...first, ...second];
+    if (clear(points)) return [...first, ...second];
+  }
+  /* 설비가 원호 레인을 끊으면 A*가 통로 전체에서 직접 우회로를 찾게 한다. */
+  for (const zOffset of [...new Set(zOffsets)]) for (const xOffset of [...new Set(xOffsets)]) {
+    const exit = new V3(B.x+xOffset, 0, B.z+zOffset);
+    if (exit.x <= room.x0+0.40 || exit.z >= room.z1-0.40) continue;
+    const path = navPath(gate, exit);
+    if (path && clear([gate, ...path])) return path;
+  }
+  const cells = [];
+  for (let i = 0; i < NAV.nx; i++) for (let j = 0; j < NAV.nz; j++) {
+    if (!navOpen(i, j)) continue;
+    const point = new V3(NAV.x0+(i+0.5)*NAV.cell, 0, NAV.z0+(j+0.5)*NAV.cell);
+    if (point.x >= B.x-0.50 || point.z <= B.z+1.00) continue;
+    cells.push({ point, score:Math.abs(point.z-(B.z+SAFE.NOM_STOP))
+      + Math.abs(point.x-(B.x-2.00))*0.2 });
+  }
+  cells.sort((a,b) => a.score-b.score);
+  for (const candidate of cells.slice(0, 120)) {
+    const path = navPath(gate, candidate.point);
+    if (path && clear([gate, ...path])) return path;
+  }
+  return null;
 }
 function demoRouteBlocked(route) {
   return demoRouteSamples(route).some(point => {
@@ -11388,8 +11493,28 @@ function restoreLstmYieldDemoSettings(restorePerson) {
     if (restorePerson) {
       person.node.position.copyFrom(saved.personPos);
       person.path = saved.personPath; person.pi = saved.personPi; person.mode = saved.personMode;
+      person.loop = saved.personLoop; person.speed = saved.personSpeed;
+      person.walkT = saved.personWalkT; person.crouch = saved.personCrouch;
+      person.stations = saved.personStations; person.dwellT = saved.personDwellT;
+      if (typeof PERSON !== "undefined" && PERSON) PERSON.acting = saved.personActing;
+      if (saved.basket && basketNode) {
+        basketNode.setParent(saved.basket.parent || null);
+        basketNode.position.copyFrom(saved.basket.position);
+        basketNode.rotation.copyFrom(saved.basket.rotation);
+        basketNode.rotationQuaternion = saved.basket.rotationQuaternion
+          ? saved.basket.rotationQuaternion.clone() : null;
+        state.basketHeld = saved.basket.held;
+      }
+      if (typeof resetArmSweepBaseline === "function") resetArmSweepBaseline();
     }
   } else AVOID.predictionSource = "planned";
+  MPRED.reqId++;
+  MPRED.hist.delete("gt:0"); MPRED.pred.delete("gt:0");
+  AVOID.mode = "PROCEED"; AVOID.eff = "PROCEED"; AVOID.rate = 1;
+  AVOID.reason = ""; AVOID.lift = null; AVOID.since = performance.now();
+  AVOID.clearSince = { PROCEED:null, RETRACT:null, SAFE_LIFT:null };
+  AVOID.targetFactor = 1; AVOID.appliedFactor = 1; AVOID.pathFactor = 1;
+  SAFE.appliedFactor = 1; SAFE.factor = 1;
   restoreDemoRacks();
   LSTM_YIELD_DEMO.saved = null;
 }
@@ -11406,22 +11531,43 @@ function startLstmYieldDemo() {
     setStatus("LSTM 서버 필요 — backend/detect_server.py --port 8001 로 실행하세요");
     return false;
   }
+  if (!PHYS.ready) {
+    setStatus("LSTM 시연 준비 중 — 로봇 안전 물리 초기화를 기다리세요");
+    return false;
+  }
   const route = lstmYieldDemoRoute();
-  if (!disableBlockingDemoRacks(route)) {
+  const approachRoute = { start:route.start, gate:route.gate, bend:route.gate,
+    cross:route.gate, exit:route.gate };
+  if (!disableBlockingDemoRacks(approachRoute)) {
     restoreDemoRacks();
     setStatus("LSTM 시연 경로 실패 — 선반 외 설비가 고정 동선을 막습니다");
     return false;
   }
   const now = performance.now();
+  const savedBasket = basketNode ? {
+    held:state.basketHeld, parent:basketNode.parent,
+    position:basketNode.position.clone(), rotation:basketNode.rotation.clone(),
+    rotationQuaternion:basketNode.rotationQuaternion ? basketNode.rotationQuaternion.clone() : null,
+  } : null;
   Object.assign(LSTM_YIELD_DEMO, {
     active:true, phase:"robot-lead", startedAt:now, personStartDueAt:now + 400,
     personStartedAt:0, observationCount:0, predictionUsed:false, maneuvers:[],
     contact:false, completed:false, failure:null, route,
+    robotFirstMotionMs:null, personStartMs:null, maxAvoidStationaryMs:0,
+    stationarySince:null, stationaryAccumMs:0, stationarySnapshot:null, resumeDelayMs:null,
+    basketDelivered:false, homeReached:false,
+    lastJointSample:JOINTS.map(j => j.value), hadActiveManeuver:false,
     saved:{ model:PRED.model, predictionSource:AVOID.predictionSource,
       autoLoop:state.autoLoop, arrows:RARR.on, personPos:person.node.position.clone(),
-      personPath:person.path.slice(), personPi:person.pi, personMode:person.mode },
+      personPath:person.path.slice(), personPi:person.pi, personMode:person.mode,
+      personLoop:person.loop, personSpeed:person.speed, personWalkT:person.walkT,
+      personCrouch:person.crouch, personStations:person.stations ? person.stations.slice() : null,
+      personDwellT:person.dwellT, personActing:PERSON && PERSON.acting,
+      basket:savedBasket, startJoints:JOINTS.map(j => j.value) },
   });
+  MPRED.reqId++;                            // 시연 전 in-flight 응답은 새 관측으로 인정하지 않는다.
   MPRED.hist.delete("gt:0"); MPRED.pred.delete("gt:0");
+  MPRED.acc = 0;
   PRED.model = "custom"; $("predModel").value = "custom";
   AVOID.predictionSource = "current-only";
   state.autoLoop = false; $("autoLoop").checked = false;
@@ -11429,12 +11575,27 @@ function startLstmYieldDemo() {
   person.node.position.copyFrom(route.start);
   person.mode = "idle"; person.path = []; person.pi = 0; person.dwellT = 0;
   startAutoWork();
+  if (typeof resetArmSweepBaseline === "function") resetArmSweepBaseline();
+  /* 첫 렌더를 기다리지 않고 안전한 원거리 관측 상태에서 한 제어 틱을 실행한다.
+     에셋 로딩이나 백그라운드 탭 때문에 RAF가 늦어져도 버튼 반응은 즉시 보여야 한다. */
+  stepUpdate(16);
+  if (JOINTS.some((joint, index) =>
+      Math.abs(joint.value-LSTM_YIELD_DEMO.saved.startJoints[index]) > 1e-4))
+    LSTM_YIELD_DEMO.robotFirstMotionMs = performance.now()-now;
+  LSTM_YIELD_DEMO.lastJointSample = JOINTS.map(j => j.value);
   setStatus("로봇 선행 작업 — 사람은 0.4초 뒤 출발");
   return true;
 }
-function lstmYieldDemoUpdate(now) {
+function lstmYieldDemoUpdate(now, dtMs) {
   const D = LSTM_YIELD_DEMO;
   if (!D.active) return;
+  const joints = JOINTS.map(j => j.value);
+  const jointMotion = D.lastJointSample
+    ? Math.max(...joints.map((value, index) => Math.abs(value-D.lastJointSample[index]))) : 0;
+  if (D.robotFirstMotionMs === null && D.saved
+      && joints.some((value, index) => Math.abs(value-D.saved.startJoints[index]) > 1e-4))
+    D.robotFirstMotionMs = now-D.startedAt;
+  D.lastJointSample = joints;
   if (PHYS.estop || (person.armStruckT || 0) > 0) D.contact = true;
   if (D.contact) {
     state.auto = false; person.mode = "idle"; person.path = [];
@@ -11443,6 +11604,7 @@ function lstmYieldDemoUpdate(now) {
   }
   if (D.phase === "robot-lead" && now >= LSTM_YIELD_DEMO.startedAt + 400) {
     D.personStartedAt = now;
+    D.personStartMs = now-D.startedAt;
     personGo([D.route.gate.clone()], { speed:0.55 });
     D.phase = "observing";
     setStatus("LSTM 관측 1/8 — 로봇 작업과 동시에 보행");
@@ -11454,11 +11616,20 @@ function lstmYieldDemoUpdate(now) {
       setStatus("LSTM 관측 " + count + "/8 — 고정 동선 접근");
     }
     const record = MPRED.pred.get("gt:0");
-    if (D.observationCount >= 8 && SafetyMotion.predictionFresh(record, now, 1000)) {
+    if (D.observationCount >= 8 && SafetyMotion.predictionFresh(record, now, 1000)
+        && record.requestAt >= D.personStartedAt + 7 * 400) {
+      const crossingPath = demoSafeCrossingPath(
+        person.node.position.clone(), SAFE.NOM_STOP+0.04, -1.50);
+      if (!crossingPath) {
+        state.auto = false; person.mode = "idle"; person.path = [];
+        finishLstmYieldDemo("failed", "LSTM 시연 경로 실패 — 안전반경 밖 우회로가 없습니다", false);
+        return;
+      }
+      D.route.crossingPath = crossingPath; D.route.exit = crossingPath[crossingPath.length-1];
       AVOID.predictionSource = "lstm";
       D.predictionUsed = true; D.phase = "crossing";
-      personGo([D.route.cross.clone(), D.route.exit.clone()], { speed:0.62 });
-      setStatus("LSTM 예측 활성 — 고정 동선이 로봇 작업영역을 교차합니다");
+      personGo(crossingPath.map(point => point.clone()), { speed:0.62 });
+      setStatus("LSTM 예측 활성 — 능동 회피 중 고정 동선이 안전거리 밖을 통과합니다");
     } else if (now - D.personStartedAt > 6500) {
       state.auto = false; person.mode = "idle"; person.path = [];
       finishLstmYieldDemo("failed", "LSTM 예측 실패 — 위험영역 밖에서 시연 중단", false);
@@ -11466,18 +11637,46 @@ function lstmYieldDemoUpdate(now) {
     }
   }
   if (D.phase === "crossing") {
+    const crossingRecord = MPRED.pred.get("gt:0");
+    if (!SafetyMotion.predictionFresh(crossingRecord, now, 1000)) {
+      state.auto = false; person.mode = "idle"; person.path = [];
+      finishLstmYieldDemo("failed", "LSTM 예측 중단 — 위험영역 밖에서 시연 중단", false);
+      return;
+    }
     if ((AVOID.mode === "RETRACT" || AVOID.mode === "SAFE_LIFT")
         && !D.maneuvers.includes(AVOID.mode)) D.maneuvers.push(AVOID.mode);
+    if (AVOID.mode === "RETRACT" || AVOID.mode === "SAFE_LIFT") D.hadActiveManeuver = true;
+    if (D.hadActiveManeuver && AVOID.mode === "PROCEED" && D.resumeDelayMs === null
+        && AVOID.clearSince.PROCEED !== null)
+      D.resumeDelayMs = now-AVOID.clearSince.PROCEED;
     if (person.mode === "idle" || V3.Distance(person.node.position, D.route.exit) < 0.10) {
       D.phase = "clearing";
       setStatus("경로 해제 — 0.3초 확인 후 로봇 작업 복귀");
     }
   }
+  const step = SEQ[state.seqIdx];
+  const monitorStationary = (D.phase === "crossing" || D.phase === "clearing")
+    && state.auto && step && step.k !== "wait" && !PHYS.estop
+    && (AVOID.mode === "HOLD" || AVOID.mode === "STOP");
+  if (monitorStationary && jointMotion < 1e-5) {
+    if (D.stationarySince === null) D.stationarySince = now;
+    D.stationaryAccumMs += Math.max(0, Number.isFinite(dtMs) ? dtMs : 0);
+    if (D.stationaryAccumMs > D.maxAvoidStationaryMs) {
+      D.maxAvoidStationaryMs = D.stationaryAccumMs;
+      D.stationarySnapshot = { phase:D.phase, mode:AVOID.mode, reason:AVOID.reason,
+        safeStopped:SAFE.stopped, dist:SAFE.dist, stopR:SAFE.stopR,
+        seqIdx:state.seqIdx, seqT:state.seqT, basketHeld:state.basketHeld };
+    }
+  } else { D.stationarySince = null; D.stationaryAccumMs = 0; }
   if (D.phase === "clearing" && !state.auto && !state.basketHeld) {
     const home = JOINTS.every(j => Math.abs(j.value-j.home) < 0.03);
-    finishLstmYieldDemo(home ? "complete" : "failed",
-      home ? "시연 완료 — 충돌 없이 바스켓 카트 거치·홈 복귀"
-           : "시연 실패 — 작업 종료 자세 불일치", false);
+    D.homeReached = home;
+    D.basketDelivered = !!(basketNode && !basketNode.parent && basketNode.__home
+      && V3.Distance(basketNode.position, basketNode.__home) < 0.08);
+    const complete = home && D.basketDelivered;
+    finishLstmYieldDemo(complete ? "complete" : "failed",
+      complete ? "시연 완료 — 충돌 없이 바스켓 카트 거치·홈 복귀"
+               : "시연 실패 — 바스켓 거치 또는 작업 종료 자세 불일치", false);
   }
 }
 
@@ -11487,10 +11686,11 @@ $("autoBtn").addEventListener("click", () => {
 });
 $("lstmYieldBtn").addEventListener("click", startLstmYieldDemo);
 $("stopBtn").addEventListener("click", () => {
-  if (LSTM_YIELD_DEMO.active) finishLstmYieldDemo("cancelled", null, false);
+  if (LSTM_YIELD_DEMO.active) finishLstmYieldDemo("cancelled", null, true);
   state.auto = false; setStatus("정지");
 });
 $("homeBtn").addEventListener("click", () => {
+  if (LSTM_YIELD_DEMO.active) finishLstmYieldDemo("cancelled", null, true);
   state.auto = false;
   JOINTS.forEach(j => { j.value = j.home; applyJoint(j); });
   refreshChain(); syncJointUI(); setStatus("홈 자세");
@@ -12703,7 +12903,7 @@ scene.registerBeforeRender(() => {
   armContactUpdate(dt);        // 팔↔사람 접촉 — 링 판정과 달리 '팔이 향한 방향'을 본다
   accUpdate(dt);
   safetyUpdate();
-  lstmYieldDemoUpdate(now);
+  lstmYieldDemoUpdate(now, dt);
   robotArrowsUpdate();       // 로봇 후보 기동 화살표(선택된 기동 강조)
   sensorTick(now);
   robotGuardTick();          // 설비 관통 방지 — 겹치면 직전 안전 포즈로 되돌림
@@ -14206,7 +14406,11 @@ function armClearance(px, pz) {
   return best - ARM_R - PERSON_R;
 }
 /* 주인공과 추가 인원을 판정 수학에서는 구분하지 않는다. 충돌 뒤 애니메이션만 위임한다. */
-const ARM_SWEEP = { previous:null };
+const ARM_SWEEP = { previous:null, people:new Map() };
+function resetArmSweepBaseline() {
+  ARM_SWEEP.previous = JOINTS.length ? armLinksSnapshot() : null;
+  ARM_SWEEP.people = new Map(safetyPeople().map(target => [target.id, { ...target.center }]));
+}
 function safetyPeople() {
   const out = [{
     id:"main", kind:"main", node:person.node, source:person,
@@ -14235,9 +14439,9 @@ function armContactUpdate(dt) {
   if (!JOINTS.length) return;
   const current = armLinksSnapshot();
   const previous = ARM_SWEEP.previous || current;
-  const moving = armSweepTravel(previous, current) > 1e-4;
+  const targets = safetyPeople();
 
-  for (const target of safetyPeople()) {
+  for (const target of targets) {
     const P = target.source, p = target.node.position;
     if (target.kind === "extra" && P.struckT > 0) {
       P.struckT -= dt;
@@ -14254,10 +14458,21 @@ function armContactUpdate(dt) {
     }
 
     let contact = false, clr = Infinity;
+    const oldCenter = ARM_SWEEP.people.get(target.id) || target.center;
+    const personDelta = {
+      x:target.center.x-oldCenter.x, y:target.center.y-oldCenter.y, z:target.center.z-oldCenter.z,
+    };
     for (let i = 0; i < current.length; i++) {
       const segment = current[i];
+      const oldSegment = previous[i] || segment;
+      const relativePrevious = {
+        a:{ x:oldSegment.a.x+personDelta.x, y:oldSegment.a.y+personDelta.y,
+          z:oldSegment.a.z+personDelta.z },
+        b:{ x:oldSegment.b.x+personDelta.x, y:oldSegment.b.y+personDelta.y,
+          z:oldSegment.b.z+personDelta.z },
+      };
       const result = SafetyMotion.sweptSegmentCapsuleContact({
-        previous:previous[i] || segment, current:segment,
+        previous:relativePrevious, current:segment,
         linkRadius:segment.radius ?? ARM_R,
         capsule:{ center:target.center, radius:target.radius, halfHeight:target.halfHeight },
         maxStep:SCALE.au(0.04),
@@ -14266,7 +14481,7 @@ function armContactUpdate(dt) {
       if (result.hit) contact = true;
     }
     P.armClearance = clr;
-    if (!moving || !contact) continue;
+    if (!contact) continue;
 
     let best = Infinity, bp = null;
     for (const segment of current) {
@@ -14312,6 +14527,7 @@ function armContactUpdate(dt) {
     break;                                            // E-STOP과 반응은 프레임당 한 번만
   }
   ARM_SWEEP.previous = current;
+  ARM_SWEEP.people = new Map(targets.map(target => [target.id, { ...target.center }]));
 }
 /* ══ 사고 데모 — 충돌(밀림) / 끼임 ══════════════════════════════════════════
    둘의 차이는 **밀려날 자리가 있느냐**뿐이다. 그래서 자리를 골라 세우는 것으로 갈린다:
