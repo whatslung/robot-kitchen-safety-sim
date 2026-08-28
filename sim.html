@@ -217,12 +217,14 @@
   .snode .eye.off{opacity:0.3}
   .snode.child{padding-left:26px;color:#aab2ba}
   .snode .objname{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .snode .physbadge{flex:0 0 auto;margin-left:auto;min-width:22px;padding:1px 4px;border-radius:4px;
-    border:1px solid #3a4450;color:#7d8590;text-align:center;
-    font:8.5px/1.35 ui-monospace,SFMono-Regular,monospace;white-space:nowrap}
+  .snode .physbadge{flex:0 0 auto;margin-left:auto;min-width:48px;padding:2px 6px;border-radius:5px;
+    border:1px solid #3a4450;color:#7d8590;text-align:center;cursor:pointer;
+    font:600 9px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;white-space:nowrap}
   .snode .physbadge.dynamic{border-color:#388bfd;color:#79c0ff;background:rgba(31,111,235,.12)}
   .snode .physbadge.off{border-color:#6e7681;color:#9da7b0;background:transparent}
   .snode .physbadge.dragging{border-color:#d29922;color:#e3b341;background:rgba(210,153,34,.13)}
+  .snode .physbadge:not(:disabled):hover{border-color:#79c0ff;background:rgba(31,111,235,.22)}
+  .snode .physbadge:disabled{cursor:default;opacity:.72}
   /* 카메라 줄은 이름이 길어져도 **절대 두 줄이 되지 않게** 한다.
      이름을 짧게 지어도 다음 사람이 길게 바꾸면 또 밀리므로, 넘치면 …으로 자르고
      전체 이름은 title(마우스 올리면 뜸)과 카메라 드롭다운에서 본다.
@@ -9859,17 +9861,23 @@ function sceneEditorStageRefresh() {
     const name = document.createElement("span");
     name.className = "objname"; name.textContent = e.label; name.title = e.label;
     row.appendChild(name);
-    const badge = document.createElement("span");
-    badge.className = "physbadge";
     if (e.dynamic) {
+      const badge = document.createElement("button");
+      badge.type = "button"; badge.className = "physbadge";
       badge.classList.add(e.dynamic.sceneEditing ? "dragging" : e.dynamic.gravityEnabled ? "dynamic" : "off");
-      badge.textContent = e.dynamic.sceneEditing ? "DⅡ" : e.dynamic.gravityEnabled ? "D↓" : "D–";
+      badge.textContent = e.dynamic.sceneEditing ? "배치 중" : e.dynamic.gravityEnabled ? "중력 켬" : "중력 끔";
       badge.title = e.dynamic.sceneEditing ? "동적 바디 · 기즈모 배치 중" :
-                    "동적 바디 · 중력 " + (e.dynamic.gravityEnabled ? "ON" : "OFF");
-    } else {
-      badge.textContent = "S"; badge.title = "고정 설비";
+                    "클릭하여 이 오브젝트의 중력을 " + (e.dynamic.gravityEnabled ? "끕니다" : "켭니다");
+      badge.disabled = !SCENE_EDITOR.enabled || e.dynamic.sceneEditing;
+      badge.addEventListener("click", ev => {
+        ev.stopPropagation();
+        const current = sceneEditorCollect().find(x => x.id === e.id);
+        if (!SCENE_EDITOR.enabled || !current || !current.dynamic) return;
+        sceneEditorSelect(current);
+        sceneEditorSetGravity(current, !current.dynamic.gravityEnabled);
+      });
+      row.appendChild(badge);
     }
-    row.appendChild(badge);
     row.addEventListener("click", () => { if (SCENE_EDITOR.enabled) sceneEditorSelect(sceneEditorCollect().find(x => x.id === e.id)); });
     box.appendChild(row);
   }
@@ -13450,7 +13458,7 @@ function logConsole(msg) {
   envHead.style.marginTop = "6px"; tree.appendChild(envHead);
   const envHint = document.createElement("div");
   envHint.className = "streehint";
-  envHint.innerHTML = "설비 선택 · <b>S</b> 고정 · <b>D↓</b> 동적/중력 · 물리는 Inspector에서 변경";
+  envHint.textContent = "고정 설비는 표시 없음 · 동적 오브젝트는 오른쪽에서 중력 켬/끔";
   tree.appendChild(envHint);
   const envRows = document.createElement("div");
   envRows.id = "editorEnvRows"; tree.appendChild(envRows);
