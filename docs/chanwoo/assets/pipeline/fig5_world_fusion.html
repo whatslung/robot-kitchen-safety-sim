@@ -1,0 +1,128 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>World fusion</title>
+<style>
+ :root{--ink:#0b0b0b;--ink2:#52514e;--muted:#898781;--grid:#e1e0d9;--axis:#c3c2b7;
+   --blue:#2a78d6;--orange:#eb6834;--aqua:#1baf7a;--font:system-ui,-apple-system,"Segoe UI",sans-serif}
+ *{box-sizing:border-box} body{margin:0;background:#dfe1e4;font-family:var(--font);color:var(--ink)}
+ #fig5{width:1560px;background:#fff;margin:32px auto;padding:34px 40px 30px}
+ .figtitle{font-size:26px;font-weight:750;letter-spacing:-.01em;margin:0 0 4px}
+ .figsub{font-size:16px;color:var(--ink2);margin:0 0 26px;font-weight:450}
+ .row{display:flex;align-items:center;gap:0}
+ .stagelab{font-size:14px;font-weight:700;margin:0 0 10px;color:var(--ink)}
+ .col{display:flex;flex-direction:column}
+ .cams{flex:0 0 250px;display:flex;flex-direction:column;gap:12px}
+ .cam{position:relative}
+ .camlab{position:absolute;top:6px;left:8px;font-size:12px;font-weight:700;color:#fff;
+   background:rgba(11,11,11,.55);padding:1px 6px;border-radius:4px}
+ .arrowcol{flex:0 0 150px;display:flex;flex-direction:column;align-items:center;justify-content:center}
+ .alab{font-size:13px;color:var(--ink2);font-weight:600;text-align:center;line-height:1.3;margin-bottom:8px}
+ .alab code{font-family:var(--font);font-weight:700}
+ .bigarrow{width:120px;height:2px;background:var(--axis);position:relative}
+ .bigarrow::after{content:"";position:absolute;right:-1px;top:-5px;border-left:11px solid var(--axis);
+   border-top:6px solid transparent;border-bottom:6px solid transparent}
+ .panel{flex:0 0 auto}
+ .pcap{font-size:12.5px;color:var(--muted);margin-top:8px;text-align:center}
+ .figcap{font-size:14px;color:var(--ink2);line-height:1.55;margin:24px 2px 0;max-width:1420px}
+ .figcap b{color:var(--ink);font-weight:650}
+ svg{display:block}
+</style></head><body>
+<section id="fig5">
+ <h2 class="figtitle">Multi-camera world fusion</h2>
+ <p class="figsub">How the same person, seen by several cameras from different angles, becomes one track: map every view onto a shared floor, then merge by position.</p>
+
+ <div class="row">
+
+  <!-- A: three camera views -->
+  <div class="col cams">
+   <div class="stagelab">Each camera detects (pixels)</div>
+   <div class="cam">
+     <span class="camlab" style="background:#2a78d6cc">cam 1</span>
+     <svg width="250" height="120" viewBox="0 0 250 120">
+       <rect x="0" y="0" width="250" height="120" rx="6" fill="#f4f4f2" stroke="#e1e0d9"/>
+       <g stroke="#e9e8e2"><line x1="83" y1="0" x2="83" y2="120"/><line x1="166" y1="0" x2="166" y2="120"/><line x1="0" y1="60" x2="250" y2="60"/></g>
+       <circle cx="70" cy="44" r="9" fill="#2a78d6"/><circle cx="70" cy="44" r="9" fill="none" stroke="#fff" stroke-width="2"/>
+     </svg>
+   </div>
+   <div class="cam">
+     <span class="camlab" style="background:#eb6834cc">cam 2</span>
+     <svg width="250" height="120" viewBox="0 0 250 120">
+       <rect x="0" y="0" width="250" height="120" rx="6" fill="#f4f4f2" stroke="#e1e0d9"/>
+       <g stroke="#e9e8e2"><line x1="83" y1="0" x2="83" y2="120"/><line x1="166" y1="0" x2="166" y2="120"/><line x1="0" y1="60" x2="250" y2="60"/></g>
+       <circle cx="188" cy="78" r="9" fill="#eb6834"/><circle cx="188" cy="78" r="9" fill="none" stroke="#fff" stroke-width="2"/>
+     </svg>
+   </div>
+   <div class="cam">
+     <span class="camlab" style="background:#1baf7acc">cam 3</span>
+     <svg width="250" height="120" viewBox="0 0 250 120">
+       <rect x="0" y="0" width="250" height="120" rx="6" fill="#f4f4f2" stroke="#e1e0d9"/>
+       <g stroke="#e9e8e2"><line x1="83" y1="0" x2="83" y2="120"/><line x1="166" y1="0" x2="166" y2="120"/><line x1="0" y1="60" x2="250" y2="60"/></g>
+       <circle cx="120" cy="30" r="9" fill="#1baf7a"/><circle cx="120" cy="30" r="9" fill="none" stroke="#fff" stroke-width="2"/>
+     </svg>
+   </div>
+   <div class="pcap">same person &middot; different pixel in each view</div>
+  </div>
+
+  <!-- arrow: affine -->
+  <div class="arrowcol">
+   <div class="alab">affine calibration<br><code>[x&nbsp;y&nbsp;1]&middot;M<sub>i</sub></code><br>image &rarr; floor</div>
+   <div class="bigarrow"></div>
+   <div class="pcap" style="margin-top:10px">5&nbsp;cm residual</div>
+  </div>
+
+  <!-- B: shared floor, converge + merge -->
+  <div class="col panel">
+   <div class="stagelab">Shared floor map (BEV)</div>
+   <svg width="360" height="360" viewBox="0 0 360 360">
+     <rect x="6" y="6" width="348" height="348" rx="6" fill="#fbfbfa" stroke="#e1e0d9"/>
+     <g stroke="#eeede7"><line x1="122" y1="6" x2="122" y2="354"/><line x1="238" y1="6" x2="238" y2="354"/><line x1="6" y1="122" x2="354" y2="122"/><line x1="6" y1="238" x2="354" y2="238"/></g>
+     <!-- three detections landing close together -->
+     <circle cx="172" cy="180" r="8" fill="#2a78d6" opacity="0.85"/>
+     <circle cx="190" cy="172" r="8" fill="#eb6834" opacity="0.85"/>
+     <circle cx="182" cy="194" r="8" fill="#1baf7a" opacity="0.85"/>
+     <!-- merge radius -->
+     <circle cx="181" cy="182" r="34" fill="none" stroke="#0b0b0b" stroke-width="1.5" stroke-dasharray="4 4"/>
+     <text x="181" y="140" text-anchor="middle" font-size="13" fill="#52514e" font-family="system-ui">merge if &le; 0.4 m</text>
+   </svg>
+   <div class="pcap">three detections &rarr; same floor spot</div>
+  </div>
+
+  <!-- arrow: tracker -->
+  <div class="arrowcol">
+   <div class="alab">world tracker<br>Kalman + nearest<br>+ coast</div>
+   <div class="bigarrow"></div>
+  </div>
+
+  <!-- C: one track -->
+  <div class="col panel">
+   <div class="stagelab">One world track</div>
+   <svg width="360" height="360" viewBox="0 0 360 360">
+     <rect x="6" y="6" width="348" height="348" rx="6" fill="#fbfbfa" stroke="#e1e0d9"/>
+     <g stroke="#eeede7"><line x1="122" y1="6" x2="122" y2="354"/><line x1="238" y1="6" x2="238" y2="354"/><line x1="6" y1="122" x2="354" y2="122"/><line x1="6" y1="238" x2="354" y2="238"/></g>
+     <!-- smoothed trail -->
+     <polyline points="96,272 126,248 158,224 190,204 222,190" fill="none" stroke="#0b0b0b" stroke-width="2.5" stroke-linecap="round" opacity="0.35"/>
+     <circle cx="96" cy="272" r="4" fill="#0b0b0b" opacity="0.3"/>
+     <circle cx="126" cy="248" r="4" fill="#0b0b0b" opacity="0.4"/>
+     <circle cx="158" cy="224" r="4" fill="#0b0b0b" opacity="0.55"/>
+     <circle cx="190" cy="204" r="4.5" fill="#0b0b0b" opacity="0.75"/>
+     <!-- current merged person -->
+     <circle cx="222" cy="190" r="9" fill="#0b0b0b"/>
+     <!-- velocity arrow -->
+     <line x1="222" y1="190" x2="280" y2="150" stroke="#2a78d6" stroke-width="3.5"/>
+     <polygon points="280,150 268,152 276,162" fill="#2a78d6"/>
+     <text x="288" y="150" font-size="13" font-weight="700" fill="#2a78d6" font-family="system-ui">v</text>
+     <text x="222" y="214" text-anchor="middle" font-size="13" font-weight="700" fill="#0b0b0b" font-family="system-ui">one person</text>
+   </svg>
+   <div class="pcap">continuous (x,&nbsp;v) &rarr; feeds prediction</div>
+  </div>
+
+ </div>
+
+ <p class="figcap"><b>Principle: same floor position = same person.</b> A nadir (straight-down) camera makes the image
+ &asymp; the floor plane, so a one-time <b>affine</b> fit turns each detection's pixel into a floor coordinate
+ (X,&nbsp;Z), calibrated to a <b>5&nbsp;cm</b> residual. Every camera then speaks one coordinate system, so the same
+ person from different views lands on the <b>same spot</b> and is merged (within 0.4&nbsp;m). A single world-space
+ tracker (Kalman + nearest-neighbour matching + short coast for briefly-missed frames) links these into one
+ continuous track with velocity &mdash; filling gaps and smoothing position. Measured effect: coverage recall
+ <b>0.924&nbsp;&rarr;&nbsp;0.940</b> (nadir-zone-fusion &sect;5-9).</p>
+</section>
+<script>if(location.hash==='#2x'){document.documentElement.style.zoom='2';}</script>
+</body></html>

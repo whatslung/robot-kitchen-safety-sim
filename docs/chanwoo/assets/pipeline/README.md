@@ -10,6 +10,7 @@
 | `fig2_why_6_cameras@2x.png` | 안전링 커버리지 4대 vs 6대 (24 seed) | "카메라 왜 6대?" |
 | `fig3_why_learned_prediction@2x.png` | 위험진입 recall — CV/Kalman vs LSTM/Transformer | "직선 예측이면 안 되나?" |
 | `fig4_dataset_sample@2x.png` | 궤적 학습 데이터 샘플 (전체 씬 + obs8→pred12 윈도우) | "무슨 데이터로 학습했나" |
+| `fig5_world_fusion@2x.png` | 멀티카메라 월드 융합 원리 (아핀 → 바닥좌표 → 병합 → 트랙) | "여러 카메라가 본 사람을 어떻게 합치나" |
 
 ## 재현
 
@@ -25,6 +26,7 @@ python make_dataset_figure.py
 - 차트 색은 색맹 안전 검증(파랑↔주황 ΔE 24.7) 통과 팔레트.
 - fig4 좌표·수치 출처: `dataset/trajectories/island_h58_seed10_0009.json` (val split),
   학습 윈도우 수(32,488 / 8,646)는 `dataset/trajectories/README.md`.
-- 근거 수치 출처: `docs/chanwoo/nadir-zone-fusion.md` §5-14(커버리지), §5-15(예측기 비교).
+- 근거 수치 출처: `docs/chanwoo/nadir-zone-fusion.md` §5-14(커버리지), §5-15(예측기 비교), §5-9(월드 융합).
+- fig5는 순수 SVG(외부 이미지 없음): `fig5_world_fusion.html` → `#2x`로 열어 device 스케일 스크린샷.
 
 소스 이미지(재현용): `1_input_multicamera.png` … `5_safety_rings.jpg` — 각 단계 박스에 들어간 실제 sim 캡처.
