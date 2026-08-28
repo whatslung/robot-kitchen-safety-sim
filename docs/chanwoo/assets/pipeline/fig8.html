@@ -12,7 +12,7 @@
    padding:5px 12px;border-radius:6px;margin-bottom:10px}
  .bad{background:#fdecec;color:#b5322f} .good{background:#e7f6ee;color:#12764f}
  .dot{width:10px;height:10px;border-radius:50%;display:inline-block}
- .well{width:100%;aspect-ratio:1379/911;border-radius:10px;overflow:hidden;border:1px solid rgba(11,11,11,.12)}
+ .well{width:100%;aspect-ratio:1379/965;border-radius:10px;overflow:hidden;border:1px solid rgba(11,11,11,.12)}
  .well img{width:100%;height:100%;object-fit:cover;display:block}
  .cname{font-size:17px;font-weight:700;margin:0 0 3px}
  .cdesc{font-size:13.5px;color:var(--ink2);margin:0 0 12px;line-height:1.45;min-height:38px}
@@ -23,23 +23,23 @@
 </style></head><body>
 <section id="fig8">
  <h2 class="figtitle">The payoff: prediction turns a collision into a head start</h2>
- <p class="figsub">Same scene, same worker path, same robot &mdash; the only difference is whether the predictor is on.</p>
+ <p class="figsub">Overhead view, same scene and worker path &mdash; the only difference is whether the predictor is on. Rings: red&nbsp;=&nbsp;stop, orange&nbsp;=&nbsp;slow.</p>
  <div class="cols">
 
   <div class="col">
    <span class="badge bad"><span class="dot" style="background:var(--red)"></span>WITHOUT prediction</span>
    <div class="cname">Arm sweeps into the worker</div>
-   <div class="cdesc">The robot never anticipates the approach; it keeps working and the arm makes contact &mdash; an emergency stop fires only <i>after</i> the hit.</div>
-   <div class="well"><img src="src_collision.png" alt="collision"></div>
-   <div class="stat">outcome: <b style="color:var(--red)">E-STOP on contact (wrist)</b> &middot; person&ndash;robot <b>1.48 m</b> (inside stop ring)</div>
+   <div class="cdesc">The robot never anticipates the approach; it keeps working and the arm reaches the worker deep inside the stop ring &mdash; contact.</div>
+   <div class="well"><img src="src_top_collision.png" alt="collision"></div>
+   <div class="stat">outcome: <b style="color:var(--red)">contact &mdash; the arm pushes the worker</b> &middot; no early reaction</div>
   </div>
 
   <div class="col">
    <span class="badge good"><span class="dot" style="background:var(--green)"></span>WITH prediction</span>
-   <div class="cname">Robot slows 1.6&nbsp;s early, worker safe</div>
-   <div class="cdesc">The predicted path (red dashes) is seen entering the stop ring 1.6&nbsp;s ahead, so the robot pre-emptively slows and backs off before contact.</div>
-   <div class="well"><img src="src_avoid.png" alt="avoidance"></div>
-   <div class="stat">outcome: <b style="color:var(--green)">pre-emptive slow, no contact</b> &middot; keeps <b>3.90 m</b> separation</div>
+   <div class="cname">Predicted path flags the entry &mdash; safe stop</div>
+   <div class="cdesc">The predicted path (red dashes) is seen crossing into the stop ring ahead of time, so the robot pre-emptively stops before the worker arrives.</div>
+   <div class="well"><img src="src_top_avoid.png" alt="avoidance"></div>
+   <div class="stat">outcome: <b style="color:var(--green)">predictive safe-stop, no contact</b> &middot; decision distance <b>3.1 m</b></div>
   </div>
 
  </div>
