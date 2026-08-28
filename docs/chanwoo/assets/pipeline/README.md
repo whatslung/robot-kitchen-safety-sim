@@ -14,6 +14,7 @@
 | `fig6_fusion_ladder@2x.png` | 검출 융합 사다리 (단일 0.85 → 공간 0.89 → +시간축 0.95) | "정확도를 어떻게 끌어올렸나 / 왜 시간축" |
 | `fig7_ssm_safety@2x.png` | SSM 안전거리 예산 (정지/감속링 + 예측도달 5.7m 수식) | "왜 예측이 필요한가 / 안전거리 논지" |
 | `fig8_collision_vs_avoidance@2x.png` | 충돌 vs 회피 before/after (실제 sim 캡처) | "예측이 실제로 뭘 바꾸나" (하이라이트 컷) |
+| `fig9_recall_precision@2x.png` | recall·precision 트레이드 (CV→학습) | "recall 올린 대가(정밀도)는?" (fig3 방어) |
 
 ## 재현
 
