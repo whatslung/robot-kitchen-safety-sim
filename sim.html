@@ -11452,20 +11452,22 @@ function corrStart(mode) {
   person.freeze = false; person.stations = null; person.path = []; person.mode = "idle";
   CORR.on = true; CORR.mode = mode; CORR.hit = false;
   if (mode === "after") {
-    // 회피: 로봇이 사람을 본다 + WASD 직접 조종 + 예측 표시
+    // 회피: 로봇이 사람을 본다 + 사람이 **일정 동선으로 왕복**(학습된 궤적) → 로봇이 예측해 미리 감속/정지, 지나가면 재개.
+    // 예측 표시(화살표·경로선)로 로봇이 "예측 중"임을 보여준다. 이게 이 연구(궤적 예측)의 핵심 시연.
     SAFE.blind = false;
-    if (typeof setCtrlTarget === "function") setCtrlTarget("person");
+    if (typeof setCtrlTarget === "function") setCtrlTarget("camera");
     corrVizOn(true);
-    person.node.position.set(2.2, 0, 1.20); person.node.rotation.y = -Math.PI / 2;
-    setStatus("▶ 회피 — WASD로 조리원을 몰아 로봇에 다가가세요. 가까우면 감속→정지, 멀어지면 재개. (예측 표시 켜짐)  [demo-v10]");
+    person.node.position.set(2.4, 0, 1.20); person.node.rotation.y = -Math.PI / 2;
+    personGo([new V3(2.4, 0, 1.20), new V3(-0.5, 0, 1.20), new V3(2.4, 0, 1.20)], { loop:true, speed:1.2 });
+    setStatus("▶ 회피 — 조리원이 일정 동선으로 통로를 왕복. 로봇이 궤적을 예측해 미리 감속·정지 → 지나가면 재개.  [demo-v11]");
   } else {
-    // 충돌: 로봇이 사람을 못 봄(SAFE.blind) + 스크립트로 통로를 걸어들어감
+    // 충돌: 로봇이 사람을 못 봄(SAFE.blind) + 스크립트로 통로를 걸어들어감(빠르게 — 대기 짧게)
     SAFE.blind = true;
     if (typeof setCtrlTarget === "function") setCtrlTarget("camera");
     corrVizOn(false);
-    person.node.position.set(2.4, 0, 1.20); person.node.rotation.y = -Math.PI / 2;
-    personGo([new V3(2.4, 0, 1.20), new V3(-0.4, 0, 1.20)], { speed:0.85 });
-    setStatus("▶ 충돌 — 로봇이 사람을 못 본 채 작업합니다. 걸어오는 사람이 팔에 휩쓸립니다.  [demo-v10]");
+    person.node.position.set(1.9, 0, 1.20); person.node.rotation.y = -Math.PI / 2;
+    personGo([new V3(1.9, 0, 1.20), new V3(-0.4, 0, 1.20)], { speed:1.35 });
+    setStatus("▶ 충돌 — 로봇이 사람을 못 본 채 작업합니다. 걸어오는 사람이 팔에 휩쓸립니다.  [demo-v11]");
   }
 }
 function corrTick() {   // 충돌 접촉 감지 → 밀어내고 쓰러뜨림 (매 프레임 호출)
