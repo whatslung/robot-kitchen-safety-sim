@@ -6713,7 +6713,9 @@ function pmodeDraw(key, pts, hex, width) {
 const PVEL = new Map();          // node → {x,z,vx,vz}
 function peopleList() {
   const out = [person.node];
-  if (typeof EXTRAS !== "undefined") for (const P of EXTRAS) if (P && P.root) out.push(P.root);
+  // 숨겨진(setEnabled(false)) EXTRAS는 예측 대상에서 제외 — 몸 없는 유령 밀도구름·화살표 방지.
+  //   corrStart가 데모 정리로 EXTRAS를 숨기는데, 위치는 살아있어 MPRED가 gt:1,2를 그렸다.
+  if (typeof EXTRAS !== "undefined") for (const P of EXTRAS) if (P && P.root && P.root.isEnabled()) out.push(P.root);
   return out;
 }
 function pmodeArrowsFor(agent, idx, dt) {
@@ -11047,6 +11049,9 @@ function resetBasket() {
   basketNode.rotation.set(0, basketNode.__homeYaw || 0, 0);
 }
 $("resetBtn").addEventListener("click", () => {
+  // ② 사람 동선 감지 데모가 살아있으면 먼저 정리(안전반경·카메라·숨긴 EXTRAS/카트 복원).
+  //   없으면 정상 작업 리셋도 CORR 데모 잔여 상태(축소 반경·타이트 카메라·유령 예측) 위에 얹혀 이상해진다.
+  if (typeof CORR !== "undefined" && (CORR.on || CORR.saved)) corrReset(true);
   state.auto = false; state.cook = 0; state.burn = 0; state.inOil = false;
   JOINTS.forEach(j => { j.value = j.home; applyJoint(j); });
   refreshChain(); syncJointUI();
@@ -11508,25 +11513,29 @@ function corrStart(mode) {
   if (typeof buildPersonColliders === "function") buildPersonColliders();
   person.freeze = false; person.stations = null; person.path = []; person.mode = "idle";
   CORR.on = true; CORR.mode = mode; CORR.hit = false; CORR.t = 0; CORR.launched = false;
-  // 사람: **정면(+z)**에서 로봇 앞으로 → 지나쳐 퇴장(단일 통과). corrTick이 지연 후 진입(작업 중 동기화).
+  // 사람: **정면(+z)**에서 로봇 앞으로 접근 → 물러나 우측 앞으로 퇴장(가구에 안 막히는 경로).
+  //   ⚠️ B에서 접근→퇴장 방향이 바뀌므로 속도기반 예측선이 그 순간 잠깐 어긋난다(예측기 특성).
   CORR.A = new V3(0.5, 0, 3.0); CORR.B = new V3(0.0, 0, 1.35); CORR.EXIT = new V3(3.0, 0, 2.6);
   person.node.position.copyFrom(CORR.A); person.node.rotation.y = 0;
   // ★ 실제 조리 사이클(집기→담금→털기→놓기→홈)을 돌린다 — 자연스러운 작업 + 예측 UI.
   if (!state.auto) $("autoBtn").click();
   if (mode === "after") {
     SAFE.blind = false; corrVizOn(true);
-    setStatus("▶ 회피 — 로봇이 바스켓 작업 중 사람 정면 접근 → 예측 → 정지 대신 능동 후퇴 → 지나가면 작업 재개.  [demo-v25]");
+    setStatus("▶ 회피 — 로봇이 바스켓 작업 중 사람 정면 접근 → 예측 → 정지 대신 능동 후퇴 → 지나가면 작업 재개.  [demo-v27]");
   } else {
     SAFE.blind = true; corrVizOn(false);
-    setStatus("▶ 충돌 — 로봇이 못 본 채 바스켓 작업. 정면 접근 사람이 팔에 휩쓸림.  [demo-v25]");
+    setStatus("▶ 충돌 — 로봇이 못 본 채 바스켓 작업. 정면 접근 사람이 팔에 휩쓸림.  [demo-v27]");
   }
 }
 function corrTick(dt) {   // 매 프레임 호출 — 조리 사이클(stepUpdate) 위에 회피 후퇴(after)/충돌(before) 오버레이
   if (!CORR.on) return;
   CORR.t += (dt || 16);
   const b = LAYOUT.robot.base, p = person.node.position;
-  // 사람 지연 진입(동기화) — 로봇이 바스켓 작업을 먼저 보여준 뒤 ~1.4s 후 사람이 정면에서 들어온다.
-  if (!CORR.launched && CORR.t > 1400) {
+  // 사람 지연 진입(동기화) — 로봇이 **바스켓을 실제로 잡은 뒤** 사람이 정면에서 들어온다.
+  //   종전 1.4s 고정 진입은 파지 전에 진입해서, 회피 후퇴가 파지 직전 스텝을 계속 되감아
+  //   ~11초간 팔만 오락가락하고 바스켓은 카트에 남아 있었다("싱크 안맞음" 착시).
+  //   basketHeld=true를 기다리되, 만약 파지가 6초 내 안 오면 폴백 진입.
+  if (!CORR.launched && CORR.t > 1400 && (state.basketHeld || CORR.t > 6000)) {
     CORR.launched = true;
     person.freeze = false; person.mode = "idle"; person.path = [];
     personGo(CORR.mode === "after" ? [CORR.A, CORR.B, CORR.EXIT] : [CORR.A, CORR.B],
@@ -11554,7 +11563,7 @@ function corrTick(dt) {   // 매 프레임 호출 — 조리 사이클(stepUpdat
     if (typeof personFall === "function") personFall();
     if (typeof triggerEstop === "function") triggerEstop("팔↔사람 접촉");
     state.auto = false;   // 접촉 후 조리 정지
-    setStatus("⛔ 충돌 — 로봇이 못 보고 팔이 사람을 쳤다  [demo-v25]");
+    setStatus("⛔ 충돌 — 로봇이 못 보고 팔이 사람을 쳤다  [demo-v27]");
   }
 }
 $("corrBefore").addEventListener("click", () => corrStart("before"));
