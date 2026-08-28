@@ -72,8 +72,6 @@ test('fixed-route LSTM demo moves first, actively yields, and finishes safely', 
     lstmYieldDemoUpdate(performance.now(), 16);
   });
 
-  await page.waitForTimeout(450);
-  await page.evaluate(() => lstmYieldDemoUpdate(performance.now(), 16));
   await page.waitForFunction(() => window.__sim.LSTM_YIELD_DEMO.personStartMs !== null
       || window.__sim.LSTM_YIELD_DEMO.phase === 'failed',
     null, { timeout: 5000 });
@@ -102,8 +100,8 @@ test('fixed-route LSTM demo moves first, actively yields, and finishes safely', 
   expect(lead.active, JSON.stringify(lead)).toBe(true);
   expect(lead.robotMotionDelta).toBeGreaterThan(1e-4);
   expect(lead.robotFirstMotionMs).toBeLessThanOrEqual(200);
-  expect(lead.scheduledPersonDelayMs).toBe(400);
-  expect(lead.personStartMs).toBeGreaterThanOrEqual(390);
+  expect(lead.scheduledPersonDelayMs).toBe(0);
+  expect(lead.personStartMs).toBeLessThanOrEqual(100);
 
   await page.evaluate(() => {
     AVOID.samples = 4;
@@ -169,6 +167,10 @@ test('fixed-route LSTM demo moves first, actively yields, and finishes safely', 
       finalDistance: Math.hypot(person.node.position.x-LAYOUT.robot.base.x,
         person.node.position.z-LAYOUT.robot.base.z),
       nominalSlowRadius: SAFE.NOM_SLOW,
+      route: demo.route ? {
+        start:[demo.route.start.x, demo.route.start.z], gate:[demo.route.gate.x, demo.route.gate.z],
+        path:demo.route.directionalPath && demo.route.directionalPath.map(point => [point.x, point.z]),
+      } : null,
       contact: demo.contact,
       basketDelivered: demo.basketDelivered,
       homeReached: demo.homeReached,

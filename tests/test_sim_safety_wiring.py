@@ -104,11 +104,12 @@ def test_lstm_yield_demo_starts_robot_before_the_person_and_restores_route_block
     assert "startAutoWork();" in text
     assert "stepUpdate(16);" in text
     assert "personStartDueAt:0" in text
-    assert "LSTM_YIELD_DEMO.startedAt + 400" in text
+    assert "personStartDueAt:now" in text
+    assert "LSTM_YIELD_DEMO.startedAt + 0" in text
     assert "observationCount >= 8" in text
     assert "function lstmYieldDemoRoute" in text
     assert "function disableBlockingDemoProps" in text
-    assert '"env_rack.glb", "env_pancart.glb", "env_basketcart.glb"' in text
+    assert 'const removableFiles = new Set(["env_pancart.glb"])' in text
     assert "const body = PUSH.bodies.find(item => item.idx === index)" in text
     assert "idx:it.idx" in text
     assert "linearVelocity:body.ag.body.getLinearVelocity().clone()" in text
@@ -146,10 +147,12 @@ def test_lstm_yield_demo_starts_robot_before_the_person_and_restores_route_block
     assert "for (const target of safetyPeople())" in text
     assert "learned.concat(currentSafetyPeopleOccupancy(times))" in text
     assert "SAFE.NOM_SLOW+0.25" in text
-    assert "SAFE.NOM_STOP-0.45" in text
+    assert "SAFE.NOM_STOP-0.25" in text
     assert "enteredStopRadius:false" in text
     assert "escapeMotionInsideStop:false" in text
     assert "D.minDistance = Math.min(D.minDistance, SAFE.dist)" in text
+    assert "const personOutsideSlowRadius = SAFE.dist >= SAFE.slowR" in text
+    assert "&& personOutsideSlowRadius" in text
 
 
 def test_directional_collision_and_avoidance_controls_share_the_same_a_to_b_route():
@@ -158,11 +161,48 @@ def test_directional_collision_and_avoidance_controls_share_the_same_a_to_b_rout
     assert 'id="avoidanceScenarioBtn"' in text
     assert "function directionalScenarioRoute" in text
     assert 'startDirectionalScenario("collision")' in text
-    assert 'startDirectionalScenario("avoidance")' in text
     assert "const route = directionalScenarioRoute();" in text
     assert "AVOID.safeLiftTarget = T.rightSafe" in text
-    assert "P.path = route.points.map(point => point.clone())" in text
-    assert 'P.role = "danger"' in text
+    assert "function startLstmYieldDemo(routeOverride)" in text
+    assert "route.directionalPath" in text
+    assert "return route.directionalPath.map(point => point.clone());" in text
+    assert "contactPoint" in text
+    assert "person.node.position.copyFrom(route.start);" in text
+    assert "personGo(route.points.map(point => point.clone()), { speed:0.72 })" in text
+    assert "personFall();" in text
+
+
+def test_demo_removes_tray_carts_before_the_a_to_b_route_is_followed():
+    text = sim_source()
+    start = text.index("function disableBlockingDemoProps")
+    end = text.index("function prepareLstmDemoCrossingPath", start)
+    body = text[start:end]
+    assert 'if (file === "env_pancart.glb")' in body
+    assert body.index('if (file === "env_pancart.glb")') < body.index("if (!bounds || !samples.some")
+    assert 'if (file === "env_rack.glb")' not in body
+
+
+def test_lstm_demo_starts_at_the_robot_front_left_diagonal():
+    text = sim_source()
+    start = text.index("function lstmYieldDemoRoute")
+    end = text.index("function demoRouteSamples", start)
+    route = text[start:end]
+    assert "B.x+1.25" in route
+    assert "B.z+3.85" in route
+    assert "const demoGate = new V3(B.x+1.10, 0, B.z+3.75)" in route
+    assert "gate:demoGate.clone()" in route
+
+
+def test_a_to_b_scenarios_emit_coordinate_and_arm_debug_traces():
+    text = sim_source()
+    assert "const SCENARIO_TRACE" in text
+    assert "function scenarioTraceUpdate" in text
+    assert 'console.info("[A2B]", record)' in text
+    assert "person:{ x:" in text
+    assert "tcp:{ x:" in text
+    assert "joints:JOINTS.map" in text
+    assert "scenarioTraceUpdate(now);" in text
+    assert "get scenarioTrace() { return SCENARIO_TRACE; }" in text
 
 
 def test_safe_lift_candidate_is_scored_even_before_cross_progress():
