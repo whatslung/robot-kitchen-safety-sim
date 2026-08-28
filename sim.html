@@ -9055,7 +9055,8 @@ async function generateDataset(n, plan) {
    ① 사람↔로봇 접촉 감지 → E-STOP (거리 기반 안전링 위의 2차 방어층)
    ② 낙하 물체 강체 동역학 (정적 환경 + 키네마틱 로봇/사람과 충돌)
    파일이 없으면 물리만 조용히 꺼지고 시뮬레이터는 완전 동작한다. */
-const PHYS = { ready:false, estop:false, links:[], personCap:null, debris:[], propCols:null, propAg:null };
+const PHYS = { ready:false, estop:false, links:[], personCap:null, debris:[], propCols:null, propAg:null,
+               characters:[] };
 
 async function initPhysics() {
   const loadScript = src => new Promise((res, rej) => {
@@ -9076,6 +9077,7 @@ async function initPhysics() {
     buildColliders();
     PHYS.ready = true;
     buildPushables();          // 프롭이 이미 올라왔으면 여기서 만든다
+    sceneEditorStageRefresh(); // 사람 CharacterController 상태도 계층 UI에 반영
     $("physStatus").textContent = "Havok " + "활성 — 접촉 감시 중 (콜라이더 " + (PHYS.links.length + 7) + "개)";
     $("physStatus").style.color = "#7ee787";
   } catch (e) {
@@ -9125,13 +9127,92 @@ function buildColliders() {
     PHYS.links.push({ mesh:m, label });
   }
 
-  // 사람 — 캡슐 (ANIMATED, 사람 이동을 따라감)
+  // 사람 접촉 감시용 캡슐. 실제 이동·중력은 아래 PhysicsCharacterController가 담당한다.
+  // 이 메시에 Aggregate를 또 붙이면 같은 자리에 물리 캡슐이 두 개 생겨 서로 충돌한다.
   const cap = BABYLON.MeshBuilder.CreateCapsule("col_person", {height:1.72, radius:0.24}, scene);
   cap.position.y = 0.86; cap.parent = person.node; cap.isVisible = false;
-  const pag = new BABYLON.PhysicsAggregate(cap, ST.CAPSULE, {mass:0}, scene);
-  pag.body.setMotionType(MO.ANIMATED);
-  pag.body.disablePreStep = false;
   PHYS.personCap = cap;
+  buildCharacterController("core.person", "조리원", person.node, PERSON.height || 1.60, 0.24);
+  for (let i = 0; i < EXTRAS.length; i++)
+    buildCharacterController("person.extra." + i, "추가 조리원 " + (i + 1),
+                             EXTRAS[i].root, EXTRAS[i].height || 1.60, 0.24);
+}
+
+/* 일반 강체와 달리 사람은 넘어지는 BOX가 아니라 Babylon 공식 CharacterController를 쓴다.
+   루트 좌표는 발바닥, 컨트롤러 좌표는 캡슐 중심이므로 height/2만큼 변환한다. */
+function buildCharacterController(id, label, root, height, radius) {
+  const existing = PHYS.characters.find(c => c.root === root);
+  if (existing) return existing;
+  if (!PHYS.ready && !scene.getPhysicsEngine()) return null;
+  const center = root.position.add(new V3(0, height/2, 0));
+  const controller = new BABYLON.PhysicsCharacterController(center,
+    { capsuleHeight:height, capsuleRadius:radius }, scene);
+  /* 기본 keepDistance 5cm + tolerance 10cm는 이 실물 크기 사람을 바닥에서 약 13cm
+     띄웠다(헤드리스 Havok 실측). 1cm/2cm면 발 간격 1.35cm에서 SUPPORTED가 된다. */
+  controller.keepDistance = 0.01;
+  controller.keepContactTolerance = 0.02;
+  const record = {
+    id, label, root, height, radius, controller,
+    gravityEnabled:true, gravityDefault:true, verticalVelocity:0,
+    home:root.position.clone(), lastRoot:root.position.clone(), start:root.position.clone()
+  };
+  PHYS.characters.push(record);
+  return record;
+}
+function disposeCharacterController(root) {
+  const at = PHYS.characters.findIndex(c => c.root === root);
+  if (at < 0) return false;
+  const record = PHYS.characters[at];
+  if (record.controller) record.controller.dispose();
+  PHYS.characters.splice(at, 1);
+  return true;
+}
+function characterPhysicsBeginFrame() {
+  if (!PHYS.ready) return;
+  for (const c of PHYS.characters) {
+    if (!c.root.isEnabled()) {
+      if (c.controller) { c.controller.dispose(); c.controller = null; }
+      continue;
+    }
+    if (!c.controller) {
+      c.controller = new BABYLON.PhysicsCharacterController(
+        c.root.position.add(new V3(0,c.height/2,0)),
+        { capsuleHeight:c.height, capsuleRadius:c.radius }, scene);
+      c.controller.keepDistance = 0.01;
+      c.controller.keepContactTolerance = 0.02;
+      c.verticalVelocity = 0;
+      c.lastRoot.copyFrom(c.root.position);
+    }
+    /* 버튼·시나리오·리셋이 프레임 사이에 루트를 순간이동했다면 컨트롤러도 같은 곳으로
+       옮긴다. 보행 중 이동은 이 함수 뒤에 일어나므로 순간이동과 섞이지 않는다. */
+    if (BABYLON.Vector3.DistanceSquared(c.root.position, c.lastRoot) > 1e-8) {
+      c.controller.setPosition(c.root.position.add(new V3(0,c.height/2,0)));
+      c.verticalVelocity = 0;
+    }
+    c.start.copyFrom(c.root.position);
+  }
+}
+function characterPhysicsStep(dt) {
+  if (!PHYS.ready) return;
+  const seconds = Math.max(0.001, dt/1000);
+  const down = new V3(0,-1,0);
+  for (const c of PHYS.characters) {
+    if (!c.controller || !c.root.isEnabled()) continue;
+    const intended = c.root.position.clone();
+    if (c.gravityEnabled) {
+      const support = c.controller.checkSupport(seconds, down);
+      if (support.supportedState === BABYLON.CharacterSupportedState.SUPPORTED && c.verticalVelocity < 0)
+        c.verticalVelocity = 0;
+      else c.verticalVelocity = Math.max(-c.controller.maxCharacterSpeedForSolver,
+                                         c.verticalVelocity - 9.81 * seconds);
+    } else c.verticalVelocity = 0;
+    const displacement = new V3(intended.x-c.start.x, c.verticalVelocity*seconds,
+                                intended.z-c.start.z);
+    c.controller.moveWithCollisions(displacement);
+    const centerAfter = c.controller.getPosition();
+    c.root.position.set(centerAfter.x, centerAfter.y-c.height/2, centerAfter.z);
+    c.lastRoot.copyFrom(c.root.position);
+  }
 }
 
 /* ══ 밀 수 있는 물건에 동적 바디를 만든다 ═══════════════════════════════════
@@ -9297,15 +9378,18 @@ function sceneEditorTransform(entry, stations) {
 }
 function sceneEditorCollect() {
   const entries = [];
-  const addLocked = (id, label, node, reason) => {
-    if (node) entries.push({ id, label, node, editable:false, reason });
+  const addLocked = (id, label, node, reason, character) => {
+    if (node) entries.push({ id, label, node, editable:false, reason, character:character || null,
+                             physicsEditable:!!character });
   };
   addLocked("core.workcell", "중앙 로봇 작업셀", kitchenStaticRoot,
             "로봇 목표점·솥·바스켓 시퀀스와 결합된 핵심 작업셀");
   addLocked("core.robot", "교반 로봇", scene.getTransformNodeByName("robotRoot"),
             "관절 계층과 안전 콜라이더가 연결된 동작 객체");
-  addLocked("core.person", "조리원", anchors.person && anchors.person.node,
-            "동선·애니메이션·사람 콜라이더가 연결된 동작 객체");
+  const mainPersonNode = anchors.person && anchors.person.node;
+  addLocked("core.person", "조리원", mainPersonNode,
+            "동선·애니메이션과 연결되어 변환은 잠금 · 중력은 편집 가능",
+            PHYS.characters.find(c => c.root === mainPersonNode));
   addLocked("core.kettle", "교반솥", anchors.kettle && anchors.kettle.node,
             "로봇 목표점·화재·바스켓 시퀀스가 연결된 핵심 설비");
   addLocked("core.prep", "중앙 조리대", anchors.pot2 && anchors.pot2.node,
@@ -9318,6 +9402,9 @@ function sceneEditorCollect() {
     addLocked("robot." + key, "로봇 모델 " + key, node, "로봇 관절 피벗에 연결된 모델");
   const cook = scene.getTransformNodeByName("cookHolder");
   addLocked("person.model", "조리원 모델", cook, "사람 리그에 연결된 모델");
+  for (const c of PHYS.characters.filter(c => c.id.startsWith("person.extra.")))
+    addLocked(c.id, c.label, c.root,
+              "자율 동선·애니메이션과 연결되어 변환은 잠금 · 중력은 편집 가능", c);
 
   const counts = {};
   for (let i = 0; i < ENV_PROPS.length; i++) {
@@ -9658,6 +9745,9 @@ function sceneEditorSelect(entry) {
   sceneEditorStageRefresh();
   const hud = $("editorHudText");
   if (!SCENE_EDITOR.selection) hud.textContent = "주변 설비를 클릭하세요 · W 이동 · E 회전 · R 크기";
+  else if (SCENE_EDITOR.selection.character) hud.textContent = SCENE_EDITOR.selection.label +
+    " · Character Controller · 변환 잠금 · 중력 " +
+    (SCENE_EDITOR.selection.character.gravityEnabled ? "ON" : "OFF");
   else if (!SCENE_EDITOR.selection.editable) hud.innerHTML = "<span class=\"locked\">잠금</span> · " +
     SCENE_EDITOR.selection.label + " — " + SCENE_EDITOR.selection.reason;
   else hud.textContent = SCENE_EDITOR.selection.label + " · " +
@@ -9815,19 +9905,34 @@ function sceneEditorInspectorUpdate() {
   name.textContent = e ? e.label : "선택 없음";
   lock.style.display = e && !e.editable ? "block" : "none";
   lock.textContent = e && !e.editable ? "🔒 " + e.reason : "";
-  const ids = ["edPX","edPY","edPZ","edRX","edRY","edRZ","edSX","edSY","edSZ","edApply","edReset"];
+  const ids = ["edPX","edPY","edPZ","edRX","edRY","edRZ","edSX","edSY","edSZ","edApply"];
   ids.forEach(id => { $(id).disabled = !e || !e.editable; });
+  $("edReset").disabled = !e || (!e.editable && !e.character);
   const gravity = $("edGravity"), bodyType = $("edBodyType"), mass = $("edMass");
   const collision = $("edCollision"), physState = $("edPhysState"), note = $("edPhysNote");
-  bodyType.disabled = !e || !e.editable;
-  gravity.disabled = !e || !e.editable || !e.dynamic;
-  gravity.checked = !!(e && e.dynamic && e.dynamic.gravityEnabled);
+  bodyType.disabled = !e || !e.editable || !!e.character;
+  gravity.disabled = !e || (!e.dynamic && !e.character);
+  gravity.checked = !!(e && ((e.dynamic && e.dynamic.gravityEnabled) ||
+                             (e.character && e.character.gravityEnabled)));
   mass.disabled = !e || !e.editable || !e.dynamic;
   physState.className = "";
   if (!e) {
     bodyType.value = "none"; mass.value = "";
     collision.textContent = physState.textContent = "–";
     note.textContent = "오브젝트를 선택하면 물리 상태가 표시됩니다.";
+    return;
+  }
+  if (e.character) {
+    bodyType.value = "character"; mass.value = ""; collision.textContent = "Capsule";
+    physState.textContent = e.node.isEnabled() ? "Character Controller" : "비활성";
+    physState.className = e.node.isEnabled() ? "live" : "";
+    note.textContent = "동선·애니메이션 변환은 잠겨 있습니다. 중력은 이 사람에게 즉시 개별 적용됩니다.";
+    const r = (e.node.rotationQuaternion
+      ? e.node.rotationQuaternion.toEulerAngles() : e.node.rotation).scale(180/Math.PI);
+    [["edPX",e.node.position.x],["edPY",e.node.position.y],["edPZ",e.node.position.z],
+     ["edRX",r.x],["edRY",r.y],["edRZ",r.z],
+     ["edSX",e.node.scaling.x],["edSY",e.node.scaling.y],["edSZ",e.node.scaling.z]]
+      .forEach(([id,v]) => { $(id).value = (+v).toFixed(id[2] === "R" ? 1 : 3); });
     return;
   }
   if (!e.editable) {
@@ -9890,6 +9995,17 @@ function sceneEditorApplyInspector() {
 }
 function sceneEditorResetSelected() {
   const e = SCENE_EDITOR.selection, initial = e && SCENE_EDITOR.initial.get(e.id);
+  if (e && e.character) {
+    const c = e.character;
+    c.root.position.copyFrom(c.home);
+    c.verticalVelocity = 0;
+    c.gravityEnabled = c.gravityDefault;
+    if (c.controller) c.controller.setPosition(c.home.add(new V3(0,c.height/2,0)));
+    c.start.copyFrom(c.home); c.lastRoot.copyFrom(c.home);
+    sceneEditorSelect(sceneEditorCollect().find(x => x.id === e.id));
+    setStatus("선택 원위치 — " + e.label + " · Character 중력 ON");
+    return true;
+  }
   if (!e || !e.editable || !initial) return false;
   SCENE_EDITOR.inspectorDirty = false;
   const before = sceneEditorTransform(e, Object.keys(initial.stations));
@@ -9956,8 +10072,25 @@ function sceneEditorResetAll(announce = true) {
   return { objects:entries.length, changed };
 }
 function sceneEditorSetGravity(entry, enabled, record = true) {
+  if (entry && entry.character) {
+    const c = entry.character;
+    if (c.gravityEnabled === !!enabled) return c.gravityEnabled;
+    c.gravityEnabled = !!enabled;
+    c.verticalVelocity = 0;
+    if (c.controller)
+      c.controller.setPosition(c.root.position.add(new V3(0,c.height/2,0)));
+    c.lastRoot.copyFrom(c.root.position);
+    sceneEditorStageRefresh();
+    sceneEditorInspectorUpdate();
+    if (SCENE_EDITOR.enabled)
+      $("editorHudText").textContent = entry.label + " · Character Controller · 중력 " +
+        (c.gravityEnabled ? "ON" : "OFF");
+    setStatus(entry.label + " — Character 중력 " +
+      (c.gravityEnabled ? "ON · 즉시 낙하" : "OFF · 현재 높이 유지"));
+    return c.gravityEnabled;
+  }
   if (!entry || !entry.dynamic)
-    throw new Error("개별 중력을 적용할 Havok 동적 바디가 없습니다: " + (entry ? entry.id : "선택 없음"));
+    throw new Error("개별 중력을 적용할 Havok 바디가 없습니다: " + (entry ? entry.id : "선택 없음"));
   const b = entry.dynamic;
   if (b.gravityEnabled === !!enabled) return b.gravityEnabled;
   const stations = sceneEditorOwnedStations(entry);
@@ -9984,7 +10117,39 @@ function sceneEditorSetGravity(entry, enabled, record = true) {
 function sceneEditorStageRefresh() {
   const box = document.getElementById("editorEnvRows");
   if (!box) return;
-  const entries = sceneEditorCollect().filter(e => e.editable);
+  const allEntries = sceneEditorCollect();
+  const peopleBox = document.getElementById("editorPeopleRows");
+  if (peopleBox) {
+    peopleBox.replaceChildren();
+    for (const e of allEntries.filter(e => e.character)) {
+      const row = document.createElement("div");
+      row.className = "snode child locked" +
+        (SCENE_EDITOR.selection && SCENE_EDITOR.selection.id === e.id ? " selected" : "");
+      row.dataset.editorId = e.id;
+      const name = document.createElement("span");
+      name.className = "objname"; name.textContent = e.label; name.title = e.label;
+      row.appendChild(name);
+      const badge = document.createElement("button");
+      badge.type = "button"; badge.className = "physbadge";
+      badge.classList.add(e.character.gravityEnabled ? "dynamic" : "off");
+      badge.textContent = e.character.gravityEnabled ? "중력 켬" : "중력 끔";
+      badge.title = "Character Controller 중력을 " + (e.character.gravityEnabled ? "끕니다" : "켭니다");
+      badge.disabled = !SCENE_EDITOR.enabled;
+      badge.addEventListener("click", ev => {
+        ev.stopPropagation();
+        const current = sceneEditorCollect().find(x => x.id === e.id);
+        if (!SCENE_EDITOR.enabled || !current || !current.character) return;
+        sceneEditorSelect(current);
+        sceneEditorSetGravity(current, !current.character.gravityEnabled);
+      });
+      row.appendChild(badge);
+      row.addEventListener("click", () => {
+        if (SCENE_EDITOR.enabled) sceneEditorSelect(sceneEditorCollect().find(x => x.id === e.id));
+      });
+      peopleBox.appendChild(row);
+    }
+  }
+  const entries = allEntries.filter(e => e.editable);
   box.replaceChildren();
   for (const e of entries) {
     const row = document.createElement("div");
@@ -13287,7 +13452,9 @@ scene.registerBeforeRender(() => {
   const now = performance.now();
   const dt = Math.min(now - last, 60);
   last = now;
+  characterPhysicsBeginFrame();
   if (SCENE_EDITOR.enabled) {
+    characterPhysicsStep(dt);   // 편집기를 열어 둔 동안에도 사람별 중력은 즉시 작동한다
     sceneEditorTick();
     return;
   }
@@ -13301,6 +13468,7 @@ scene.registerBeforeRender(() => {
   personUpdate(dt);
   cookGearUpdate();
   extrasUpdate(dt);
+  characterPhysicsStep(dt);       // 동선이 요구한 수평 이동 + Controller 충돌·수직 중력
   pushUpdate(dt);              // 사람이 카트에 파고든 만큼 카트를 밀어낸다 (사람 이동 뒤)
   pushPoseUpdate(dt);          // 손이 물건에 닿게 상체를 숙인다 (애니메이션 평가 뒤라야 먹는다)
   resolvePeopleSeparation();   // 사람끼리 겹쳐 서지 않게 — GT 박스가 붙는 프레임 방지
@@ -13559,7 +13727,6 @@ function logConsole(msg) {
     ["World", null, false],
     ["robot — 교반로봇", scene.getTransformNodeByName("robotRoot"), true, "core.robot"],
     ["kettle — 교반솥", anchors["kettle"].node, true, "core.kettle"],
-    ["person — 사람", anchors["person"].node, true, "core.person"],
     ["prep — 조리대", anchors["pot2"].node, true, "core.prep"],
     ["shelf — 선반", anchors["shelf"].node, true, "core.shelf"],
     ["panel — 제어반", anchors["panel"].node, true, "core.panel"],
@@ -13589,6 +13756,15 @@ function logConsole(msg) {
     }
     tree.appendChild(div);
   }
+  const peopleHead = document.createElement("div");
+  peopleHead.className = "snode"; peopleHead.textContent = "▾ 사람 (Character Controller)";
+  peopleHead.style.marginTop = "6px"; tree.appendChild(peopleHead);
+  const peopleHint = document.createElement("div");
+  peopleHint.className = "streehint";
+  peopleHint.textContent = "동선 변환은 잠금 · 오른쪽 버튼으로 사람별 중력 켬/끔";
+  tree.appendChild(peopleHint);
+  const peopleRows = document.createElement("div");
+  peopleRows.id = "editorPeopleRows"; tree.appendChild(peopleRows);
   const envHead = document.createElement("div");
   envHead.className = "snode"; envHead.textContent = "▾ 주변 설비 (편집 가능)";
   envHead.style.marginTop = "6px"; tree.appendChild(envHead);
@@ -13639,8 +13815,8 @@ $("edBodyType").addEventListener("change", e => {
 });
 $("edGravity").addEventListener("change", e => {
   const entry = SCENE_EDITOR.selection;
-  if (!entry || !entry.dynamic)
-    throw new Error("중력 스위치를 적용할 동적 오브젝트가 선택되지 않았습니다");
+  if (!entry || (!entry.dynamic && !entry.character))
+    throw new Error("중력 스위치를 적용할 물리 오브젝트가 선택되지 않았습니다");
   sceneEditorSetGravity(entry, e.target.checked);
 });
 // Inspector는 상단 툴바에서 제거 — 전문가 기능(devMode) 패널의 버튼으로만 노출한다
@@ -14208,6 +14384,9 @@ async function spawnExtraPerson(i) {
   root.position.copyFrom(P.path[0]);
   P.idle && P.idle.start(true, 1.0); P.playing = "idle";
   EXTRAS.push(P);
+  if (PHYS.ready)
+    buildCharacterController("person.extra." + i, "추가 조리원 " + (i + 1), root, H, 0.24);
+  sceneEditorStageRefresh();
   return P;
 }
 function extraPlay(P, name) {
@@ -15103,6 +15282,7 @@ function nearestPerson() {
 async function setExtraCount(n) {
   while (EXTRAS.length > n) {
     const P = EXTRAS.pop();
+    disposeCharacterController(P.root);
     if (P.gear) [P.gear.cap, P.gear.band, P.gear.msk, P.gear.ap].forEach(m => m.dispose());
     if (P.shell) Object.values(P.shell).forEach(m => m.dispose());
     P.root.dispose(false, true);
@@ -15115,6 +15295,7 @@ async function setExtraCount(n) {
   if (window.applyPeopleVisible) applyPeopleVisible();   // 새로 생긴 인원도 숨김 상태를 따른다
   // 스킨드 메시가 늘어나면 모션블러의 지오메트리 버퍼 인덱스가 어긋난다 → 센서 파이프라인 재구성
   sensorApply();
+  sceneEditorStageRefresh();
   setStatus("조리실 인원: " + (1 + EXTRAS.length) + "명 (조작 1 + 자율 " + EXTRAS.length + ")");
 }
 
