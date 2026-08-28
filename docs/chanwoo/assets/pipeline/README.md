@@ -16,6 +16,7 @@
 | `fig8_collision_vs_avoidance@2x.png` | 충돌 vs 회피 before/after — **탑뷰** (실제 sim) | "예측이 실제로 뭘 바꾸나" (하이라이트 컷) |
 | `fig8f_collision_vs_avoidance_front@2x.png` | 충돌 vs 회피 before/after — **정면뷰** (실제 sim) | fig8의 아이레벨 버전 (팔 높이·접촉 임팩트) |
 | `fig9_recall_precision@2x.png` | recall·precision 트레이드 (CV→학습) | "recall 올린 대가(정밀도)는?" (fig3 방어) |
+| `fig10_scene_graph@2x.png` | 씬→상호작용 그래프 (Trajectron++ Fig.1 스타일) | "사람·로봇을 그래프로 모델링" (예측 구조) |
 
 ## 재현
 
