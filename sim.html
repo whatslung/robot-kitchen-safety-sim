@@ -11578,10 +11578,12 @@ function corrTick(dt) {   // 매 프레임 호출 — 조리 사이클(stepUpdat
 function wasdAvoidTick(dt) {
   if (typeof CORR !== "undefined" && CORR.on) return;                       // 시나리오 데모 중이면 corrTick이 담당
   if (typeof CTRL === "undefined" || CTRL.target !== "person") return;      // WASD 사람 조작 중일 때만
+  if (typeof SAFE !== "undefined" && SAFE.blind) return;                    // "안 봄" 상태(충돌 시연)에선 회피 X — avoidDecide/corrTick과 정합
   if (!state.dur || !state.auto) return;                                    // 조리 사이클이 돌아야 되감기 의미 있음
-  const b = LAYOUT.robot.base, p = person.node.position;
+  const b = LAYOUT.robot.base, p = person.node.position;                    // ⚠️ 주인공(person)만 반응 — EXTRAS 근접은 base SAFE만
   const dist = Math.hypot(p.x - b.x, p.z - b.z);
   if (dist < 2.6) {
+    // ⚠️ SEQ가 끝난 프레임엔 seqIdx가 SEQ.length일 수 있어 `s &&` 가드가 로드베어링.
     const s = SEQ[state.seqIdx];
     if (s && (s.k === "ik" || s.k === "ikOff")) {
       const closeness = clamp((2.6 - dist) / 1.4, 0, 1);
