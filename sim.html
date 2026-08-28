@@ -11488,18 +11488,18 @@ function corrStart(mode) {
   CORR.theta = (CORR.thA + CORR.thB) / 2; CORR.dir = 1;
   corrPoseArm(CORR.theta);
   CORR.on = true; CORR.mode = mode; CORR.hit = false;
-  // 사람: 좌하단(남서, -x·-z) 개방구역에서 대각선으로 로봇 앞으로 접근 → 물러남(왕복).
-  //   A는 위험반경(3m) 밖(스윙 먼저 보이게), B는 솥·페데스탈 남쪽 개방구역(안 막힘).
-  const A = new V3(-2.4, 0, -2.3), B = new V3(-0.5, 0, -0.9);
+  // 사람: **정면(-z=화면 아래) 화면 안**에서 로봇 앞으로 접근 → 물러남(왕복). 투영 검증한 좌표:
+  //   A(0.3,-1.9)=화면 앞쪽·위험반경 밖(스윙 먼저), B(-0.2,-0.9)=로봇 앞·위험반경 안(회피). 솥 남쪽이라 안 막힘.
+  const A = new V3(0.3, 0, -1.9), B = new V3(-0.2, 0, -0.9);
   person.node.position.copyFrom(A);
   if (mode === "after") {
     SAFE.blind = false; corrVizOn(true);
     personGo([A, B, A], { loop:true, speed:0.5 });
-    setStatus("▶ 회피 — 팔이 좌우로 회전. 사람이 좌하단서 대각선 접근 → 진입각에 따라 팔이 반대로 회전 회피.  [demo-v17]");
+    setStatus("▶ 회피 — 팔이 스윙. 사람이 정면에서 로봇 앞으로 접근 → 팔이 반대로 회전해 회피.  [demo-v18]");
   } else {
     SAFE.blind = true; corrVizOn(false);
     personGo([A, B], { speed:1.0 });
-    setStatus("▶ 충돌 — 로봇이 못 본 채 팔 회전. 대각선 접근 사람이 팔에 휩쓸림.  [demo-v17]");
+    setStatus("▶ 충돌 — 로봇이 못 본 채 팔 스윙. 정면 접근 사람이 팔에 휩쓸림.  [demo-v18]");
   }
 }
 function corrTick(dt) {   // 매 프레임 호출 — 팔 스윙 + 회피(after)/충돌(before)
