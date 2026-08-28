@@ -5704,6 +5704,70 @@ const PROP_MAT = (() => {
    선언을 여기 둔 것은 생성이 tick 함수 정의보다 앞서기 때문이다(const는 호이스팅 안 됨). */
 const FOOD_COOK = { mat:null, base:null };
 
+/* ══ 담긴 식자재 ═══════════════════════════════════════════════════════════
+   종전에는 색칠한 구슬(segments:3)과 박스를 흩뿌렸다. 가까이서 보면 식자재가 아니라
+   색면이고, 이 드레싱이 씬 정점의 36.5%(114,736)를 먹고 있었다.
+
+   지금은 **Blender 에서 구운 더미 4종**(감자·양파·파프리카·혼합)을 앉힌다. 실제 스캔
+   채소를 15~17개 쌓아 고폴리로 만든 뒤, 복셀 리메시로 연속 표면화해 1,000삼각형
+   저폴리에 BaseColor·Normal·AO 를 구웠다. AO 는 BaseColor 에 곱해 넣었다 — 조각
+   사이 그늘은 실시간 렌더러가 만들 수 없고, 이 더미는 움직이지 않으므로 구워도 잃는
+   것이 없다. 정점을 낮추면서 품질을 올리는 유일한 방법이었다.
+
+   ⚠️ 데시메이트만으로는 안 된다. 낱개 채소 15개는 서로 떨어진 연결성분이라
+   Collapse 를 걸면 각각이 파편으로 무너진다(실제로 그렇게 됐다). 복셀 리메시로
+   **연결성분 1개**를 만든 뒤에 줄여야 한다.
+
+   4종이 **아틀라스 1장·머티리얼 1개**를 공유한다. 프롭 병합이 multiMaterial 이라
+   머티리얼 수가 곧 드로우콜인데, 종전 음식 재질 4개(mat + bits 3개)가 1개로 준다.
+
+   ⚠️ TANGENT 를 넣지 않았다. dressProp 이 이 더미를 MeshBuilder 박스들과 병합하는데
+   Babylon 의 VertexData.merge 는 속성 집합이 다르면 예외를 던진다. 탄젠트가 없으면
+   PBR 셰이더가 화면 미분으로 TBN 을 유도하므로 노말맵은 그대로 동작한다.
+
+   출처: Sketchfab "FREE | Fruits and Vegetables Pack (CS2)" by 6lucius, CC-BY-4.0.
+   저작자 표기가 라이선스 의무다 — ATTRIBUTION.md 를 지운 채로 배포하면 안 된다.
+   빌드 스크립트: 요리로봇시뮬레이션/_foodbake/build_heaps.py (원본에만 있다)      */
+const FOOD_HEAP = { tpl: [], mat: null };
+async function loadFoodHeaps() {
+  try {
+    const r = await BABYLON.SceneLoader.ImportMeshAsync(
+      "", ASSETS.dir, "food_heaps.glb?v=" + ASSET_VER, scene, null, ".glb");
+    for (const m of r.meshes) {
+      if (!m.getTotalVertices || m.getTotalVertices() === 0) continue;
+      /* glTF 루트(__root__)의 RH→LH 변환을 정점에 구워 넣는다. 그래야 복제본을
+         부모 없이 아무 데나 놓을 수 있다. bakeTransformIntoVertices 는 행렬식이
+         음수면 flipFaces 까지 해 준다(babylon.js 에서 확인). */
+      m.computeWorldMatrix(true);
+      m.bakeTransformIntoVertices(m.getWorldMatrix().clone());
+      m.parent = null;
+      m.position.setAll(0); m.scaling.setAll(1);
+      m.rotationQuaternion = null; m.rotation.setAll(0);
+      /* ⚠️ 감기 방향을 MeshBuilder 규약으로 맞춘다. glTF 임포트본은 (감기 +, CW=0),
+         MeshBuilder 는 (감기 −, CCW=1) 이다. 둘은 서로 상쇄돼 **단독으로는 정상으로
+         보이지만**, dressProp 의 병합이 거부된다:
+           "Cannot merge meshes with different sideOrientation values"
+         → 더미가 병합되지 않고 원점에 29개가 그대로 남아 떠 있었다.
+         감기만 뒤집고(법선은 그대로) sideOrientation 을 CCW 로 올려 짝을 맞춘다. */
+      m.flipFaces();
+      m.sideOrientation = BABYLON.Material.CounterClockWiseSideOrientation;
+      m.overrideMaterialSideOrientation = BABYLON.Material.CounterClockWiseSideOrientation;
+      m.setEnabled(false); m.isPickable = false;
+      if (m.material) {
+        FOOD_HEAP.mat = m.material;
+        m.material.environmentIntensity = 0.55;   // 다른 GLB 와 같은 톤
+      }
+      FOOD_HEAP.tpl.push(m);
+    }
+    const root = r.meshes.find(m => m.name === "__root__");
+    if (root) root.dispose(true);                  // 자식은 이미 떼어냈다
+  } catch (e) {
+    console.warn("[food] food_heaps.glb 로드 실패 — 예전 알갱이 방식으로 채운다", e);
+  }
+  console.log("[food] heap templates:", FOOD_HEAP.tpl.map(m => m.name).join(", ") || "(없음)");
+  return FOOD_HEAP.tpl.length;
+}
+
 /* ══ 튀김 바스켓 내용물 ═══════════════════════════════════════════════════
    빈 망바구니를 로봇이 건져 올리면 **무엇을 조리 중인지 알 수 없다.** 발표에서도
    "기름에서 뭘 꺼내는가"가 안 보인다. 실사 참조(로봇고_배출)에서도 바구니에는
@@ -5779,6 +5843,29 @@ function dressProp(file, holder, idx, inst) {
      조각을 수십 개 넣어도 드로우콜은 그대로다. 조각당 12~60 트라이앵글.
      모양은 관찰된 3종에 맞춘다 — 다진 파·마늘 / 오색 떡 / 튀김물.               */
   const fillAs = (F, x, y, z, w, d, base) => {
+    /* 구운 더미가 있으면 그것을 앉힌다 (F 는 폴백에서만 쓴다). */
+    if (FOOD_HEAP.tpl.length) {
+      const t = FOOD_HEAP.tpl[(Math.random()*FOOD_HEAP.tpl.length)|0];
+      const m = t.clone("propHeap");
+      m.setEnabled(true);                       // 템플릿이 꺼져 있어 복제본도 꺼진 채로 온다
+      /* ⚠️ **조각 크기는 팬 크기와 무관해야 한다.** 감자는 어느 팬에 담아도 감자다.
+         더미 메시는 실물의 1/HEAP_REF 배로 구워져 있다(캐노니컬 1.0 = 팬 0.30m).
+         종전처럼 팬에 꽉 채우려고 w/0.95 로 늘리면 **팬이 클수록 채소가 커진다** —
+         팬카트 칸(0.34)에서 +19%, 바스켓카트(0.42)에서 +47%로 파프리카가 15cm가 됐다.
+         게다가 sx≠sz 라 조각이 한 축으로 늘어났다.
+
+         그래서 **등방 스케일**을 쓰고 HEAP_REF 에서 **자른다**:
+           · 팬이 작으면  → 팬에 맞춰 줄인다 (조각도 같이 작아지지만 넘치는 것보다 낫다)
+           · 팬이 크면    → 실물 크기로 고정하고 가운데에 쌓는다 (덜 찬 팬이 자연스럽다)
+         가로세로 평균(기하평균)을 쓰는 것은 한 변만 보면 긴 팬에서 과하게 줄기 때문이다. */
+      const HEAP_REF = 0.30;
+      const sc = Math.min(HEAP_REF, Math.sqrt(w * d) / 0.95);
+      m.scaling.set(sc, sc, sc);
+      m.rotation.y = Math.random() * Math.PI * 2;   // 등방이라 아무 각도나 안전하다
+      add(m, x, y, z, FOOD_HEAP.mat);
+      return;
+    }
+    /* ── 이하 폴백: 구운 GLB 를 못 읽었을 때만 도는 예전 경로(색칠한 알갱이) ── */
     // 바닥이 비치지 않도록 얕은 바탕 한 겹 (GLB 팬은 이미 바탕이 있어 생략)
     if (base !== false)
       add(MB.CreateBox("propFood", {width:w*0.86, height:0.012, depth:d*0.86}, scene),
@@ -5819,8 +5906,16 @@ function dressProp(file, holder, idx, inst) {
     add(MB.CreateBox("propPan", {width:w, height:0.012, depth:d}, scene), x, y, z, ST);
     for (const [ex, ez, sw, sd] of [[w/2,0,0.012,d],[-w/2,0,0.012,d],[0,d/2,w,0.012],[0,-d/2,w,0.012]])
       add(MB.CreateBox("propPan", {width:sw, height:h, depth:sd}, scene), x+ex, y+h/2, z+ez, ST);
-    add(MB.CreateBox("propPanRim", {width:w+0.022, height:0.010, depth:d+0.022}, scene),
-        x, y + h, z, ST);                                   // 말린 림 — 실물에서 눈에 띄는 특징
+    /* 말린 림 — 실물 GN 바트에서 눈에 띄는 특징.
+       ⚠️ 종전에는 이것이 **입구를 통째로 덮는 판 1개**였다. 그래서 팬에 담긴 것이 아예
+       안 보였다 — 예전 알갱이(키 4cm)는 판 아래 완전히 가려 팬이 그냥 상자로 보였고,
+       구운 더미(키 11cm)는 판 **위에 얹힌 것**처럼 보였다.
+       테두리 4개로 바꾼다. 병합되므로 드로우콜은 그대로고 삼각형만 팬당 +36. */
+    const RW = 0.011, RO = w + 0.022, RD = d + 0.022;
+    for (const [ex, ez, sw, sd] of [[ (RO - RW)/2, 0, RW, RD], [-(RO - RW)/2, 0, RW, RD],
+                                    [0,  (RD - RW)/2, RO, RW], [0, -(RD - RW)/2, RO, RW]])
+      add(MB.CreateBox("propPanRim", {width:sw, height:0.010, depth:sd}, scene),
+          x + ex, y + h, z + ez, ST);
     if (food) fill(x, y + 0.006, z, w, d);
   };
   const bottle = (x, y, z) => {                              // 양념·기름 병 (참조 현장 우측 작업대)
@@ -5926,7 +6021,10 @@ function dressProp(file, holder, idx, inst) {
       s.computeWorldMatrix(true);
       const b = s.getBoundingInfo().boundingBox;
       const F = FOOD[(Math.random()*FOOD.length)|0];
-      s.material = F.mat;
+      /* 슬래브는 GLB 가 '담긴 재료'로 만들어 둔 납작한 판이다. 예전에는 이것을 음식 색
+         (초록·황금)으로 칠했지만, 위에 실제 식자재 더미가 올라간 지금은 그 색이 팬 밖으로
+         비어져 나와 형광 판때기처럼 보인다. 스테인리스로 돌려 **덜 찬 팬의 바닥**이 되게 한다. */
+      s.material = (FOOD_HEAP.tpl.length ? ST : F.mat);
       // 슬래브 로컬 중심·크기 → holder 기준 좌표로 (add()가 holder 로컬을 기대한다)
       const wc = b.centerWorld, hw = holder.getWorldMatrix().clone();
       hw.invert();
@@ -5978,6 +6076,7 @@ async function loadAssets() {
     return n;
   }
   finish(await L("kitchen_static.glb"));
+  await loadFoodHeaps();          // ⚠️ loadEnvProps(→dressProp) 보다 먼저. 템플릿이 없으면 폴백으로 샌다
   await loadEnvProps();
   await loadCook();
   lidNode        = await pivoted("lid.glb",            "lidNode",  ASSETS.pivots.hinge);
