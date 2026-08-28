@@ -10541,7 +10541,7 @@ function rarrDraw(key, pts, hex, width) {
 function rarrHideAll() { for (const k in RARR.mesh) RARR.mesh[k].setEnabled(false); }
 function robotArrowsUpdate() {
   // 데이터셋 캡처 중에는 뺀다(음영·예측선과 같은 이유: 라벨에 없는 픽셀)
-  if (!RARR.on || vizSuppressed || !state.auto) { rarrHideAll(); return; }
+  if (!RARR.on || vizSuppressed || (!state.auto && !(typeof CORR !== "undefined" && CORR.on))) { rarrHideAll(); return; }
   const tcp = tipPos();
   if (RARR.prev) {                                   // TCP 진행 방향 — 프레임 노이즈를 EMA로 완화
     const dx = tcp.x - RARR.prev.x, dz = tcp.z - RARR.prev.z;
@@ -11441,7 +11441,8 @@ function corrPoseArm(u) {
   refreshChain();
 }
 function corrVizOn(on) {
-  ["vizRarr", "vizDens", "vizLine"].forEach(id => {
+  // vizPmode(예측 모드)가 켜져야 PRED.bands가 채워져 밀도구름·이동선이 나온다.
+  ["vizRarr", "vizDens", "vizLine", "vizPmode"].forEach(id => {
     const el = $(id); if (el && el.checked !== on) { el.checked = on; el.dispatchEvent(new Event("change")); }
   });
 }
@@ -11512,10 +11513,10 @@ function corrStart(mode) {
   person.node.position.copyFrom(CORR.A); person.node.rotation.y = 0;
   if (mode === "after") {
     SAFE.blind = false; corrVizOn(true);
-    setStatus("▶ 회피 — 로봇이 바스켓 작업 중 사람 정면 접근 → 크게 회피 → 사람 나가면 바스켓 작업(솥 담그기) 재개.  [demo-v23]");
+    setStatus("▶ 회피 — 로봇이 바스켓 작업 중 사람 정면 접근 → 크게 회피 → 사람 나가면 바스켓 작업(솥 담그기) 재개.  [demo-v24]");
   } else {
     SAFE.blind = true; corrVizOn(false);
-    setStatus("▶ 충돌 — 로봇이 못 본 채 바스켓 작업. 정면 접근 사람이 팔에 휩쓸림.  [demo-v23]");
+    setStatus("▶ 충돌 — 로봇이 못 본 채 바스켓 작업. 정면 접근 사람이 팔에 휩쓸림.  [demo-v24]");
   }
 }
 function corrTick(dt) {   // 매 프레임 호출 — 팔 스윙 + 회피(after)/충돌(before)
@@ -11544,7 +11545,7 @@ function corrTick(dt) {   // 매 프레임 호출 — 팔 스윙 + 회피(after)
     }
     if (CORR.dodgedOnce && dist >= 2.7 && person.mode !== "walk") {
       CORR.working = true;
-      setStatus("✅ 회피 완료 — 사람 통과, 로봇이 바스켓을 솥에 담그며 작업 재개  [demo-v23]");
+      setStatus("✅ 회피 완료 — 사람 통과, 로봇이 바스켓을 솥에 담그며 작업 재개  [demo-v24]");
       return;
     }
   }
