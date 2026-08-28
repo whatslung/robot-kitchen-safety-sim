@@ -1177,9 +1177,9 @@ camera.panningSensibility = 900;
 const hemi = new BABYLON.HemisphericLight("hemi", new V3(0.2,1,0.15), scene);
 hemi.intensity = 1.1; hemi.groundColor = new C3(0.36,0.37,0.41);   // 밝은 주방(과노출 방지 톤)
 const key = new BABYLON.DirectionalLight("key", new V3(-0.55,-1,0.42), scene);
-key.position = new V3(2.6,4.4,-2.2); key.intensity = 3.6;
+key.position = new V3(2.6,4.4,-2.2); key.intensity = 2.8;   // [space-q] 3.6→2.8 — IBL 필터링 도입으로 앰비언트가 늘어 직접광 과다분 제거
 const fill = new BABYLON.DirectionalLight("fill", new V3(0.5,-1,-0.35), scene);   // 반대편 보조광 — 그림자 영역 완화
-fill.position = new V3(-2.2,4.0,2.0); fill.intensity = 1.4;
+fill.position = new V3(-2.2,4.0,2.0); fill.intensity = 1.05;  // [space-q] 1.4→1.05 (동일 이유)
 /* 그림자 — 방이 9×9로 커지면서 1024 지수맵은 텍셀 밀도가 무너져 바닥에 긴 번짐이 생겼다.
    2048 + PCSS(접촉경화)로 바꾼다. 접촉부는 단단하고 멀어질수록 부드러워져 렌더 느낌이 산다.
    ESM/PCSS는 상호배타이므로 블러 지수맵은 끈다. */
@@ -7448,6 +7448,22 @@ probe.position = new V3(0.4, 1.5, 0.2);
 scene.meshes.forEach(m => probe.renderList.push(m));
 probe.refreshRate = BABYLON.RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
 scene.environmentTexture = probe.cubeTexture;
+/* [space-q] 실시간 IBL 필터링 (2026-08-29).
+   프로브 큐브맵은 **거칠기별 사전 필터링이 없다.** 그대로 쓰면 러프니스가 반사에
+   반영되지 않아 스테인리스가 흰 플라스틱처럼 보인다(이 씬의 금속이 그랬다).
+   Babylon의 realTimeFiltering이 셰이더에서 거칠기별 필터링을 해 준다 — 외부 HDR
+   파일이 필요 없다. 실측(1280x720 고정 시점): 끔 47.2ms / 켬 41.8ms 로 **오히려 빨랐다**
+   (HDR 파일 방식도 47.8ms 로 이득이 없어 파일을 쓰지 않기로 했다).
+   품질 LOW로 충분하다 — MEDIUM 이상은 샘플 수가 급증한다. */
+const applyRTF = (m) => {
+  if (!m || !m.getClassName || m.getClassName().indexOf("PBR") !== 0) return;
+  m.realTimeFiltering = true;
+  m.realTimeFilteringQuality = BABYLON.Constants.TEXTURE_FILTERING_QUALITY_LOW;
+};
+scene.materials.forEach(applyRTF);
+/* GLB 재질은 **비동기로 나중에** 생성된다(loadAssets·loadEnvProps·loadCook).
+   위 forEach만 두면 정작 금속이 많은 설비 GLB가 빠진다 — 관찰자로 이후 생성분도 받는다. */
+scene.onNewMaterialAddedObservable.add(applyRTF);
 /* ⚠️ 이 큐브맵은 **한 번만 굽는다** — 굽는 순간 화면에 있던 것이 스테인리스 반사로 남는다.
    안전 반경 링(zone*)이 여기 박혀 있는지 의심해 재봤다(2026-08-27): 링을 켠 채 구운
    환경맵과 뺀 채 구운 환경맵에서 **솥 반사 색 픽셀 6 vs 5 — 차이 없다.**
@@ -7457,14 +7473,15 @@ scene.environmentTexture = probe.cubeTexture;
    1.5로 낮추면 반사가 형태를 죽이지 않아 오히려 스테인리스로 읽힌다.
    ※ 프레임에는 영향이 없다. 프로브는 RENDER_ONCE라 매 프레임 비용이 0이다
       (실측: 병목은 그림자 37% · 지오메트리 32%, 환경맵 아님). */
-scene.environmentIntensity = 1.5;
-hemi.intensity = 1.05;   // 프로브 환경 확정 후 최종 보정값 — 급식실 백색등 밝기
+scene.environmentIntensity = 0.95;  // [space-q] 1.5→0.95 — 1.5는 무필터 프로브 기준값이었다.
+// 실시간 필터링을 켜면 확산광까지 제대로 기여해, 그대로 두면 화면의 34%가 백색 포화된다(실측).
+hemi.intensity = 0.50;   // [space-q] 1.05→0.50 — IBL이 천장 확산광을 대신한다(이중 계상 제거)
 
 // 톤매핑은 머티리얼 레벨(IPC) — 어느 카메라로 봐도 동일하게 적용된다
 const ipc = scene.imageProcessingConfiguration;
 ipc.toneMappingEnabled = true;
 ipc.toneMappingType = BABYLON.ImageProcessingConfiguration.TONEMAPPING_ACES;
-ipc.exposure = 1.65; ipc.contrast = 1.08;
+ipc.exposure = 1.22; ipc.contrast = 1.08;   // [space-q] 1.65→1.22 — 백색 포화 34%→6.9%(실측, 1280x720 부감 뷰)
 
 const glow = new BABYLON.GlowLayer("glow", scene, {mainTextureSamples:2});
 glow.intensity = ASSETS.enabled ? 0.15 : 0.5;   // 밝은 주방에서 존 테이프 과발광 방지
