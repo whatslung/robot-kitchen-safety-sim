@@ -330,7 +330,9 @@
     <button id="stopBtn" class="danger">■ 정지</button>
   </div>
   <div class="btnrow">
-    <button id="lstmYieldBtn" class="primary">▶ 고정 동선 LSTM 회피</button>
+    <button id="collisionScenarioBtn" class="danger">⚠ A→B 충돌 시나리오</button>
+    <button id="avoidanceScenarioBtn" class="primary">▶ A→B 회피 시나리오</button>
+    <button id="lstmYieldBtn" hidden>▶ 고정 동선 LSTM 회피</button>
   </div>
   <!-- 연속 작업이 기본 — 1회만 돌면 '로봇이 움직이는 동안 사람이 접근하는 순간'이
        아예 안 만들어진다(실측: 겹친 프레임 0건). 그 순간이 이 연구의 관측 대상이다. -->
@@ -1125,6 +1127,8 @@ if (REACH.k !== 1) {
 (function () {
   const F = LAYOUT.fryer, cx = F.pos.x, cz = F.pos.z, sy = F.oilY + 0.05;
   LAYOUT.targets.potHover = new V3(cx, 1.10, cz);        // 솥 상공 대기
+  /* 사람이 화면 왼쪽(A)에서 진입하면 팔은 +X(화면 오른쪽) 고자세로 비킨다. */
+  LAYOUT.targets.rightSafe = new V3(cx, 1.10, cz);
   LAYOUT.targets.potIn    = new V3(cx, sy, cz);          // 교반봉 투입 (국 수면)
   LAYOUT.targets.drain    = new V3(cx, 1.02, cz);        // 들어올려 국물 털기
   LAYOUT.targets.stirE    = new V3(cx + F.stirR, sy, cz);          // 교반 궤적 4방위
@@ -10485,6 +10489,7 @@ const AVOID = {
   on:true, mode:"PROCEED", eff:"PROCEED", rate:1, reason:"",
   targetFactor:1, appliedFactor:1, since:performance.now(), minHoldMs:300,
   startT:0.06, samples:12, lift:null, plannedMotion:false, pathFactor:1,
+  safeLiftTarget:null,
   escapeVerified:false,
   predictionSource:"planned", predictionReady:true,
   clearSince:{ PROCEED:null, RETRACT:null, SAFE_LIFT:null },
@@ -10740,7 +10745,7 @@ function avoidDecide(dtMs) {
       retract = scoreArmCandidate(state.stepStartJoints, occupancy, true);
     if (!retract.safe || AVOID.mode === "SAFE_LIFT") {
       try {
-        liftAngles = ikAngles(T.potHover).angles;
+        liftAngles = ikAngles(AVOID.safeLiftTarget || T.potHover).angles;
         safeLift = scoreArmCandidate(liftAngles, occupancy, true);
       } catch (e) { safeLift = { safe:false, clearance:Number.NEGATIVE_INFINITY }; }
     }
@@ -10791,7 +10796,7 @@ function avoidDecide(dtMs) {
              : (AVOID.mode === "PROCEED" ? 1 : 0);
 
   if (AVOID.mode === "SAFE_LIFT" && !AVOID.lift) {
-    if (!liftAngles) { try { liftAngles = ikAngles(T.potHover).angles; } catch (e) {} }
+    if (!liftAngles) { try { liftAngles = ikAngles(AVOID.safeLiftTarget || T.potHover).angles; } catch (e) {} }
     if (!liftAngles) {
       AVOID.mode = "STOP"; AVOID.rate = 0; AVOID.escapeVerified = false;
       AVOID.reason = "안전 자세 IK 실패";
@@ -11593,6 +11598,7 @@ function restoreLstmYieldDemoSettings(restorePerson) {
   MPRED.hist.delete("gt:0"); MPRED.pred.delete("gt:0");
   AVOID.mode = "PROCEED"; AVOID.eff = "PROCEED"; AVOID.rate = 1;
   AVOID.reason = ""; AVOID.lift = null; AVOID.escapeVerified = false;
+  AVOID.safeLiftTarget = null;
   AVOID.since = performance.now();
   AVOID.clearSince = { PROCEED:null, RETRACT:null, SAFE_LIFT:null };
   AVOID.targetFactor = 1; AVOID.appliedFactor = 1; AVOID.pathFactor = 1;
@@ -11668,6 +11674,37 @@ function startLstmYieldDemo() {
     LSTM_YIELD_DEMO.robotFirstMotionMs = performance.now()-now;
   LSTM_YIELD_DEMO.lastJointSample = JOINTS.map(j => j.value);
   setStatus("로봇 선행 작업 — 사람은 0.4초 뒤 출발");
+  return true;
+}
+
+/* 두 시연은 같은 A→B 접근 방향을 쓴다. 충돌은 B에서 감지 실패를 재현하고,
+   회피는 A에서 같은 방향으로 들어올 때 오른쪽 안전 자세를 먼저 선택한다. */
+function directionalScenarioRoute() {
+  const baseRoute = lstmYieldDemoRoute();
+  const spot = findHazardSpot("push");
+  const b = spot ? new V3(spot.x, 0, spot.z) : baseRoute.cross.clone();
+  return {
+    a:baseRoute.start.clone(), b,
+    points:[baseRoute.start.clone(), baseRoute.gate.clone(), b.clone()],
+  };
+}
+async function startDirectionalScenario(kind) {
+  if (kind === "avoidance") {
+    AVOID.safeLiftTarget = T.rightSafe;
+    return startLstmYieldDemo();
+  }
+  if (LSTM_YIELD_DEMO.active) finishLstmYieldDemo("cancelled", null, true);
+  const route = directionalScenarioRoute();
+  if (!EXTRAS.length) await spawnJob("cook");
+  const P = EXTRAS[0];
+  if (!P) { setStatus("충돌 시나리오 실패 — 조리원 생성 불가"); return false; }
+  P.struckT = 0; P.pinned = false; P.role = "danger"; P.station = null; P.unstick = false;
+  P.root.position.copyFrom(route.a);
+  P.path = route.points.map(point => point.clone()); P.pi = 1;
+  P.mode = "walk"; P.speed = 0.72; P.dwellT = 0;
+  clearEstop && clearEstop(); SAFE.blind = true;
+  if (!state.auto) startAutoWork();
+  setStatus("A→B 충돌 시나리오 — 같은 방향 접근 · 감지 실패 상태");
   return true;
 }
 function lstmYieldDemoUpdate(now, dtMs) {
@@ -11776,7 +11813,9 @@ $("autoBtn").addEventListener("click", () => {
   if (LSTM_YIELD_DEMO.active) finishLstmYieldDemo("cancelled", null, true);
   startAutoWork();
 });
-$("lstmYieldBtn").addEventListener("click", startLstmYieldDemo);
+$("lstmYieldBtn").addEventListener("click", () => startDirectionalScenario("avoidance"));
+$("collisionScenarioBtn").addEventListener("click", () => startDirectionalScenario("collision"));
+$("avoidanceScenarioBtn").addEventListener("click", () => startDirectionalScenario("avoidance"));
 $("stopBtn").addEventListener("click", () => {
   if (LSTM_YIELD_DEMO.active) finishLstmYieldDemo("cancelled", null, true);
   state.auto = false; setStatus("정지");

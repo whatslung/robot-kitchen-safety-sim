@@ -152,6 +152,19 @@ def test_lstm_yield_demo_starts_robot_before_the_person_and_restores_route_block
     assert "D.minDistance = Math.min(D.minDistance, SAFE.dist)" in text
 
 
+def test_directional_collision_and_avoidance_controls_share_the_same_a_to_b_route():
+    text = sim_source()
+    assert 'id="collisionScenarioBtn"' in text
+    assert 'id="avoidanceScenarioBtn"' in text
+    assert "function directionalScenarioRoute" in text
+    assert 'startDirectionalScenario("collision")' in text
+    assert 'startDirectionalScenario("avoidance")' in text
+    assert "const route = directionalScenarioRoute();" in text
+    assert "AVOID.safeLiftTarget = T.rightSafe" in text
+    assert "P.path = route.points.map(point => point.clone())" in text
+    assert 'P.role = "danger"' in text
+
+
 def test_safe_lift_candidate_is_scored_even_before_cross_progress():
     text = sim_source()
     start = text.index("let retract =", text.index("function avoidDecide"))
@@ -159,7 +172,7 @@ def test_safe_lift_candidate_is_scored_even_before_cross_progress():
     candidates = text[start:end]
     assert "if (danger)" in candidates
     assert "if (progress > AVOID.startT)" in candidates
-    assert candidates.index("if (progress > AVOID.startT)") < candidates.index("ikAngles(T.potHover)")
+    assert candidates.index("if (progress > AVOID.startT)") < candidates.index("AVOID.safeLiftTarget || T.potHover")
     assert 'retract = scoreArmCandidate(state.stepStartJoints, occupancy, true)' in candidates
 
 
