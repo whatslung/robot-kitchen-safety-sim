@@ -11,6 +11,8 @@
 | `fig3_why_learned_prediction@2x.png` | 위험진입 recall — CV/Kalman vs LSTM/Transformer | "직선 예측이면 안 되나?" |
 | `fig4_dataset_sample@2x.png` | 궤적 학습 데이터 샘플 (전체 씬 + obs8→pred12 윈도우) | "무슨 데이터로 학습했나" |
 | `fig5_world_fusion@2x.png` | 멀티카메라 월드 융합 원리 (아핀 → 바닥좌표 → 병합 → 트랙) | "여러 카메라가 본 사람을 어떻게 합치나" |
+| `fig6_fusion_ladder@2x.png` | 검출 융합 사다리 (단일 0.85 → 공간 0.89 → +시간축 0.95) | "정확도를 어떻게 끌어올렸나 / 왜 시간축" |
+| `fig7_ssm_safety@2x.png` | SSM 안전거리 예산 (정지/감속링 + 예측도달 5.7m 수식) | "왜 예측이 필요한가 / 안전거리 논지" |
 
 ## 재현
 

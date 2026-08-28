@@ -1,0 +1,113 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Figures 2</title>
+<style>
+ :root{--ink:#0b0b0b;--ink2:#52514e;--muted:#898781;--grid:#e1e0d9;--axis:#c3c2b7;
+   --blue:#2a78d6;--orange:#eb6834;--aqua:#1baf7a;--red:#e34948;--yellow:#eda100;
+   --font:system-ui,-apple-system,"Segoe UI",sans-serif}
+ *{box-sizing:border-box} body{margin:0;background:#dfe1e4;font-family:var(--font);color:var(--ink)}
+ .figure{background:#fff;margin:32px auto;padding:34px 40px 30px}
+ #fig6,#fig7{width:1080px}
+ .figtitle{font-size:26px;font-weight:750;letter-spacing:-.01em;margin:0 0 4px}
+ .figsub{font-size:16px;color:var(--ink2);margin:0 0 24px;font-weight:450}
+ .figcap{font-size:14px;color:var(--ink2);line-height:1.55;margin:22px 2px 0;max-width:1000px}
+ .figcap b{color:var(--ink);font-weight:650}
+ .tick{font-size:13px;fill:var(--muted);font-family:var(--font);font-variant-numeric:tabular-nums}
+ .grp{font-size:15px;fill:var(--ink);font-family:var(--font);font-weight:600}
+ .sub{font-size:13px;fill:var(--muted);font-family:var(--font)}
+ .val{font-size:16px;fill:var(--ink);font-family:var(--font);font-weight:700;font-variant-numeric:tabular-nums}
+ .delta{font-size:14px;fill:#006300;font-family:var(--font);font-weight:700}
+ .ytitle{font-size:13px;fill:var(--ink2);font-family:var(--font);font-weight:600}
+ svg{display:block}
+</style></head><body>
+
+<!-- ===== FIG 6 : detection fusion ladder ===== -->
+<section class="figure" id="fig6">
+ <h2 class="figtitle">Breaking the fusion ceiling: space then time</h2>
+ <p class="figsub">Person-coverage recall as each axis is added. Spatial fusion alone plateaus; the time axis breaks through.</p>
+ <svg width="1000" height="380" viewBox="0 0 1000 380" role="img" aria-label="Recall ladder">
+   <text class="ytitle" x="16" y="20">Coverage recall</text>
+   <line x1="70" y1="300" x2="980" y2="300" stroke="var(--axis)" stroke-width="1.5"/>
+   <line x1="70" y1="235" x2="980" y2="235" stroke="var(--grid)" stroke-width="1"/>
+   <line x1="70" y1="170" x2="980" y2="170" stroke="var(--grid)" stroke-width="1"/>
+   <line x1="70" y1="105" x2="980" y2="105" stroke="var(--grid)" stroke-width="1"/>
+   <line x1="70" y1="40"  x2="980" y2="40"  stroke="var(--grid)" stroke-width="1"/>
+   <text class="tick" x="60" y="305" text-anchor="end">0%</text>
+   <text class="tick" x="60" y="240" text-anchor="end">25%</text>
+   <text class="tick" x="60" y="175" text-anchor="end">50%</text>
+   <text class="tick" x="60" y="110" text-anchor="end">75%</text>
+   <text class="tick" x="60" y="45"  text-anchor="end">100%</text>
+   <!-- upper bound line 0.979 -> y=300-.979*260=45.5 -->
+   <line x1="120" y1="45.5" x2="930" y2="45.5" stroke="#898781" stroke-width="1.5" stroke-dasharray="6 5"/>
+   <text class="sub" x="930" y="41" text-anchor="end">upper bound 97.9% (space+time)</text>
+   <!-- bars: 3 stages, plot 70..980 w910, slot 303, center 70+303*(i+.5), bw 120 -->
+   <!-- 0.848 -> h220.5 y79.5 ; 0.894 -> h232.4 y67.6 ; 0.950 -> h247 y53 -->
+   <rect x="161" y="79.5" width="120" height="220.5" rx="4" fill="var(--orange)"/>
+   <rect x="464" y="67.6" width="120" height="232.4" rx="4" fill="var(--blue)"/>
+   <rect x="767" y="53"   width="120" height="247"   rx="4" fill="var(--blue)"/>
+   <text class="val" x="221" y="70" text-anchor="middle">84.8%</text>
+   <text class="val" x="524" y="58" text-anchor="middle">89.4%</text>
+   <text class="val" x="827" y="43" text-anchor="middle">95.0%</text>
+   <!-- deltas -->
+   <text class="delta" x="372" y="120" text-anchor="middle">+4.6</text>
+   <text class="delta" x="675" y="108" text-anchor="middle">+5.6</text>
+   <!-- x labels -->
+   <text class="grp" x="221" y="328" text-anchor="middle">single camera</text>
+   <text class="sub" x="221" y="347" text-anchor="middle">1 frame</text>
+   <text class="grp" x="524" y="328" text-anchor="middle">+ spatial fusion</text>
+   <text class="sub" x="524" y="347" text-anchor="middle">multi-camera, one floor</text>
+   <text class="grp" x="827" y="328" text-anchor="middle">+ temporal tracking</text>
+   <text class="sub" x="827" y="347" text-anchor="middle">Kalman + coast</text>
+ </svg>
+ <p class="figcap"><b>Spatial overlap alone caps near 90%</b> &mdash; even 9 cameras reach only 89.5%, because cameras that miss a
+ hard case (smoke, hood, arm occlusion) tend to <b>miss it together</b> (correlated misses). Adding the <b>time axis</b>
+ &mdash; where misses are far less correlated &mdash; lifts recall to <b>95.0%</b>, near the 97.9% ceiling.
+ Mechanism ladder with idealized cross-camera linking (&sect;5-7); the realized world-coordinate deployment reaches
+ <b>94.0%</b> (&sect;5-9).</p>
+</section>
+
+<!-- ===== FIG 7 : SSM safety distance ===== -->
+<section class="figure" id="fig7">
+ <h2 class="figtitle">Why predict? The stopping-distance budget (ISO/TS&nbsp;15066 SSM)</h2>
+ <p class="figsub">To stop before contact, the robot must see and predict people out to a full prediction-reach disc &mdash; not just the stop ring.</p>
+ <svg width="1000" height="520" viewBox="0 0 1000 520" role="img" aria-label="SSM safety rings and stopping distance">
+   <!-- scale 40px/m, center (300,300) -->
+   <!-- reach 5.7m=228 ; slow 3.9=156 ; stop 3.1=124 -->
+   <circle cx="300" cy="300" r="228" fill="#2a78d611" stroke="var(--blue)" stroke-width="2" stroke-dasharray="7 6"/>
+   <circle cx="300" cy="300" r="156" fill="none" stroke="var(--yellow)" stroke-width="2"/>
+   <circle cx="300" cy="300" r="124" fill="#e3494812" stroke="var(--red)" stroke-width="2"/>
+   <!-- robot -->
+   <rect x="288" y="288" width="24" height="24" rx="4" fill="#0b0b0b"/>
+   <text x="300" y="333" text-anchor="middle" font-size="13" font-weight="700" fill="#0b0b0b" font-family="system-ui">robot</text>
+   <!-- ring labels -->
+   <text x="300" y="182" text-anchor="middle" font-size="13" font-weight="700" fill="var(--red)" font-family="system-ui">stop 3.1 m</text>
+   <text x="300" y="150" text-anchor="middle" font-size="13" font-weight="700" fill="#b06f00" font-family="system-ui">slow 3.9 m</text>
+   <text x="300" y="84"  text-anchor="middle" font-size="13" font-weight="700" fill="var(--blue)" font-family="system-ui">prediction reach 5.7 m</text>
+   <!-- approaching person at 5 m upper-right: dir toward center; 5m=200px -->
+   <!-- place at angle ~ -37deg from center: dx=160,dy=-120 -> (460,180) -->
+   <circle cx="460" cy="180" r="9" fill="#0b0b0b"/>
+   <text x="474" y="176" font-size="13" font-weight="700" fill="#0b0b0b" font-family="system-ui">person</text>
+   <!-- velocity + predicted path toward robot (dashed) -->
+   <line x1="460" y1="180" x2="404" y2="222" stroke="var(--blue)" stroke-width="3.5"/>
+   <polygon points="404,222 414,214 418,226" fill="var(--blue)"/>
+   <line x1="460" y1="180" x2="352" y2="262" stroke="#898781" stroke-width="2" stroke-dasharray="3 6"/>
+   <text x="452" y="205" font-size="13" font-weight="700" fill="var(--blue)" font-family="system-ui">v = 1.6 m/s</text>
+   <!-- formula panel -->
+   <g font-family="system-ui">
+     <text x="640" y="150" font-size="17" font-weight="750" fill="#0b0b0b">Prediction reach</text>
+     <text x="640" y="192" font-size="18" fill="#0b0b0b">= stop ring + v<tspan font-size="12" dy="4">h</tspan><tspan dy="-4"> &times; horizon</tspan></text>
+     <text x="640" y="228" font-size="18" fill="#52514e">= 3.10 m + 1.6 m/s &times; 1.6 s</text>
+     <text x="640" y="266" font-size="22" font-weight="750" fill="var(--blue)">= 5.7 m</text>
+     <line x1="640" y1="292" x2="960" y2="292" stroke="var(--grid)" stroke-width="1"/>
+     <text x="640" y="322" font-size="14" fill="#52514e">stop ring&nbsp;&nbsp;3.10 m</text>
+     <text x="640" y="346" font-size="14" fill="#52514e">walk speed v<tspan font-size="10" dy="3">h</tspan><tspan dy="-3">&nbsp;&nbsp;1.6 m/s</tspan></text>
+     <text x="640" y="370" font-size="14" fill="#52514e">predict horizon&nbsp;&nbsp;1.6 s</text>
+   </g>
+ </svg>
+ <p class="figcap"><b>Prediction turns a reaction into a head start.</b> A person walking straight in covers 1.6&nbsp;m/s &times; 1.6&nbsp;s
+ &asymp; 2.6&nbsp;m during the horizon, so anyone within &tilde;5.7&nbsp;m can reach the stop ring before the robot could
+ otherwise react &mdash; that is the disc the cameras must cover and the predictor must watch. Because the dominant term is
+ <b>detection + tracking latency</b>, faster perception directly shrinks the required safety distance (project thesis, &sect;5-12).
+ Ring-to-metre scale (mPerAU) still needs field calibration (&plusmn;25%).</p>
+</section>
+
+<script>if(location.hash==='#2x'){document.documentElement.style.zoom='2';}</script>
+</body></html>
