@@ -1,0 +1,56 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Predict then avoid — sequence</title>
+<style>
+ :root{--ink:#0b0b0b;--ink2:#52514e;--muted:#898781;--font:system-ui,-apple-system,"Segoe UI",sans-serif;
+   --ok:#1b9e6b;--warn:#eda100;--stop:#e34948;}
+ *{box-sizing:border-box} body{margin:0;background:#dfe1e4;font-family:var(--font);color:var(--ink)}
+ #fig13{width:1600px;background:#fff;margin:32px auto;padding:34px 40px 30px}
+ .figtitle{font-size:26px;font-weight:750;letter-spacing:-.01em;margin:0 0 4px}
+ .figsub{font-size:16px;color:var(--ink2);margin:0 0 22px;font-weight:450}
+ .cols{display:flex;gap:20px}
+ .col{flex:1;display:flex;flex-direction:column}
+ .step{display:flex;align-items:center;gap:9px;margin:0 0 8px}
+ .snum{width:26px;height:26px;border-radius:50%;background:#54585d;color:#fff;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;flex:0 0 26px}
+ .stitle{font-size:16.5px;font-weight:750}
+ .well{position:relative;width:100%;aspect-ratio:1379/965;border-radius:10px;overflow:hidden;border:1px solid rgba(11,11,11,.12);background:#f2f2f0}
+ .well img{width:100%;height:100%;object-fit:cover;display:block}
+ .tag{position:absolute;top:8px;left:8px;font-size:12px;font-weight:700;color:#fff;padding:2px 8px;border-radius:5px}
+ .cap{font-size:13px;color:var(--ink2);line-height:1.45;margin-top:10px}
+ .cap b{color:var(--ink);font-weight:650}
+ .arrow{flex:0 0 30px;display:flex;align-items:center;justify-content:center}
+ .figcap{font-size:14px;color:var(--ink2);line-height:1.55;margin:20px 2px 0;max-width:1520px}
+ .figcap b{color:var(--ink);font-weight:650}
+</style></head><body>
+<section id="fig13">
+ <h2 class="figtitle">Predict, then get out of the way &mdash; one avoidance, step by step</h2>
+ <p class="figsub">Same camera, one continuous run. Watch the arm move <b>off the worker's path</b> the moment the predicted path reaches the stop ring.</p>
+ <div class="cols">
+
+  <div class="col">
+   <div class="step"><span class="snum">1</span><span class="stitle">Normal operation</span></div>
+   <div class="well"><span class="tag" style="background:var(--ok)">robot: normal &middot; 4.7 m</span><img src="src_seq1_normal.png" alt=""></div>
+   <div class="cap"><b>A worker approaches</b> (blue arrow) while the robot keeps cooking. Still outside the rings &mdash; no action needed yet.</div>
+  </div>
+
+  <div class="arrow"><svg width="26" height="26"><path d="M2,13 H20" stroke="#9aa0a6" stroke-width="2.5"/><path d="M16,7 L24,13 L16,19 z" fill="#9aa0a6"/></svg></div>
+
+  <div class="col">
+   <div class="step"><span class="snum">2</span><span class="stitle">Prediction fires</span></div>
+   <div class="well"><span class="tag" style="background:var(--warn)">robot: slowing &middot; 3.4 m</span><img src="src_seq2_predict.png" alt=""></div>
+   <div class="cap"><b>The predicted path (red dashes) will enter the stop ring within 1.6 s.</b> That is the trigger &mdash; the robot begins to slow while the worker is still 3.4 m away.</div>
+  </div>
+
+  <div class="arrow"><svg width="26" height="26"><path d="M2,13 H20" stroke="#9aa0a6" stroke-width="2.5"/><path d="M16,7 L24,13 L16,19 z" fill="#9aa0a6"/></svg></div>
+
+  <div class="col">
+   <div class="step"><span class="snum">3</span><span class="stitle">Robot yields &mdash; to where</span></div>
+   <div class="well"><span class="tag" style="background:var(--stop)">robot: retreated &middot; 2.6 m</span><img src="src_seq3_retreat.png" alt=""></div>
+   <div class="cap"><b>The arm pulls back over the kettle</b>, off the worker's path (compare its reach in step 2). The worker passes through where the arm just was &mdash; no contact.</div>
+  </div>
+
+ </div>
+ <p class="figcap"><b>Where does it avoid to?</b> Look at the arm across the three frames: extended out over the aisle (1&ndash;2) &rarr;
+ pulled back over the kettle, on the far side from the worker (3). The robot doesn't just stop in place &mdash; it <b>retracts to
+ the side away from the predicted path</b>, clearing the space the worker is about to occupy, and resumes once the worker leaves.
+ Trigger = a predicted path entering the stop ring within the 1.6 s horizon (ISO/TS&nbsp;15066 SSM).</p>
+</section>
+</body></html>

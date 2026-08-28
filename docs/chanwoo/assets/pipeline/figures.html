@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Pipeline figures</title>
+<style>
+  :root{
+    --ink:#0b0b0b; --ink2:#52514e; --muted:#898781;
+    --grid:#e1e0d9; --axis:#c3c2b7; --surface:#ffffff;
+    --blue:#2a78d6; --orange:#eb6834; --border:rgba(11,11,11,.10);
+    --font:system-ui,-apple-system,"Segoe UI",sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#dfe1e4;font-family:var(--font);color:var(--ink)}
+  .figure{background:var(--surface);margin:32px auto;padding:34px 40px 30px;}
+  #fig1{width:1720px}
+  #fig2,#fig3{width:1080px}
+  .figtitle{font-size:26px;font-weight:750;letter-spacing:-.01em;margin:0 0 4px}
+  .figsub{font-size:16px;color:var(--ink2);margin:0 0 26px;font-weight:450}
+  .figcap{font-size:14px;color:var(--ink2);line-height:1.5;margin:22px 2px 0;max-width:980px}
+  .figcap b{color:var(--ink);font-weight:650}
+
+  /* ---- pipeline ---- */
+  .flow{display:flex;align-items:stretch;gap:0}
+  .stage{flex:1 1 0;min-width:0;display:flex;flex-direction:column}
+  .snum{font-size:13px;font-weight:700;color:var(--blue);letter-spacing:.04em}
+  .stitle{font-size:17px;font-weight:700;margin:2px 0 10px;line-height:1.2;min-height:40px}
+  .well{width:100%;aspect-ratio:4/3;border:1px solid var(--border);border-radius:10px;
+        overflow:hidden;background:#f2f2f0}
+  .well img{width:100%;height:100%;object-fit:cover;display:block}
+  .ssub{font-size:12.5px;color:var(--ink2);line-height:1.4;margin-top:10px}
+  .arrowcol{flex:0 0 78px;display:flex;flex-direction:column;align-items:center;
+            justify-content:flex-start;padding-top:96px}
+  .arrowlbl{font-size:11px;color:var(--muted);font-weight:600;margin-bottom:6px;
+            text-align:center;line-height:1.25;height:26px}
+  .arrow{width:100%;height:2px;background:var(--axis);position:relative}
+  .arrow::after{content:"";position:absolute;right:-1px;top:-4px;border-left:9px solid var(--axis);
+                border-top:5px solid transparent;border-bottom:5px solid transparent}
+
+  /* ---- charts ---- */
+  .legend{display:flex;gap:22px;margin:0 0 14px;font-size:14px;color:var(--ink2)}
+  .legend .k{display:inline-flex;align-items:center;gap:8px}
+  .swatch{width:14px;height:14px;border-radius:3px;display:inline-block}
+  svg{display:block}
+  .axlbl{font-size:13px;fill:var(--muted);font-family:var(--font)}
+  .tick{font-size:13px;fill:var(--muted);font-family:var(--font);font-variant-numeric:tabular-nums}
+  .grp{font-size:15px;fill:var(--ink);font-family:var(--font);font-weight:600}
+  .val{font-size:15px;fill:var(--ink);font-family:var(--font);font-weight:700;font-variant-numeric:tabular-nums}
+  .ytitle{font-size:13px;fill:var(--ink2);font-family:var(--font);font-weight:600}
+</style>
+</head>
+<body>
+
+<!-- ========================= FIGURE 1 : PIPELINE ========================= -->
+<section class="figure" id="fig1">
+  <h2 class="figtitle">Vision pipeline for predictive robot-kitchen safety</h2>
+  <p class="figsub">Overhead cameras &rarr; per-person future paths &rarr; a stop/slow decision before anyone enters the danger zone.</p>
+  <div class="flow">
+
+    <div class="stage">
+      <span class="snum">STAGE 1</span>
+      <div class="stitle">Multi-camera input</div>
+      <div class="well"><img src="1_input_multicamera.png" alt=""></div>
+      <div class="ssub">6 overhead (nadir) cameras &middot; image &asymp; floor plane</div>
+    </div>
+
+    <div class="arrowcol"><div class="arrowlbl">frames</div><div class="arrow"></div></div>
+
+    <div class="stage">
+      <span class="snum">STAGE 2</span>
+      <div class="stitle">Person detection</div>
+      <div class="well"><img src="2_detection_orthotop.jpg" alt=""></div>
+      <div class="ssub">YOLO11, recall-first (conf&nbsp;0.15) &middot; keep low-confidence hits</div>
+    </div>
+
+    <div class="arrowcol"><div class="arrowlbl">world coords</div><div class="arrow"></div></div>
+
+    <div class="stage">
+      <span class="snum">STAGE 3</span>
+      <div class="stitle">BEV fusion &amp; tracking</div>
+      <div class="well"><img src="3_tracking_bytetrack.png" alt=""></div>
+      <div class="ssub">affine calib &rarr; floor (5&nbsp;cm) &middot; multi-cam fuse &middot; ID + velocity</div>
+    </div>
+
+    <div class="arrowcol"><div class="arrowlbl">ID + velocity</div><div class="arrow"></div></div>
+
+    <div class="stage">
+      <span class="snum">STAGE 4</span>
+      <div class="stitle">Trajectory prediction</div>
+      <div class="well"><img src="4_prediction_multimodal.png" alt=""></div>
+      <div class="ssub">CV / Kalman / <b style="color:var(--blue)">LSTM &middot; Transformer</b> &middot; multimodal + &sigma; &middot; 1.6&nbsp;s</div>
+    </div>
+
+    <div class="arrowcol"><div class="arrowlbl">future paths</div><div class="arrow"></div></div>
+
+    <div class="stage">
+      <span class="snum">STAGE 5</span>
+      <div class="stitle">Risk &amp; avoidance</div>
+      <div class="well"><img src="5_safety_rings.jpg" alt=""></div>
+      <div class="ssub">ISO/TS&nbsp;15066 SSM &middot; stop 3.1&nbsp;m / slow 3.9&nbsp;m &rarr; robot backs off</div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ========================= FIGURE 2 : 4 vs 6 cameras ========================= -->
+<section class="figure" id="fig2">
+  <h2 class="figtitle">Why six cameras? Safety-ring coverage</h2>
+  <p class="figsub">Fraction of people that are actually detectable at each ring around the robot.</p>
+  <div class="legend">
+    <span class="k"><span class="swatch" style="background:var(--orange)"></span>4 cameras</span>
+    <span class="k"><span class="swatch" style="background:var(--blue)"></span>6 cameras</span>
+  </div>
+  <svg width="1000" height="360" viewBox="0 0 1000 360" role="img" aria-label="Detectable coverage by ring, 4 vs 6 cameras">
+    <text class="ytitle" x="16" y="20">Detectable coverage</text>
+    <!-- gridlines + y ticks -->
+    <g>
+      <!-- baseline y=300, top y=40, 100% span 260 -->
+      <line x1="70" y1="300" x2="980" y2="300" stroke="var(--axis)" stroke-width="1.5"/>
+      <line x1="70" y1="235" x2="980" y2="235" stroke="var(--grid)" stroke-width="1"/>
+      <line x1="70" y1="170" x2="980" y2="170" stroke="var(--grid)" stroke-width="1"/>
+      <line x1="70" y1="105" x2="980" y2="105" stroke="var(--grid)" stroke-width="1"/>
+      <line x1="70" y1="40"  x2="980" y2="40"  stroke="var(--grid)" stroke-width="1"/>
+      <text class="tick" x="60" y="305" text-anchor="end">0%</text>
+      <text class="tick" x="60" y="240" text-anchor="end">25%</text>
+      <text class="tick" x="60" y="175" text-anchor="end">50%</text>
+      <text class="tick" x="60" y="110" text-anchor="end">75%</text>
+      <text class="tick" x="60" y="45"  text-anchor="end">100%</text>
+    </g>
+    <!-- Group 1: Stop <3.1m  (centers computed for plot x 70..980, 3 groups) -->
+    <!-- plotW=910, group width ~303, centers at 70+303*(i+.5) -->
+    <!-- Stop: 4c 100 -> h260 y40 ; 6c 100 -->
+    <g>
+      <rect x="160" y="40"  width="70" height="260" rx="4" fill="var(--orange)"/>
+      <rect x="232" y="40"  width="70" height="260" rx="4" fill="var(--blue)"/>
+      <text class="val" x="195" y="30" text-anchor="middle">100%</text>
+      <text class="val" x="267" y="30" text-anchor="middle">100%</text>
+      <text class="grp" x="231" y="330" text-anchor="middle">Stop ring</text>
+      <text class="axlbl" x="231" y="350" text-anchor="middle">&lt; 3.1 m</text>
+    </g>
+    <!-- Slow: 4c 78 -> h202.8 y97.2 ; 6c 100 -->
+    <g>
+      <rect x="463" y="97"  width="70" height="203" rx="4" fill="var(--orange)"/>
+      <rect x="535" y="40"  width="70" height="260" rx="4" fill="var(--blue)"/>
+      <text class="val" x="498" y="87" text-anchor="middle">78%</text>
+      <text class="val" x="570" y="30" text-anchor="middle">100%</text>
+      <text class="grp" x="534" y="330" text-anchor="middle">Slow ring</text>
+      <text class="axlbl" x="534" y="350" text-anchor="middle">3.1 &ndash; 3.9 m</text>
+    </g>
+    <!-- Approach: 4c 60 -> h156 y144 ; 6c 98 -> h254.8 y45.2 -->
+    <g>
+      <rect x="766" y="144" width="70" height="156" rx="4" fill="var(--orange)"/>
+      <rect x="838" y="45"  width="70" height="255" rx="4" fill="var(--blue)"/>
+      <text class="val" x="801" y="134" text-anchor="middle">60%</text>
+      <text class="val" x="873" y="35" text-anchor="middle">98%</text>
+      <text class="grp" x="837" y="330" text-anchor="middle">Approach ring</text>
+      <text class="axlbl" x="837" y="350" text-anchor="middle">3.9 &ndash; 5.0 m</text>
+    </g>
+  </svg>
+  <p class="figcap"><b>4 cameras leave a hole in the outer rings.</b> When people cluster to one side of the cell,
+  a 4-camera layout can detect only <b>78%</b> at the slow ring and <b>60%</b> at the approach ring &mdash;
+  exactly the people a predictive stop must catch. Six cameras cover every ring (&ge;98%).
+  Measured over 24 seeds / 6,630 samples (geometric coverage).</p>
+</section>
+
+<!-- ========================= FIGURE 3 : predictor comparison ========================= -->
+<section class="figure" id="fig3">
+  <h2 class="figtitle">Why learned prediction? Danger-zone entry recall</h2>
+  <p class="figsub">Share of people entering the stop ring (3.1 m) whose entry is predicted in time.</p>
+  <div class="legend">
+    <span class="k"><span class="swatch" style="background:var(--orange)"></span>Physics-based</span>
+    <span class="k"><span class="swatch" style="background:var(--blue)"></span>Learned</span>
+  </div>
+  <svg width="1000" height="360" viewBox="0 0 1000 360" role="img" aria-label="Entry recall by predictor">
+    <text class="ytitle" x="16" y="20">Entry recall</text>
+    <g>
+      <line x1="70" y1="300" x2="980" y2="300" stroke="var(--axis)" stroke-width="1.5"/>
+      <line x1="70" y1="235" x2="980" y2="235" stroke="var(--grid)" stroke-width="1"/>
+      <line x1="70" y1="170" x2="980" y2="170" stroke="var(--grid)" stroke-width="1"/>
+      <line x1="70" y1="105" x2="980" y2="105" stroke="var(--grid)" stroke-width="1"/>
+      <line x1="70" y1="40"  x2="980" y2="40"  stroke="var(--grid)" stroke-width="1"/>
+      <text class="tick" x="60" y="305" text-anchor="end">0%</text>
+      <text class="tick" x="60" y="240" text-anchor="end">25%</text>
+      <text class="tick" x="60" y="175" text-anchor="end">50%</text>
+      <text class="tick" x="60" y="110" text-anchor="end">75%</text>
+      <text class="tick" x="60" y="45"  text-anchor="end">100%</text>
+    </g>
+    <!-- 4 bars, plot 70..980 width 910, slot 227.5, center 70+227.5*(i+.5), bar width 96 -->
+    <!-- CV 57 -> h148.2 y151.8 ; Kalman 70 -> h182 y118 ; LSTM 93 -> h241.8 y58.2 ; Trans 92 -> h239.2 y60.8 -->
+    <g>
+      <rect x="135.75" y="152" width="96" height="148" rx="4" fill="var(--orange)"/>
+      <text class="val" x="183.75" y="142" text-anchor="middle">57%</text>
+      <text class="grp" x="183.75" y="330" text-anchor="middle">CV</text>
+    </g>
+    <g>
+      <rect x="363.25" y="118" width="96" height="182" rx="4" fill="var(--orange)"/>
+      <text class="val" x="411.25" y="108" text-anchor="middle">70%</text>
+      <text class="grp" x="411.25" y="330" text-anchor="middle">Kalman</text>
+    </g>
+    <g>
+      <rect x="590.75" y="58" width="96" height="242" rx="4" fill="var(--blue)"/>
+      <text class="val" x="638.75" y="48" text-anchor="middle">93%</text>
+      <text class="grp" x="638.75" y="330" text-anchor="middle">LSTM</text>
+    </g>
+    <g>
+      <rect x="818.25" y="61" width="96" height="239" rx="4" fill="var(--blue)"/>
+      <text class="val" x="866.25" y="51" text-anchor="middle">92%</text>
+      <text class="grp" x="866.25" y="330" text-anchor="middle">Transformer</text>
+    </g>
+  </svg>
+  <p class="figcap"><b>Straight-line prediction misses curved approaches.</b> Constant-velocity (CV) predicts only
+  <b>57%</b> of dangerous entries &mdash; it misses <b>48</b> people who curve into the robot. The learned models
+  predict <b>93%</b>, missing only <b>8</b>. A missed entry is a potential collision, so recall is the safety-critical
+  metric; the extra false alarms (lower precision) are the accepted trade. 4-camera config, robot at origin.</p>
+</section>
+
+<script>/* 2x export: open figures.html#2x for double-resolution element screenshots */
+if(location.hash==='#2x'){document.documentElement.style.zoom='2';}</script>
+</body>
+</html>

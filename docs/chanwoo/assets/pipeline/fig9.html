@@ -1,0 +1,67 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Recall vs precision</title>
+<style>
+ :root{--ink:#0b0b0b;--ink2:#52514e;--muted:#898781;--grid:#e1e0d9;--axis:#c3c2b7;
+   --blue:#2a78d6;--orange:#eb6834;--font:system-ui,-apple-system,"Segoe UI",sans-serif}
+ *{box-sizing:border-box} body{margin:0;background:#dfe1e4;font-family:var(--font);color:var(--ink)}
+ #fig9{width:1080px;background:#fff;margin:32px auto;padding:34px 40px 30px}
+ .figtitle{font-size:26px;font-weight:750;letter-spacing:-.01em;margin:0 0 4px}
+ .figsub{font-size:16px;color:var(--ink2);margin:0 0 20px;font-weight:450}
+ .legend{display:flex;gap:22px;margin:0 0 14px;font-size:14px;color:var(--ink2)}
+ .k{display:inline-flex;align-items:center;gap:8px}
+ .sw{width:14px;height:14px;border-radius:3px;display:inline-block}
+ .figcap{font-size:14px;color:var(--ink2);line-height:1.55;margin:22px 2px 0;max-width:1000px}
+ .figcap b{color:var(--ink);font-weight:650}
+ .tick{font-size:13px;fill:var(--muted);font-family:var(--font);font-variant-numeric:tabular-nums}
+ .grp{font-size:16px;fill:var(--ink);font-family:var(--font);font-weight:700}
+ .val{font-size:15px;fill:var(--ink);font-family:var(--font);font-weight:700;font-variant-numeric:tabular-nums}
+ .up{font-size:14px;fill:#006300;font-family:var(--font);font-weight:700}
+ .down{font-size:14px;fill:#b5322f;font-family:var(--font);font-weight:700}
+ .ytitle{font-size:13px;fill:var(--ink2);font-family:var(--font);font-weight:600}
+</style></head><body>
+<section id="fig9">
+ <h2 class="figtitle">The recall&ndash;precision trade of learned prediction</h2>
+ <p class="figsub">Adopting the learned predictor (before = constant-velocity, after = LSTM) &mdash; danger-zone entry.</p>
+ <div class="legend">
+   <span class="k"><span class="sw" style="background:var(--orange)"></span>Before &middot; constant-velocity</span>
+   <span class="k"><span class="sw" style="background:var(--blue)"></span>After &middot; learned (LSTM)</span>
+ </div>
+ <svg width="1000" height="380" viewBox="0 0 1000 380" role="img" aria-label="Recall and precision before/after">
+   <text class="ytitle" x="16" y="20">Rate</text>
+   <line x1="70" y1="300" x2="980" y2="300" stroke="var(--axis)" stroke-width="1.5"/>
+   <line x1="70" y1="235" x2="980" y2="235" stroke="var(--grid)" stroke-width="1"/>
+   <line x1="70" y1="170" x2="980" y2="170" stroke="var(--grid)" stroke-width="1"/>
+   <line x1="70" y1="105" x2="980" y2="105" stroke="var(--grid)" stroke-width="1"/>
+   <line x1="70" y1="40"  x2="980" y2="40"  stroke="var(--grid)" stroke-width="1"/>
+   <text class="tick" x="60" y="305" text-anchor="end">0%</text>
+   <text class="tick" x="60" y="240" text-anchor="end">25%</text>
+   <text class="tick" x="60" y="175" text-anchor="end">50%</text>
+   <text class="tick" x="60" y="110" text-anchor="end">75%</text>
+   <text class="tick" x="60" y="45"  text-anchor="end">100%</text>
+
+   <!-- two groups: Recall (center ~297), Precision (center ~753). plot 70..980 -->
+   <!-- scale: 100%->260px. y=300-v*2.6 ; bar width 120, pair gap 6 -->
+   <!-- RECALL: CV 57 -> h148.2 y151.8 ; LSTM 93 -> h241.8 y58.2 -->
+   <rect x="200" y="151.8" width="120" height="148.2" rx="4" fill="var(--orange)"/>
+   <rect x="326" y="58.2"  width="120" height="241.8" rx="4" fill="var(--blue)"/>
+   <text class="val" x="260" y="142" text-anchor="middle">57%</text>
+   <text class="val" x="386" y="48"  text-anchor="middle">93%</text>
+   <text class="up"  x="323" y="118" text-anchor="middle">+36</text>
+   <text class="grp" x="323" y="330" text-anchor="middle">Recall</text>
+   <text class="tick" x="323" y="350" text-anchor="middle">caught danger entries &uarr; better</text>
+
+   <!-- PRECISION: CV 96 -> h249.6 y50.4 ; LSTM 67 -> h174.2 y125.8 -->
+   <rect x="640" y="50.4"  width="120" height="249.6" rx="4" fill="var(--orange)"/>
+   <rect x="766" y="125.8" width="120" height="174.2" rx="4" fill="var(--blue)"/>
+   <text class="val" x="700" y="40"  text-anchor="middle">96%</text>
+   <text class="val" x="826" y="116" text-anchor="middle">67%</text>
+   <text class="down" x="763" y="96" text-anchor="middle">&minus;29</text>
+   <text class="grp" x="763" y="330" text-anchor="middle">Precision</text>
+   <text class="tick" x="763" y="350" text-anchor="middle">fewer false alarms &uarr; better</text>
+ </svg>
+ <p class="figcap"><b>A deliberate, safety-positive trade.</b> The learned predictor lifts danger-zone <b>recall 57%&rarr;93%</b>
+ &mdash; it catches the curved approaches constant-velocity misses &mdash; at the cost of <b>precision 96%&rarr;67%</b>,
+ i.e.&nbsp;more cautious false slowdowns. In safety, a <b>missed entry is a possible collision</b> while a false alarm only
+ costs throughput, so trading precision for recall is the correct direction. 4-camera config, robot at origin (&sect;5-15).</p>
+</section>
+<script>if(location.hash==='#2x'){document.documentElement.style.zoom='2';}</script>
+</body></html>
