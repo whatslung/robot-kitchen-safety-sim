@@ -20,6 +20,7 @@
 | `fig11_methodology@2x.png` | 컬러 넘버 5단계 메서드 파이프라인 + 페이즈 브래킷 | 논문식 개요 (fig1 대체/보강용) |
 | `fig12_multimodal_prediction@2x.png` | 멀티모달 예측 도식 (사람별 화살표 부채꼴 + 예측경로가 정지링 진입 → 회피) | Trajectron++ 티저 스타일 (깨끗한 SVG 도식). "왜 회피?"를 명시 |
 | `fig13_avoidance_sequence@2x.png` | 회피 3컷 시퀀스 (정상→예측경로 정지링 진입→팔 후퇴) — 실제 sim | "예측 → 어디로 회피하는가"를 실장면으로 |
+| `fig14_predictor_architecture@2x.png` | 예측기 인코더-디코더 아키텍처 (LSTM/Transformer 교체형 + MTP 헤드) | 논문식 모델 구조도. 출처 `trajectory/learned_predictor.py` |
 
 ## 재현
 

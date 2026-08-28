@@ -1,0 +1,135 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Predictor architecture</title>
+<style>
+ :root{--ink:#0b0b0b;--ink2:#52514e;--muted:#898781;--font:system-ui,-apple-system,"Segoe UI",sans-serif;
+   --grid:#e1e0d9;--lstm:#2a78d6;--lstmb:#e7f0fb;--tf:#7c4dbb;--tfb:#f1eafa;--out:#1b9e6b;--outb:#e7f6ee;--arrow:#9aa0a6;}
+ *{box-sizing:border-box} body{margin:0;background:#dfe1e4;font-family:var(--font);color:var(--ink)}
+ #fig14{width:1560px;background:#fff;margin:32px auto;padding:34px 40px 30px}
+ .figtitle{font-size:26px;font-weight:750;letter-spacing:-.01em;margin:0 0 4px}
+ .figsub{font-size:16px;color:var(--ink2);margin:0 0 18px;font-weight:450}
+ .figcap{font-size:14px;color:var(--ink2);line-height:1.55;margin:16px 2px 0;max-width:1480px}
+ .figcap b{color:var(--ink);font-weight:650}
+ svg{display:block;width:100%;height:auto}
+ text{font-family:var(--font)}
+ .t{fill:var(--ink);font-weight:700}.s{fill:var(--ink2)}.m{fill:var(--muted)}.mono{font-variant-numeric:tabular-nums}
+</style></head><body>
+<section id="fig14">
+ <h2 class="figtitle">Trajectory predictor: encoder&ndash;decoder with a multimodal head</h2>
+ <p class="figsub">Observed motion is encoded (LSTM <i>or</i> Transformer &mdash; interchangeable), then a shared head emits K&nbsp;=&nbsp;3 possible futures, each weighted and with per-step uncertainty.</p>
+
+ <svg viewBox="0 138 1520 462" role="img" aria-label="Predictor architecture">
+  <defs>
+    <marker id="ar" markerWidth="10" markerHeight="10" refX="7" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--arrow)"/></marker>
+  </defs>
+
+  <!-- 1. INPUT -->
+  <rect x="20" y="250" width="150" height="140" rx="10" fill="#f7f7f5" stroke="var(--grid)" stroke-width="1.5"/>
+  <text class="t" x="95" y="278" text-anchor="middle" font-size="14.5">Observed</text>
+  <text class="t" x="95" y="296" text-anchor="middle" font-size="14.5">trajectory</text>
+  <!-- mini path of 8 dots -->
+  <polyline points="42,340 58,346 74,344 90,350 106,346 122,352 138,349 154,356" fill="none" stroke="var(--lstm)" stroke-width="2"/>
+  <g fill="var(--lstm)"><circle cx="42" cy="340" r="3"/><circle cx="58" cy="346" r="3"/><circle cx="74" cy="344" r="3"/><circle cx="90" cy="350" r="3"/><circle cx="106" cy="346" r="3"/><circle cx="122" cy="352" r="3"/><circle cx="138" cy="349" r="3"/><circle cx="154" cy="356" r="3"/></g>
+  <text class="m mono" x="95" y="380" text-anchor="middle" font-size="12">8 steps &times; (x,z)</text>
+
+  <line x1="172" y1="320" x2="212" y2="320" stroke="var(--arrow)" stroke-width="2.5" marker-end="url(#ar)"/>
+
+  <!-- 2. EGO NORM -->
+  <rect x="214" y="250" width="150" height="140" rx="10" fill="#f7f7f5" stroke="var(--grid)" stroke-width="1.5"/>
+  <text class="t" x="289" y="292" text-anchor="middle" font-size="14.5">Ego-centric</text>
+  <text class="t" x="289" y="310" text-anchor="middle" font-size="14.5">normalize</text>
+  <text class="s" x="289" y="336" text-anchor="middle" font-size="12">last obs &rarr; origin</text>
+  <text class="s" x="289" y="353" text-anchor="middle" font-size="12">heading &rarr; +x axis</text>
+
+  <line x1="366" y1="320" x2="406" y2="320" stroke="var(--arrow)" stroke-width="2.5" marker-end="url(#ar)"/>
+
+  <!-- 3. ENCODER (swappable, two lanes) -->
+  <rect x="408" y="150" width="470" height="340" rx="14" fill="#fbfbfa" stroke="#cfd3d6" stroke-width="2" stroke-dasharray="7 6"/>
+  <text class="t" x="643" y="176" text-anchor="middle" font-size="15">Encoder &mdash; interchangeable (same output contract)</text>
+
+  <!-- lane A: LSTM -->
+  <rect x="430" y="196" width="426" height="118" rx="10" fill="var(--lstmb)" stroke="var(--lstm)" stroke-width="2"/>
+  <text class="t" x="452" y="222" font-size="14.5" fill="var(--lstm)">A &nbsp;LSTM encoder</text>
+  <g>
+    <rect x="452" y="238" width="52" height="46" rx="6" fill="#fff" stroke="var(--lstm)" stroke-width="1.6"/>
+    <rect x="516" y="238" width="52" height="46" rx="6" fill="#fff" stroke="var(--lstm)" stroke-width="1.6"/>
+    <rect x="580" y="238" width="52" height="46" rx="6" fill="#fff" stroke="var(--lstm)" stroke-width="1.6"/>
+    <text class="m" x="478" y="266" text-anchor="middle" font-size="12">h₁</text>
+    <text class="m" x="542" y="266" text-anchor="middle" font-size="12">h₂</text>
+    <text class="m" x="606" y="266" text-anchor="middle" font-size="12">…</text>
+    <line x1="504" y1="261" x2="516" y2="261" stroke="var(--lstm)" stroke-width="1.6" marker-end="url(#ar)"/>
+    <line x1="568" y1="261" x2="580" y2="261" stroke="var(--lstm)" stroke-width="1.6" marker-end="url(#ar)"/>
+    <rect x="662" y="238" width="176" height="46" rx="6" fill="#fff" stroke="var(--lstm)" stroke-width="1.6"/>
+    <text class="s" x="750" y="260" text-anchor="middle" font-size="12.5">final hidden</text>
+    <text class="m mono" x="750" y="276" text-anchor="middle" font-size="11">nn.LSTM(2, 64)</text>
+    <line x1="632" y1="261" x2="662" y2="261" stroke="var(--lstm)" stroke-width="1.6" marker-end="url(#ar)"/>
+  </g>
+
+  <text class="m" x="643" y="336" text-anchor="middle" font-size="12.5" font-style="italic">or</text>
+
+  <!-- lane B: Transformer -->
+  <rect x="430" y="348" width="426" height="126" rx="10" fill="var(--tfb)" stroke="var(--tf)" stroke-width="2"/>
+  <text class="t" x="452" y="374" font-size="14.5" fill="var(--tf)">B &nbsp;Transformer encoder</text>
+  <rect x="452" y="390" width="120" height="66" rx="6" fill="#fff" stroke="var(--tf)" stroke-width="1.6"/>
+  <text class="s" x="512" y="414" text-anchor="middle" font-size="12">Linear 2&rarr;64</text>
+  <text class="s" x="512" y="431" text-anchor="middle" font-size="12">+ pos. enc.</text>
+  <rect x="586" y="390" width="150" height="66" rx="6" fill="#fff" stroke="var(--tf)" stroke-width="1.6"/>
+  <text class="s" x="661" y="411" text-anchor="middle" font-size="12">self-attention</text>
+  <text class="m mono" x="661" y="428" text-anchor="middle" font-size="11">2 layers &times; 4 heads</text>
+  <text class="m mono" x="661" y="443" text-anchor="middle" font-size="11">d=64, ff=256</text>
+  <rect x="750" y="390" width="88" height="66" rx="6" fill="#fff" stroke="var(--tf)" stroke-width="1.6"/>
+  <text class="s" x="794" y="416" text-anchor="middle" font-size="12">last token</text>
+  <text class="m" x="794" y="433" text-anchor="middle" font-size="11">= "now"</text>
+  <line x1="572" y1="423" x2="586" y2="423" stroke="var(--tf)" stroke-width="1.6" marker-end="url(#ar)"/>
+  <line x1="736" y1="423" x2="750" y2="423" stroke="var(--tf)" stroke-width="1.6" marker-end="url(#ar)"/>
+
+  <!-- merge to context -->
+  <line x1="878" y1="320" x2="918" y2="320" stroke="var(--arrow)" stroke-width="2.5" marker-end="url(#ar)"/>
+
+  <!-- 4. CONTEXT -->
+  <rect x="920" y="286" width="120" height="70" rx="10" fill="#0b0b0b"/>
+  <text x="980" y="316" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">context</text>
+  <text x="980" y="336" text-anchor="middle" font-size="12.5" fill="#c9d1d9" class="mono">h &isin; &#8477;&#8310;&#8308;</text>
+
+  <line x1="1040" y1="320" x2="1080" y2="320" stroke="var(--arrow)" stroke-width="2.5" marker-end="url(#ar)"/>
+
+  <!-- 5. HEAD (decoder) -->
+  <rect x="1082" y="250" width="180" height="140" rx="10" fill="#f4eef7" stroke="var(--tf)" stroke-width="2"/>
+  <text class="t" x="1172" y="278" text-anchor="middle" font-size="14.5">Multimodal head</text>
+  <text class="m" x="1172" y="296" text-anchor="middle" font-size="12">(MTP decoder)</text>
+  <text class="s mono" x="1172" y="322" text-anchor="middle" font-size="11.5">Linear 64&rarr;64 &middot; ReLU</text>
+  <text class="s mono" x="1172" y="339" text-anchor="middle" font-size="11.5">Linear 64&rarr;</text>
+  <text class="s mono" x="1172" y="356" text-anchor="middle" font-size="11.5">K·T·2 + K + K·T</text>
+  <text class="m" x="1172" y="378" text-anchor="middle" font-size="11">K=3 modes, T=12 steps</text>
+
+  <line x1="1264" y1="320" x2="1300" y2="320" stroke="var(--arrow)" stroke-width="2.5" marker-end="url(#ar)"/>
+
+  <!-- 6. OUTPUTS -->
+  <rect x="1302" y="236" width="196" height="168" rx="10" fill="var(--outb)" stroke="var(--out)" stroke-width="2"/>
+  <text class="t" x="1400" y="262" text-anchor="middle" font-size="14.5" fill="#12764f">3 future modes</text>
+  <text class="s" x="1316" y="292" font-size="12.5">&bull; K paths &nbsp;<tspan class="mono m">(3×12×2)</tspan></text>
+  <text class="s" x="1316" y="316" font-size="12.5">&bull; mode weights <tspan class="mono m">softmax(3)</tspan></text>
+  <text class="s" x="1316" y="340" font-size="12.5">&bull; per-step &sigma; &nbsp;<tspan class="mono m">(3×12)</tspan></text>
+  <!-- tiny fan glyph -->
+  <g stroke-width="2.5" fill="none">
+    <line x1="1340" y1="384" x2="1372" y2="366" stroke="#14b8a6" marker-end="url(#ar)"/>
+    <line x1="1340" y1="384" x2="1378" y2="384" stroke="#3b82f6" marker-end="url(#ar)"/>
+    <line x1="1340" y1="384" x2="1372" y2="398" stroke="#ec4899" marker-end="url(#ar)"/>
+    <circle cx="1340" cy="384" r="3.5" fill="#0b0b0b" stroke="none"/>
+  </g>
+  <text class="m" x="1450" y="388" text-anchor="middle" font-size="11">weighted futures</text>
+
+  <!-- training note -->
+  <rect x="408" y="520" width="854" height="70" rx="10" fill="#fbfbf7" stroke="var(--grid)" stroke-width="1.5"/>
+  <text class="t" x="430" y="548" font-size="14">Training</text>
+  <text class="s" x="430" y="570" font-size="13">best-of-K regression: Gaussian NLL on the closest (winner) mode</text>
+  <text class="s" x="430" y="586" font-size="13">&nbsp;&nbsp;+ cross-entropy on mode weights &nbsp;&mdash;&nbsp; teaches diverse, calibrated futures</text>
+  <line x1="820" y1="555" x2="1082" y2="330" stroke="var(--grid)" stroke-width="1.5" stroke-dasharray="4 5"/>
+ </svg>
+
+ <p class="figcap"><b>One predictor, two interchangeable encoders.</b> The observed 8-step track is normalized to the worker's own frame,
+ then encoded by either an <b style="color:var(--lstm)">LSTM</b> (final hidden state) or a <b style="color:var(--tf)">Transformer</b>
+ (last token as "now") &mdash; both produce the same 64-d context, so the rest of the network is shared. A small
+ <b>multimodal head</b> then outputs <b>K&nbsp;=&nbsp;3</b> future paths at once (12 steps each), each with a weight and a per-step
+ uncertainty &sigma;. Trained best-of-K (only the closest mode is regressed) so the three modes stay distinct instead of averaging
+ into one blurred guess. Code: <span class="mono">trajectory/learned_predictor.py</span>.</p>
+</section>
+</body></html>
