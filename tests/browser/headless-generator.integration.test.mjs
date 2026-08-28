@@ -90,6 +90,26 @@ test('같은 복합 seed를 두 번 생성하면 6카메라 장면과 비입자 
     assert.equal(typeof recorded.scene.environment.floorTint, 'string');
     assert.equal(typeof recorded.scene.environment.lighting.keyIntensity, 'number');
     assert.equal(typeof recorded.scene.environment.materials.steelRoughness, 'number');
+    assert.deepEqual({
+      enabled: recorded.sensor.enabled,
+      lowResolution: recorded.sensor.lowResolution,
+      grain: recorded.sensor.grain,
+      distortion: recorded.sensor.distortion,
+      chroma: recorded.sensor.chroma,
+      blur: recorded.sensor.blur,
+      vignette: recorded.sensor.vignette,
+      exposureJitter: recorded.sensor.exposureJitter,
+    }, {
+      enabled: false,
+      lowResolution: 0,
+      grain: 0,
+      distortion: 0,
+      chroma: 0,
+      blur: 0,
+      vignette: 0,
+      exposureJitter: 0,
+    },
+    '원본 학습 이미지에는 RGB와 GT 좌표계를 다르게 만드는 센서 후처리를 적용하면 안 된다');
     const b = await run(second);
     for (const scene of a.scenes) {
       for (const capture of scene.captures) {

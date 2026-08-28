@@ -105,6 +105,19 @@ async function randomizeSceneWithSeed(page, seed) {
       }
       ENV_RAND.propJitter = 0;
       randomizeScene();
+      // RGB와 GT 마스크가 캡처 내내 같은 렌더 경로와 픽셀 좌표계를 쓰게 한다.
+      // 일반 시뮬레이터의 CCTV 효과는 유지하되 원본 학습 캡처에서는 센서를 완전히 끈다.
+      Object.assign(SENSOR, {
+        on: false,
+        grain: 0,
+        distortion: 0,
+        chroma: 0,
+        blur: 0,
+        vignette: 0,
+        expJit: 0,
+        lowres: 0,
+      });
+      sensorApply();
       const trimParticles = (system, desired) => {
         while (system.particles.length > desired) {
           system.recycleParticle(system.particles[system.particles.length - 1]);
