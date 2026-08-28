@@ -11459,8 +11459,8 @@ function corrStart(mode) {
     if (typeof setCtrlTarget === "function") setCtrlTarget("camera");
     corrVizOn(true);
     person.node.position.set(2.4, 0, 1.20); person.node.rotation.y = -Math.PI / 2;
-    personGo([new V3(2.4, 0, 1.20), new V3(-0.5, 0, 1.20), new V3(2.4, 0, 1.20)], { loop:true, speed:1.2 });
-    setStatus("▶ 회피 — 조리원이 일정 동선으로 왕복. 로봇이 궤적을 예측해 팔을 편 채 바스켓 우측으로 회피 → 지나가면 작업 재개.  [demo-v14]");
+    personGo([new V3(2.4, 0, 1.20), new V3(-0.5, 0, 1.20), new V3(2.4, 0, 1.20)], { loop:true, speed:0.6 });
+    setStatus("▶ 회피 — 조리원이 일정 동선으로 왕복. 로봇이 팔을 편 채 바스켓 우측으로 실시간 트래킹하며 비켜 준다 → 지나가면 작업 재개.  [demo-v15]");
   } else {
     // 충돌: 로봇이 사람을 못 봄(SAFE.blind) + 스크립트로 통로를 걸어들어감(빠르게 — 대기 짧게)
     SAFE.blind = true;
@@ -11479,11 +11479,12 @@ function corrTick() {   // 매 프레임 호출 — 회피 기동(after) / 충�
     const danger = SAFE.factor < 0.5;   // 사람이 감속/정지 반경 안 → 예측 회피 발동
     if (danger) {
       if (!CORR.dodging) { CORR.dodging = true; state.auto = false; state.stirring = false; }
-      // 바스켓 **우측(화면 오른쪽=+x)**으로 팔을 편 채 뺀다(뒤쪽=+z 아님, 구부리지 않음).
-      //   사람이 가까울수록 더 오른쪽으로. +x는 리치 한계라 편 자세가 유지된다(reach≈1.6m).
-      const near = clamp((0.5 - SAFE.factor) / 0.5, 0, 1);   // 0(멀다)~1(코앞)
-      const dodgeX = 0.02 + near * 0.26;                     // 작업점 부근 → 바스켓 우측으로
-      solveIK(new V3(dodgeX, 1.02, 0.36), 14);               // z는 앞쪽 유지(뒤로 안 감), x만 우측으로
+      // 바스켓 **우측(화면 오른쪽=+x)**으로 팔을 편 채 비켜 준다(뒤쪽=+z 아님, 구부리지 않음).
+      //   ★ 고정 포즈로 멈추지 않는다 — 사람 x를 **실시간 트래킹**해 지나가는 내내 팔이 계속 움직인다.
+      //   사람이 서쪽으로 갈수록 팔은 더 우측으로 비켜서 따라간다(정지가 아니라 능동 회피로 보이게).
+      const px = person.node.position.x;
+      const dodgeX = clamp(0.30 - (px + 0.2) * 0.14, -0.05, 0.30);   // 사람 동쪽→작업점 부근, 서쪽→바스켓 우측 끝
+      solveIK(new V3(dodgeX, 1.02, 0.38), 14);                        // z 앞쪽 유지(뒤로 안 감), x만 우측으로 트래킹
       if (state.basketHeld && basketNode) {       // 캐리 중이면 손목 수평 유지
         JOINTS[3].value = clamp(-(JOINTS[1].value + JOINTS[2].value), JOINTS[3].min, JOINTS[3].max);
         JOINTS[4].value = 0; applyJoint(JOINTS[3]); applyJoint(JOINTS[4]);
