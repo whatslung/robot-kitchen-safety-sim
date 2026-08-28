@@ -19,6 +19,7 @@
 | `fig10_scene_graph@2x.png` | 씬→상호작용 그래프 (Trajectron++ Fig.1 스타일) | "사람·로봇을 그래프로 모델링" (예측 구조) |
 | `fig11_methodology@2x.png` | 컬러 넘버 5단계 메서드 파이프라인 + 페이즈 브래킷 | 논문식 개요 (fig1 대체/보강용) |
 | `fig12_multimodal_prediction@2x.png` | 멀티모달 예측 도식 (사람별 화살표 부채꼴 + 예측경로가 정지링 진입 → 회피) | Trajectron++ 티저 스타일 (깨끗한 SVG 도식). "왜 회피?"를 명시 |
+| `fig13_avoidance_sequence@2x.png` | 회피 3컷 시퀀스 (정상→예측경로 정지링 진입→팔 후퇴) — 실제 sim | "예측 → 어디로 회피하는가"를 실장면으로 |
 
 ## 재현
 
