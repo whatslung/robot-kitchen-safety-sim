@@ -18,7 +18,7 @@
 | `fig9_recall_precision@2x.png` | recall·precision 트레이드 (CV→학습) | "recall 올린 대가(정밀도)는?" (fig3 방어) |
 | `fig10_scene_graph@2x.png` | 씬→상호작용 그래프 (Trajectron++ Fig.1 스타일) | "사람·로봇을 그래프로 모델링" (예측 구조) |
 | `fig11_methodology@2x.png` | 컬러 넘버 5단계 메서드 파이프라인 + 페이즈 브래킷 | 논문식 개요 (fig1 대체/보강용) |
-| `fig12_multimodal_prediction@2x.png` | 멀티모달 예측 티저 (사람별 화살표+불확실성 구름+점선경로) | Trajectron++ 티저 스타일 (실제 sim 오버레이) |
+| `fig12_multimodal_prediction@2x.png` | 멀티모달 예측 도식 (사람별 화살표 부채꼴 + 예측경로가 정지링 진입 → 회피) | Trajectron++ 티저 스타일 (깨끗한 SVG 도식). "왜 회피?"를 명시 |
 
 ## 재현
 

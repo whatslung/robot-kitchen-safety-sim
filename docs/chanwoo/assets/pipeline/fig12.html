@@ -1,46 +1,128 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><title>Multimodal prediction</title>
 <style>
- :root{--ink:#0b0b0b;--ink2:#52514e;--muted:#898781;--red:#e34948;--font:system-ui,-apple-system,"Segoe UI",sans-serif;
-   --blob:#1baf7a;--arrow:#5a5f64}
+ :root{--ink:#0b0b0b;--ink2:#52514e;--muted:#898781;--font:system-ui,-apple-system,"Segoe UI",sans-serif;
+   --teal:#14b8a6;--blue:#3b82f6;--pink:#ec4899;--stop:#e34948;--slow:#eda100;--aware:#1baf7a;--node:#c4c8cc;--nodek:#8b9096;}
  *{box-sizing:border-box} body{margin:0;background:#dfe1e4;font-family:var(--font);color:var(--ink)}
- #fig12{width:1400px;background:#fff;margin:32px auto;padding:34px 40px 30px}
+ #fig12{width:1480px;background:#fff;margin:32px auto;padding:34px 40px 30px}
  .figtitle{font-size:26px;font-weight:750;letter-spacing:-.01em;margin:0 0 4px}
- .figsub{font-size:16px;color:var(--ink2);margin:0 0 18px;font-weight:450}
- .well{width:100%;aspect-ratio:1379/965;border:1px solid rgba(11,11,11,.12);border-radius:10px;overflow:hidden}
- .well img{width:100%;height:100%;object-fit:cover;display:block}
- .legend{display:flex;flex-wrap:wrap;gap:22px;font-size:13.5px;color:var(--ink2);margin:14px 2px 2px}
+ .figsub{font-size:16px;color:var(--ink2);margin:0 0 14px;font-weight:450}
+ .legend{display:flex;flex-wrap:wrap;gap:20px;font-size:13.5px;color:var(--ink2);margin:12px 2px 0}
  .k{display:inline-flex;align-items:center;gap:8px}
- .k b{color:var(--ink);font-weight:650}
- .sw-arrow{width:30px;height:14px;display:inline-block;flex:none}
- .sw-blob{width:22px;height:16px;border-radius:50%;flex:none;
-   background:radial-gradient(closest-side,rgba(27,175,122,.55),rgba(27,175,122,0))}
- .sw-dash{width:30px;height:0;border-top:3px dashed var(--red);display:inline-block;flex:none}
- .sw-dot{width:14px;height:14px;border-radius:50%;background:#3a3f45;flex:none;
-   box-shadow:0 0 0 4px rgba(58,63,69,.18)}
- .figcap{font-size:14px;color:var(--ink2);line-height:1.55;margin:16px 2px 0;max-width:1320px}
+ .sw{width:26px;height:0;border-top-width:3px;border-top-style:solid;display:inline-block}
+ .fank{display:inline-flex;gap:3px}.fank i{width:4px;height:14px;display:inline-block;border-radius:1px}
+ .figcap{font-size:14px;color:var(--ink2);line-height:1.55;margin:18px 2px 0;max-width:1400px}
  .figcap b{color:var(--ink);font-weight:650}
+ svg{display:block;width:100%;height:auto}
+ text{font-family:var(--font)}
 </style></head><body>
 <section id="fig12">
- <h2 class="figtitle">Multimodal prediction: every worker, every likely next move</h2>
- <p class="figsub">One overhead frame from our simulator, robot as ego &mdash; each detected worker carries a fan of likely futures, an uncertainty cloud, and a dashed path the robot plans against.</p>
+ <h2 class="figtitle">Multimodal prediction &rarr; why the robot yields</h2>
+ <p class="figsub">The robot tracks every worker and predicts each one's next moves. It acts only when a predicted path will enter its stop ring.</p>
 
- <div class="well"><img src="src_predviz.png" alt="Multimodal prediction overlays over the overhead kitchen scene"></div>
+ <svg viewBox="0 0 1400 760" role="img" aria-label="Multimodal prediction schematic">
+  <defs>
+    <marker id="aPink" markerWidth="10" markerHeight="10" refX="7" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--pink)"/></marker>
+    <marker id="aBlue" markerWidth="10" markerHeight="10" refX="7" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--blue)"/></marker>
+    <marker id="aTeal" markerWidth="10" markerHeight="10" refX="7" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--teal)"/></marker>
+    <marker id="aPathPink" markerWidth="11" markerHeight="11" refX="7" refY="5.5" orient="auto"><path d="M0,0 L11,5.5 L0,11 z" fill="var(--pink)"/></marker>
+    <marker id="aRetreat" markerWidth="11" markerHeight="11" refX="7" refY="5.5" orient="auto"><path d="M0,0 L11,5.5 L0,11 z" fill="var(--stop)"/></marker>
+  </defs>
+
+  <rect x="0" y="0" width="1400" height="760" fill="#fbfbfa"/>
+
+  <!-- ROBOT (ego) + safety rings, right side -->
+  <g>
+    <circle cx="1120" cy="380" r="118" fill="none" stroke="var(--aware)" stroke-width="2" stroke-dasharray="7 7" opacity="0.8"/>
+    <circle cx="1120" cy="380" r="86"  fill="#eda1000f" stroke="var(--slow)" stroke-width="2.5"/>
+    <circle cx="1120" cy="380" r="58"  fill="#e3494814" stroke="var(--stop)" stroke-width="2.5"/>
+    <rect x="1104" y="364" width="32" height="32" rx="6" fill="#0b0b0b"/>
+    <text x="1120" y="345" text-anchor="middle" font-size="14" font-weight="800" fill="#0b0b0b">Robot (ego)</text>
+    <text x="1180" y="300" font-size="12" font-weight="700" fill="var(--stop)">stop</text>
+    <text x="1196" y="272" font-size="12" font-weight="700" fill="#b06f00">slow</text>
+  </g>
+
+  <!-- attention: robot tracks all workers (dotted grey) -->
+  <g stroke="#b6bbc0" stroke-width="2" stroke-dasharray="1 7" stroke-linecap="round" fill="none">
+    <line x1="1064" y1="392" x2="742" y2="470"/>
+    <line x1="1070" y1="360" x2="470" y2="250"/>
+    <line x1="1066" y1="410" x2="360" y2="560"/>
+    <line x1="1072" y1="352" x2="610" y2="180"/>
+  </g>
+
+  <!-- ============ WORKERS with multimodal fans ============ -->
+  <!-- helper: each worker = grey node + 3 short colored arrows (teal/blue/pink) -->
+
+  <!-- W2 (top-left) -->
+  <g>
+    <line x1="470" y1="250" x2="452" y2="192" stroke="var(--teal)" stroke-width="4" marker-end="url(#aTeal)"/>
+    <line x1="470" y1="250" x2="500" y2="196" stroke="var(--blue)" stroke-width="4" marker-end="url(#aBlue)"/>
+    <line x1="470" y1="250" x2="524" y2="232" stroke="var(--pink)" stroke-width="4" marker-end="url(#aPink)"/>
+    <circle cx="470" cy="250" r="17" fill="var(--node)" stroke="var(--nodek)" stroke-width="2"/>
+    <text x="470" y="255" text-anchor="middle" font-size="13" font-weight="800" fill="#3d4247">2</text>
+  </g>
+  <!-- W4 (upper mid) -->
+  <g>
+    <line x1="610" y1="180" x2="592" y2="122" stroke="var(--teal)" stroke-width="4" marker-end="url(#aTeal)"/>
+    <line x1="610" y1="180" x2="648" y2="140" stroke="var(--blue)" stroke-width="4" marker-end="url(#aBlue)"/>
+    <line x1="610" y1="180" x2="664" y2="188" stroke="var(--pink)" stroke-width="4" marker-end="url(#aPink)"/>
+    <circle cx="610" cy="180" r="17" fill="var(--node)" stroke="var(--nodek)" stroke-width="2"/>
+    <text x="610" y="185" text-anchor="middle" font-size="13" font-weight="800" fill="#3d4247">4</text>
+  </g>
+  <!-- W3 (lower-left) -->
+  <g>
+    <line x1="360" y1="560" x2="326" y2="612" stroke="var(--teal)" stroke-width="4" marker-end="url(#aTeal)"/>
+    <line x1="360" y1="560" x2="392" y2="614" stroke="var(--blue)" stroke-width="4" marker-end="url(#aBlue)"/>
+    <line x1="360" y1="560" x2="300" y2="556" stroke="var(--pink)" stroke-width="4" marker-end="url(#aPink)"/>
+    <circle cx="360" cy="560" r="17" fill="var(--node)" stroke="var(--nodek)" stroke-width="2"/>
+    <text x="360" y="565" text-anchor="middle" font-size="13" font-weight="800" fill="#3d4247">3</text>
+  </g>
+
+  <!-- W1 (KEY, approaching robot) — one mode heads into the stop ring -->
+  <!-- multimodal fan: teal & blue stay clear, pink heads toward robot -->
+  <g>
+    <line x1="742" y1="470" x2="726" y2="536" stroke="var(--teal)" stroke-width="4" marker-end="url(#aTeal)"/>
+    <line x1="742" y1="470" x2="800" y2="512" stroke="var(--blue)" stroke-width="4" marker-end="url(#aBlue)"/>
+  </g>
+  <!-- pink most-likely predicted trajectory curving into the stop ring -->
+  <path d="M742,470 Q940,452 1082,398" fill="none" stroke="var(--pink)" stroke-width="4.5"
+        stroke-dasharray="12 8" stroke-linecap="round" marker-end="url(#aPathPink)"/>
+  <!-- entry burst exactly where the path crosses the stop-ring boundary -->
+  <g>
+    <circle cx="1063" cy="404" r="14" fill="none" stroke="var(--stop)" stroke-width="3"/>
+    <circle cx="1063" cy="404" r="4.5" fill="var(--stop)"/>
+  </g>
+  <!-- W1 node on top -->
+  <g>
+    <circle cx="742" cy="470" r="19" fill="var(--node)" stroke="var(--pink)" stroke-width="3"/>
+    <text x="742" y="475" text-anchor="middle" font-size="13" font-weight="800" fill="#3d4247">1</text>
+    <text x="742" y="512" text-anchor="middle" font-size="12.5" font-weight="700" fill="var(--ink2)">approaching</text>
+  </g>
+
+  <!-- callout: enters stop ring -->
+  <g>
+    <path d="M1063,404 L940,600" stroke="var(--stop)" stroke-width="1.5" stroke-dasharray="3 4" fill="none"/>
+    <rect x="700" y="600" width="470" height="52" rx="9" fill="#fdecec" stroke="var(--stop)" stroke-width="1.5"/>
+    <text x="720" y="623" font-size="14.5" font-weight="750" fill="#b5322f">Worker 1's most-likely path enters the stop ring within 1.6 s</text>
+    <text x="720" y="642" font-size="13" fill="#7a3230">&rarr; the robot slows / retreats now, before Worker 1 arrives</text>
+  </g>
+
+  <!-- robot retreat reaction arrow -->
+  <line x1="1150" y1="380" x2="1250" y2="360" stroke="var(--stop)" stroke-width="4.5" marker-end="url(#aRetreat)"/>
+  <text x="1258" y="352" font-size="13.5" font-weight="750" fill="var(--stop)">retreat</text>
+ </svg>
 
  <div class="legend">
-  <span class="k"><svg class="sw-arrow" viewBox="0 0 30 14"><g stroke="var(--arrow)" stroke-width="2" fill="none">
-    <line x1="2" y1="7" x2="24" y2="2"/><line x1="2" y1="7" x2="26" y2="7"/><line x1="2" y1="7" x2="24" y2="12"/>
-    <path d="M24,2 l4,0 M26,7 l3,0 M24,12 l4,0" stroke-width="2.4"/></g></svg><b>likely futures</b> (multimodal)</span>
-  <span class="k"><span class="sw-blob"></span><b>position uncertainty</b> &sigma;</span>
-  <span class="k"><span class="sw-dash"></span><b>path entering stop ring</b></span>
-  <span class="k"><span class="sw-dot"></span><b>ego</b> &mdash; plans against all</span>
+   <span class="k"><span class="fank"><i style="background:var(--teal)"></i><i style="background:var(--blue)"></i><i style="background:var(--pink)"></i></span>multimodal futures (per worker)</span>
+   <span class="k"><span class="sw" style="border-top-color:var(--pink);border-top-style:dashed"></span>most-likely predicted path</span>
+   <span class="k"><span class="sw" style="border-top-color:#b6bbc0;border-top-style:dotted"></span>robot tracks worker</span>
+   <span class="k"><span class="sw" style="border-top-color:var(--stop)"></span>stop ring</span>
+   <span class="k"><span class="sw" style="border-top-color:var(--slow)"></span>slow ring</span>
  </div>
 
- <p class="figcap"><b>Every worker gets more than a single guessed line.</b> The colored fan is the set of paths a worker
- might plausibly take next; the soft blob around each one is how uncertain that guess is (wider&nbsp;=&nbsp;less sure,
- the &sigma; spread); the red dashes are the path that is about to cross into the robot's stop ring. The robot (ego, at
- the kettle) predicts all three workers at once over a <b>1.6&nbsp;s horizon</b> and plans against the whole set &mdash;
- not just the nearest person. Rings: red&nbsp;=&nbsp;stop, orange&nbsp;=&nbsp;slow, green&nbsp;=&nbsp;aware. Modeling each
- agent's futures this way is after Trajectron++ (Salzmann&nbsp;et&nbsp;al., 2020).</p>
+ <p class="figcap"><b>Why this becomes avoidance.</b> The robot predicts a <i>fan</i> of likely next moves for every worker (colored
+ arrows), not a single guess. Workers&nbsp;2&ndash;4 have no mode heading into the robot, so nothing happens. Worker&nbsp;1's
+ most-likely path (pink dashed) curves toward the robot and would <b>cross into the stop ring within the 1.6&nbsp;s horizon</b>
+ (red burst) &mdash; that specific event is the trigger, so the robot slows/retreats <i>before</i> Worker&nbsp;1 arrives. Modeling
+ each agent's multiple futures is after Trajectron++ (Salzmann&nbsp;et&nbsp;al., 2020).</p>
 </section>
-<script>if(location.hash==='#2x'){document.documentElement.style.zoom='2';}</script>
 </body></html>
