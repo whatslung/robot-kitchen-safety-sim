@@ -11426,8 +11426,8 @@ $("hzClear").addEventListener("click", () => demoHazardClear());
    사람: **좌하단(남서)에서 대각선 진입**.
    회피(after): 사람 진입각에 따라 팔이 **반대쪽으로 회전**해 비킨다(좌회전/우회전). 지나가면 스윙 복귀.
    충돌(before): SAFE.blind로 로봇이 못 본 채 스윙 → 대각선 진입 사람이 팔에 휩쓸려 쓰러짐. */
-const CORR = { on:false, mode:null, hit:false, saved:null,
-  theta:0, dir:1, R:1.42, H:1.05, thA:-0.70, thB:0.55, sw:0.7 };   // 스윙 각범위(thA=우/앞 ~ thB=좌/뒤)·각속도(rad/s)
+const CORR = { on:false, mode:null, hit:false, saved:null, working:false, dodgedOnce:false,
+  theta:0, dir:1, R:1.48, H:1.05, thA:-1.05, thB:0.80, sw:0.8 };   // 스윙/회피 각범위 확대(회피반경 크게)·각속도(rad/s)
 function corrArc(th) {
   const b = LAYOUT.robot.base;
   return new V3(b.x + CORR.R * Math.cos(th), CORR.H, b.z + CORR.R * Math.sin(th));
@@ -11446,7 +11446,7 @@ function corrVizOn(on) {
   });
 }
 function corrReset(quiet) {
-  const was = CORR.on; CORR.on = false; CORR.mode = null; CORR.hit = false;
+  const was = CORR.on; CORR.on = false; CORR.mode = null; CORR.hit = false; CORR.working = false; CORR.dodgedOnce = false;
   if (CORR.saved) {
     SAFE.blind = CORR.saved.blind;
     if (CORR.saved.auto !== undefined) state.auto = CORR.saved.auto;
@@ -11497,20 +11497,19 @@ function corrStart(mode) {
   person.freeze = false; person.stations = null; person.path = []; person.mode = "idle";
   CORR.theta = (CORR.thA + CORR.thB) / 2; CORR.dir = 1;
   corrPoseArm(CORR.theta);
-  CORR.on = true; CORR.mode = mode; CORR.hit = false;
-  // 사람: **정면(+z=카메라 쪽, 화면 앞)**에서 로봇으로 걸어들어옴 → 물러남(왕복).
-  //   ★ 근본원인 수정(2026-08-28): 카메라가 z=+5.2(앞)에 있어 정면=+z. 종전엔 -z(뒤)로 착각해 사람이 솥 뒤에 나타났다.
-  //   A(0.5,3.0)=정면·위험반경 밖(스윙 먼저), B(0,1.35)=로봇 앞 아일·위험반경 안(회피).
-  const A = new V3(0.5, 0, 3.0), B = new V3(0.0, 0, 1.35);
+  CORR.on = true; CORR.mode = mode; CORR.hit = false; CORR.working = false; CORR.dodgedOnce = false;
+  // 사람: **정면(+z=카메라 쪽)**에서 로봇 앞으로 걸어들어옴 → **지나쳐 옆으로 퇴장**(단일 통과).
+  //   A(0.5,3.0)=정면·위험밖(스윙), B(0,1.35)=로봇앞·위험안(회피), EXIT(3.0,2.6)=위험밖 퇴장 → 로봇 정상작업 복귀.
+  const A = new V3(0.5, 0, 3.0), B = new V3(0.0, 0, 1.35), EXIT = new V3(3.0, 0, 2.6);
   person.node.position.copyFrom(A);
   if (mode === "after") {
     SAFE.blind = false; corrVizOn(true);
-    personGo([A, B, A], { loop:true, speed:0.5 });
-    setStatus("▶ 회피 — 팔이 스윙. 사람이 정면에서 로봇 앞으로 접근 → 팔이 반대로 회전해 회피.  [demo-v19]");
+    personGo([A, B, EXIT], { speed:0.5 });
+    setStatus("▶ 회피 — 사람이 정면에서 접근 → 팔이 크게 회피 → 사람 지나가면 정상 작업 재개.  [demo-v20]");
   } else {
     SAFE.blind = true; corrVizOn(false);
     personGo([A, B], { speed:1.0 });
-    setStatus("▶ 충돌 — 로봇이 못 본 채 팔 스윙. 정면 접근 사람이 팔에 휩쓸림.  [demo-v19]");
+    setStatus("▶ 충돌 — 로봇이 못 본 채 팔 스윙. 정면 접근 사람이 팔에 휩쓸림.  [demo-v20]");
   }
 }
 function corrTick(dt) {   // 매 프레임 호출 — 팔 스윙 + 회피(after)/충돌(before)
@@ -11518,8 +11517,19 @@ function corrTick(dt) {   // 매 프레임 호출 — 팔 스윙 + 회피(after)
   const ds = (dt || 16) / 1000;
   const b = LAYOUT.robot.base, p = person.node.position;
   const dist = Math.hypot(p.x - b.x, p.z - b.z);
-  const danger = (CORR.mode === "after") && dist < 2.5;   // 사람이 위험반경 안 → 회피(스윙을 더 보여주려 반경 축소)
+  // 회피(after) 후 사람이 나가면 → **정상 조리 작업 재개**(회피 → 복귀까지 보여준다)
+  if (CORR.mode === "after") {
+    if (CORR.working) return;   // 정상 작업 중 — corrTick은 팔을 안 건드린다
+    if (CORR.dodgedOnce && dist >= 2.7 && person.mode !== "walk") {
+      CORR.working = true;
+      if (!state.auto) $("autoBtn").click();   // 조리 사이클 시작(정상 작업)
+      setStatus("✅ 회피 완료 — 사람 통과, 로봇 정상 작업 재개  [demo-v20]");
+      return;
+    }
+  }
+  const danger = (CORR.mode === "after") && dist < 2.7;   // 사람이 위험반경 안 → 회피
   if (danger) {
+    CORR.dodgedOnce = true;
     // 사람 진입각(베이스 기준)의 **반대쪽**으로 팔을 회전시킨다(좌회전/우회전).
     const phi = Math.atan2(p.z - b.z, p.x - b.x);
     const target = clamp(phi > CORR.theta ? CORR.thA : CORR.thB, CORR.thA, CORR.thB); // 사람이 왼쪽(phi 큼)→우측 끝, 오른쪽→좌측 끝
