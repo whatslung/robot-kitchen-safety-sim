@@ -11451,9 +11451,14 @@ function corrReset(quiet) {
     SAFE.blind = CORR.saved.blind;
     if (CORR.saved.auto !== undefined) state.auto = CORR.saved.auto;
     if (typeof setCtrlTarget === "function") setCtrlTarget(CORR.saved.ctrl);
+    if (CORR.saved.cam) {   // 데모가 바꾼 카메라 복원
+      camera.setTarget(CORR.saved.cam.target);
+      camera.alpha = CORR.saved.cam.alpha; camera.beta = CORR.saved.cam.beta; camera.radius = CORR.saved.cam.radius;
+    }
     corrVizOn(false);
     CORR.saved = null;
   }
+  if (CORR.hiddenExtras) { CORR.hiddenExtras.forEach(n => n.setEnabled(true)); CORR.hiddenExtras = null; }
   if (was) {
     demoStandUp();
     if (typeof clearEstop === "function") clearEstop();
@@ -11466,26 +11471,35 @@ function corrStart(mode) {
   if (typeof demoHazardClear === "function") demoHazardClear();
   demoStandUp();
   if (typeof clearEstop === "function") clearEstop();
-  CORR.saved = { blind: SAFE.blind, ctrl: (typeof CTRL !== "undefined") ? CTRL.target : "camera", auto: state.auto };
+  CORR.saved = { blind: SAFE.blind, ctrl: (typeof CTRL !== "undefined") ? CTRL.target : "camera", auto: state.auto,
+    cam: { target: camera.getTarget().clone(), alpha: camera.alpha, beta: camera.beta, radius: camera.radius } };
+  // 카메라를 로봇 셀에 집중 — 팔 스윙/회피가 넓은 시점에서 안 읽혀서(사용자 지적). 되돌리기로 복원.
+  camera.setTarget(new V3(-0.5, 0.7, -0.1));
+  camera.alpha = 1.30; camera.beta = 1.16; camera.radius = 3.9;
   // ★ 조리 사이클 안 씀 — corrTick이 팔 스윙을 직접 몬다
   state.auto = false; state.stirring = false;
   if (typeof setCtrlTarget === "function") setCtrlTarget("camera");
+  // 다른 조리원(EXTRAS) 숨김 — 데모 사람만 보이게(화면 정리)
+  CORR.hiddenExtras = [];
+  if (typeof EXTRAS !== "undefined") EXTRAS.forEach(e => {
+    if (e.root && e.root.isEnabled()) { CORR.hiddenExtras.push(e.root); e.root.setEnabled(false); }
+  });
   person.freeze = false; person.stations = null; person.path = []; person.mode = "idle";
   CORR.theta = (CORR.thA + CORR.thB) / 2; CORR.dir = 1;
   corrPoseArm(CORR.theta);
   CORR.on = true; CORR.mode = mode; CORR.hit = false;
   // 사람: 좌하단(남서, -x·-z) 개방구역에서 대각선으로 로봇 앞으로 접근 → 물러남(왕복).
   //   A는 위험반경(3m) 밖(스윙 먼저 보이게), B는 솥·페데스탈 남쪽 개방구역(안 막힘).
-  const A = new V3(-3.4, 0, -3.0), B = new V3(-0.5, 0, -0.9);
+  const A = new V3(-2.4, 0, -2.3), B = new V3(-0.5, 0, -0.9);
   person.node.position.copyFrom(A);
   if (mode === "after") {
     SAFE.blind = false; corrVizOn(true);
     personGo([A, B, A], { loop:true, speed:0.5 });
-    setStatus("▶ 회피 — 팔이 좌우로 회전. 사람이 좌하단서 대각선 접근 → 진입각에 따라 팔이 반대로 회전 회피.  [demo-v16]");
+    setStatus("▶ 회피 — 팔이 좌우로 회전. 사람이 좌하단서 대각선 접근 → 진입각에 따라 팔이 반대로 회전 회피.  [demo-v17]");
   } else {
     SAFE.blind = true; corrVizOn(false);
     personGo([A, B], { speed:1.0 });
-    setStatus("▶ 충돌 — 로봇이 못 본 채 팔 회전. 대각선 접근 사람이 팔에 휩쓸림.  [demo-v16]");
+    setStatus("▶ 충돌 — 로봇이 못 본 채 팔 회전. 대각선 접근 사람이 팔에 휩쓸림.  [demo-v17]");
   }
 }
 function corrTick(dt) {   // 매 프레임 호출 — 팔 스윙 + 회피(after)/충돌(before)
@@ -11507,6 +11521,12 @@ function corrTick(dt) {   // 매 프레임 호출 — 팔 스윙 + 회피(after)
     CORR.theta = clamp(CORR.theta + CORR.dir * CORR.sw * ds, CORR.thA, CORR.thB);
   }
   corrPoseArm(CORR.theta);
+  // 디버그 로그 — 사람 움직임·팔 상태 추적(콘솔에서 확인)
+  CORR._lf = (CORR._lf || 0) + 1;
+  if (CORR._lf % 15 === 0) {
+    const tcp = tipPos();
+    console.log(`[CORR] ${CORR.mode} person=(${p.x.toFixed(2)},${p.z.toFixed(2)}) mode=${person.mode} dist=${dist.toFixed(2)} ${danger?"DODGE":"SWING"} theta=${CORR.theta.toFixed(2)} tcp=(${tcp.x.toFixed(2)},${tcp.y.toFixed(2)},${tcp.z.toFixed(2)})`);
+  }
   // ── 충돌(before): 팔 TCP가 사람에 닿으면 밀어내고 쓰러뜨린다 ──
   if (CORR.mode === "before" && !CORR.hit && armClearance(p.x, p.z) < 0) {
     CORR.hit = true;
@@ -11517,7 +11537,7 @@ function corrTick(dt) {   // 매 프레임 호출 — 팔 스윙 + 회피(after)
     person.mode = "idle"; person.path = [];
     if (typeof personFall === "function") personFall();
     if (typeof triggerEstop === "function") triggerEstop("팔↔사람 접촉");
-    setStatus("⛔ 충돌 — 로봇이 못 보고 팔이 사람을 쳤다  [demo-v16]");
+    setStatus("⛔ 충돌 — 로봇이 못 보고 팔이 사람을 쳤다  [demo-v17]");
   }
 }
 $("corrBefore").addEventListener("click", () => corrStart("before"));
