@@ -11426,14 +11426,14 @@ $("hzClear").addEventListener("click", () => demoHazardClear());
    사람: **좌하단(남서)에서 대각선 진입**.
    회피(after): 사람 진입각에 따라 팔이 **반대쪽으로 회전**해 비킨다(좌회전/우회전). 지나가면 스윙 복귀.
    충돌(before): SAFE.blind로 로봇이 못 본 채 스윙 → 대각선 진입 사람이 팔에 휩쓸려 쓰러짐. */
-/* 팔을 **화면 좌우(카메라 right 벡터) 축**으로 슬라이드시킨다 — 원호(앞뒤)가 아니라 좌우로 피하게.
-   workPt(작업 기준점) + s·camRight 로 TCP를 잡는다. s<0=화면왼쪽, s>0=화면오른쪽(리치상 왼쪽이 넓다). */
+/* 팔이 **솥(P1) ↔ 바스켓통(P2) 사이를 크게 왕복**한다(실제 운반 동작 — 바스켓통까지 움직인다).
+   t=0 솥앞, t=1 바스켓통. TCP = lerp(P1,P2,t). 회피는 사람 반대편 끝으로 t를 몬다. */
 const CORR = { on:false, mode:null, hit:false, saved:null, working:false, dodgedOnce:false,
-  s:0, dir:1, sMin:-0.78, sMax:0.18, sw:0.55,
-  workPt:new V3(-0.15, 1.00, 0.45), camRight:new V3(1, 0, 0) };
-function corrPoseArm(s) {
-  const w = CORR.workPt, r = CORR.camRight;
-  solveIK(new V3(w.x + s * r.x, w.y, w.z + s * r.z), 12);
+  u:0.5, dir:1, sw:0.42,
+  P1:new V3(0.05, 1.05, 0.15), P2:new V3(-0.62, 1.05, 1.55) };   // P1=솥앞, P2=바스켓통 상공(둘 다 리치 안)
+function corrPoseArm(u) {
+  const a = CORR.P1, b = CORR.P2;
+  solveIK(new V3(a.x + (b.x - a.x) * u, a.y + (b.y - a.y) * u, a.z + (b.z - a.z) * u), 12);
   if (state.basketHeld && basketNode) {   // 캐리 중이면 손목 수평
     JOINTS[3].value = clamp(-(JOINTS[1].value + JOINTS[2].value), JOINTS[3].min, JOINTS[3].max);
     JOINTS[4].value = 0; applyJoint(JOINTS[3]); applyJoint(JOINTS[4]);
@@ -11477,9 +11477,6 @@ function corrStart(mode) {
   // 카메라를 로봇 셀에 집중 — 팔 스윙/회피가 넓은 시점에서 안 읽혀서(사용자 지적). 되돌리기로 복원.
   camera.setTarget(new V3(-0.5, 0.7, -0.1));
   camera.alpha = 1.30; camera.beta = 1.16; camera.radius = 3.9;
-  // 카메라 right(화면 오른쪽) 벡터 계산 — 팔을 이 축으로 좌우 슬라이드시킨다(앞뒤 아님).
-  { const f = camera.getTarget().subtract(camera.position); f.y = 0; f.normalize();
-    CORR.camRight = BABYLON.Vector3.Cross(f, BABYLON.Axis.Y).normalize(); }
   // ★ 조리 사이클 안 씀 — corrTick이 팔 스윙을 직접 몬다
   state.auto = false; state.stirring = false;
   if (typeof setCtrlTarget === "function") setCtrlTarget("camera");
@@ -11498,8 +11495,8 @@ function corrStart(mode) {
   });
   if (typeof buildPersonColliders === "function") buildPersonColliders();
   person.freeze = false; person.stations = null; person.path = []; person.mode = "idle";
-  CORR.s = (CORR.sMin + CORR.sMax) / 2; CORR.dir = 1;
-  corrPoseArm(CORR.s);
+  CORR.u = 0.5; CORR.dir = 1;
+  corrPoseArm(CORR.u);
   CORR.on = true; CORR.mode = mode; CORR.hit = false; CORR.working = false; CORR.dodgedOnce = false;
   CORR.t = 0; CORR.launched = false;
   // 로봇이 **바스켓을 든 채** 작업(운반) — 포크 그립 중심에 스냅
@@ -11515,10 +11512,10 @@ function corrStart(mode) {
   person.node.position.copyFrom(CORR.A); person.node.rotation.y = 0;
   if (mode === "after") {
     SAFE.blind = false; corrVizOn(true);
-    setStatus("▶ 회피 — 로봇이 바스켓 작업 중 사람 정면 접근 → 크게 회피 → 사람 나가면 바스켓 작업(솥 담그기) 재개.  [demo-v22]");
+    setStatus("▶ 회피 — 로봇이 바스켓 작업 중 사람 정면 접근 → 크게 회피 → 사람 나가면 바스켓 작업(솥 담그기) 재개.  [demo-v23]");
   } else {
     SAFE.blind = true; corrVizOn(false);
-    setStatus("▶ 충돌 — 로봇이 못 본 채 바스켓 작업. 정면 접근 사람이 팔에 휩쓸림.  [demo-v22]");
+    setStatus("▶ 충돌 — 로봇이 못 본 채 바스켓 작업. 정면 접근 사람이 팔에 휩쓸림.  [demo-v23]");
   }
 }
 function corrTick(dt) {   // 매 프레임 호출 — 팔 스윙 + 회피(after)/충돌(before)
@@ -11547,31 +11544,32 @@ function corrTick(dt) {   // 매 프레임 호출 — 팔 스윙 + 회피(after)
     }
     if (CORR.dodgedOnce && dist >= 2.7 && person.mode !== "walk") {
       CORR.working = true;
-      setStatus("✅ 회피 완료 — 사람 통과, 로봇이 바스켓을 솥에 담그며 작업 재개  [demo-v22]");
+      setStatus("✅ 회피 완료 — 사람 통과, 로봇이 바스켓을 솥에 담그며 작업 재개  [demo-v23]");
       return;
     }
   }
   const danger = (CORR.mode === "after") && CORR.launched && dist < 2.7;   // 사람이 위험반경 안 → 회피
   if (danger) {
     CORR.dodgedOnce = true;
-    // 사람의 **화면 좌우 위치와 반대쪽**으로 팔을 슬라이드(좌/우 회피). 사람 화면오른쪽→팔 왼쪽으로.
-    const w = CORR.workPt, r = CORR.camRight;
-    const sPerson = (p.x - w.x) * r.x + (p.z - w.z) * r.z;   // 사람의 화면 좌우 위치
-    const target = sPerson > 0 ? CORR.sMin : CORR.sMax;      // 사람 오른쪽이면 왼쪽 끝으로 피함
-    const step = CORR.sw * 2.4 * ds;
-    CORR.s += clamp(target - CORR.s, -step, step);
+    // 회피: 사람이 있는 끝의 **반대쪽 끝**으로 크게 뺀다(솥앞 t0 ↔ 바스켓통 t1 중 사람 먼 쪽).
+    //   사람이 로봇 앞(솥쪽)에 가까우면 바스켓통(u=1)으로, 바스켓통쪽이면 솥앞(u=0)으로.
+    const dP1 = Math.hypot(p.x - CORR.P1.x, p.z - CORR.P1.z);
+    const dP2 = Math.hypot(p.x - CORR.P2.x, p.z - CORR.P2.z);
+    const target = dP1 < dP2 ? 1 : 0;                       // 사람이 P1(솥앞) 가까우면 P2(바스켓통)으로 피함
+    const step = CORR.sw * 2.6 * ds;
+    CORR.u += clamp(target - CORR.u, -step, step);
   } else {
-    // 평시: 좌우 슬라이드 스윙(왕복)
-    if (CORR.s >= CORR.sMax) CORR.dir = -1;
-    if (CORR.s <= CORR.sMin) CORR.dir = 1;
-    CORR.s = clamp(CORR.s + CORR.dir * CORR.sw * ds, CORR.sMin, CORR.sMax);
+    // 평시: 솥 ↔ 바스켓통 크게 왕복(운반 동작)
+    if (CORR.u >= 1) CORR.dir = -1;
+    if (CORR.u <= 0) CORR.dir = 1;
+    CORR.u = clamp(CORR.u + CORR.dir * CORR.sw * ds, 0, 1);
   }
-  corrPoseArm(CORR.s);
+  corrPoseArm(CORR.u);
   // 디버그 로그 — 사람 움직임·팔 상태 추적(콘솔에서 확인)
   CORR._lf = (CORR._lf || 0) + 1;
   if (CORR._lf % 15 === 0) {
     const tcp = tipPos();
-    console.log(`[CORR] ${CORR.mode} person=(${p.x.toFixed(2)},${p.z.toFixed(2)}) mode=${person.mode} dist=${dist.toFixed(2)} ${danger?"DODGE":"SWING"} s=${CORR.s.toFixed(2)} tcp=(${tcp.x.toFixed(2)},${tcp.y.toFixed(2)},${tcp.z.toFixed(2)})`);
+    console.log(`[CORR] ${CORR.mode} person=(${p.x.toFixed(2)},${p.z.toFixed(2)}) dist=${dist.toFixed(2)} ${danger?"DODGE":"SWING"} u=${CORR.u.toFixed(2)} tcp=(${tcp.x.toFixed(2)},${tcp.y.toFixed(2)},${tcp.z.toFixed(2)})`);
   }
   // ── 충돌(before): 팔 TCP가 사람에 닿으면 밀어내고 쓰러뜨린다 ──
   if (CORR.mode === "before" && !CORR.hit && armClearance(p.x, p.z) < 0) {
