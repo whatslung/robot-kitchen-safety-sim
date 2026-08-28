@@ -9566,7 +9566,7 @@ function sceneEditorSetEnabled(on) {
       setStatus("장면 편집 불가 — 발표 시나리오를 먼저 되돌리세요"); return false;
     }
     sceneEditorEnsureVisuals();
-    sceneEditorCollect();
+    const entries = sceneEditorCollect();
     state.auto = false;
     sceneEditorFreezePushBodies();
     SCENE_EDITOR.enabled = true;
@@ -9575,8 +9575,36 @@ function sceneEditorSetEnabled(on) {
     $("mbEdit").classList.add("on"); $("mbEdit").textContent = "✥ 편집 종료";
     $("editTools").classList.add("on"); $("editorInspector").classList.add("on");
     $("editorHud").classList.add("on");
-    sceneEditorSelect(SCENE_EDITOR.selection);
-    setStatus("장면 편집 모드 — 주변 설비를 클릭해 이동·회전·크기를 조절하세요");
+    /* 발표 화면에서는 STAGE가 기본으로 접혀 있고 최초 선택도 없다. 이 상태로 편집에
+       들어가면 버튼 문구만 바뀌고 기즈모가 없어 고장처럼 보인다. 편집 진입은 화면에 보이는
+       편집 가능 설비를 선택하고 목록도 열어, 첫 프레임부터 실제 조작 대상을 보여 준다. */
+    if (getComputedStyle($("stagePanel")).display === "none") {
+      $("stageToggle").click();
+      /* 토글 핸들러의 지연 resize 전에 투영하면 넓었던 캔버스 좌표로 대상을 골라,
+         패널이 열린 뒤 기즈모가 우측 패널 아래로 밀린다. 선택 계산 전에 즉시 맞춘다. */
+      engine.resize(); applyCameras();
+    }
+    const previous = SCENE_EDITOR.selection && entries.find(e => e.id === SCENE_EDITOR.selection.id);
+    let initial = previous && previous.editable ? previous : null;
+    if (!initial) {
+      /* activeCameras+PiP에서는 월드 좌표를 직접 Project한 값과 사용자가 보는 주 화면이
+         어긋날 수 있다. 화면 중앙부터 실제 주 카메라 pick을 해, 앞에 보이는 설비만 고른다. */
+      const samples = [[.5,.5],[.28,.55],[.72,.55],[.25,.35],[.75,.35],
+                       [.25,.75],[.75,.75],[.5,.25],[.5,.75],[.12,.5],[.88,.5]];
+      for (const [u,v] of samples) {
+        const hit = scene.pick(canvas.clientWidth*u, canvas.clientHeight*v, undefined, false, camOf(mainView));
+        if (!hit || !hit.hit) continue;
+        for (let n = hit.pickedMesh, depth = 0; n && depth < 32; n = n.parent, depth++) {
+          const found = entries.find(e => e.editable && (e.node === n || e.holder === n));
+          if (found) { initial = found; break; }
+        }
+        if (initial) break;
+      }
+    }
+    if (!initial) initial = entries.find(e => e.editable) || null;
+    sceneEditorSelect(initial);
+    setStatus(initial ? "장면 편집 모드 — " + initial.label + " 선택 · 축을 드래그하거나 W/E/R 도구를 사용하세요"
+                      : "장면 편집 모드 — 주변 설비를 클릭해 이동·회전·크기를 조절하세요");
     return true;
   }
   sceneEditorFinishDrag();
