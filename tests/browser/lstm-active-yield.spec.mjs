@@ -189,7 +189,7 @@ test('fixed-route LSTM demo moves first, actively yields, and finishes safely', 
     const stopped = {
       started, startStatus, routeBlocker, active:LSTM_YIELD_DEMO.active,
       saved:LSTM_YIELD_DEMO.saved,
-      racks:LSTM_YIELD_DEMO.racks.length, mode:AVOID.mode, lift:AVOID.lift,
+      blockers:LSTM_YIELD_DEMO.blockers.length, mode:AVOID.mode, lift:AVOID.lift,
       person:[person.node.position.x, person.node.position.y, person.node.position.z],
       basket:[basketNode.position.x, basketNode.position.y, basketNode.position.z],
       basketHeld:state.basketHeld,
@@ -197,13 +197,13 @@ test('fixed-route LSTM demo moves first, actively yields, and finishes safely', 
     const restarted = startLstmYieldDemo();
     document.querySelector('#homeBtn').click();
     return { before, stopped, home:{ restarted, active:LSTM_YIELD_DEMO.active,
-      saved:LSTM_YIELD_DEMO.saved, racks:LSTM_YIELD_DEMO.racks.length,
+      saved:LSTM_YIELD_DEMO.saved, blockers:LSTM_YIELD_DEMO.blockers.length,
       mode:AVOID.mode, lift:AVOID.lift } };
   });
   expect(cancelled.stopped.started, JSON.stringify(cancelled)).toBe(true);
   expect(cancelled.stopped.active).toBe(false);
   expect(cancelled.stopped.saved).toBe(null);
-  expect(cancelled.stopped.racks).toBe(0);
+  expect(cancelled.stopped.blockers).toBe(0);
   expect(cancelled.stopped.mode).toBe('PROCEED');
   expect(cancelled.stopped.lift).toBe(null);
   expect(cancelled.stopped.person).toEqual(cancelled.before.person);
@@ -212,7 +212,7 @@ test('fixed-route LSTM demo moves first, actively yields, and finishes safely', 
   expect(cancelled.home.restarted).toBe(true);
   expect(cancelled.home.active).toBe(false);
   expect(cancelled.home.saved).toBe(null);
-  expect(cancelled.home.racks).toBe(0);
+  expect(cancelled.home.blockers).toBe(0);
   expect(cancelled.home.mode).toBe('PROCEED');
   expect(cancelled.home.lift).toBe(null);
 

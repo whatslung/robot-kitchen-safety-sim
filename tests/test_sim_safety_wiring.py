@@ -93,7 +93,7 @@ def test_held_basket_is_part_of_candidate_and_swept_contact_geometry():
     assert "link.radius ?? linkRadius" in (Path(__file__).parents[1] / "safety_motion.js").read_text(encoding="utf-8")
 
 
-def test_lstm_yield_demo_starts_robot_before_the_person_and_restores_racks():
+def test_lstm_yield_demo_starts_robot_before_the_person_and_restores_route_blockers():
     text = sim_source()
     assert 'id="lstmYieldBtn"' in text
     assert "function startAutoWork" in text
@@ -103,11 +103,19 @@ def test_lstm_yield_demo_starts_robot_before_the_person_and_restores_racks():
     assert "LSTM_YIELD_DEMO.startedAt + 400" in text
     assert "observationCount >= 8" in text
     assert "function lstmYieldDemoRoute" in text
-    assert "function disableBlockingDemoRacks" in text
-    assert 'ENV_PROPS[index].f === "env_rack.glb"' in text
+    assert "function disableBlockingDemoProps" in text
+    assert '"env_rack.glb", "env_pancart.glb", "env_basketcart.glb"' in text
+    assert "const body = PUSH.bodies.find(item => item.idx === index)" in text
+    assert "idx:it.idx" in text
+    assert "linearVelocity:body.ag.body.getLinearVelocity().clone()" in text
+    assert "angularVelocity:body.ag.body.getAngularVelocity().clone()" in text
+    assert "disablePreStep:body.ag.body.disablePreStep" in text
     assert "buildPersonColliders();" in text
     assert "buildNavGrid();" in text
-    assert "function restoreDemoRacks" in text
+    assert "function restoreDemoRouteBlockers" in text
+    assert "function prepareLstmDemoCrossingPath" in text
+    assert "disableBlockingDemoProps(intendedRoute, true)" in text
+    assert "const crossingPath = prepareLstmDemoCrossingPath" in text
     assert 'AVOID.predictionSource = "lstm"' in text
     assert 'AVOID.predictionSource = "current-only"' in text
     assert "lstmYieldDemoUpdate(now, dt);" in text
