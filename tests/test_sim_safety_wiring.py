@@ -68,6 +68,14 @@ def test_contact_monitor_unifies_main_and_extra_people_with_swept_links():
     assert 'kind:"extra"' in text
 
 
+def test_held_basket_is_part_of_candidate_and_swept_contact_geometry():
+    text = sim_source()
+    assert "function basketPayloadSegments" in text
+    assert "if (state.basketHeld) links.push(...basketPayloadSegments())" in text
+    assert "segment.radius ?? ARM_R" in text
+    assert "link.radius ?? linkRadius" in (Path(__file__).parents[1] / "safety_motion.js").read_text(encoding="utf-8")
+
+
 def test_robot_contact_accidents_are_routed_to_run_tab():
     text = sim_source()
     run_tab = next(line for line in text.splitlines() if '{ id:"run"' in line)

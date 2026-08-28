@@ -280,3 +280,18 @@ test('armTrajectoryClearance scores every 3D link against planned capsules', () 
 
   assert.ok(Math.abs(S.armTrajectoryClearance(armSamples, people, 0.1) - 0.2) < 1e-12);
 });
+
+test('armTrajectoryClearance honors a payload segment radius larger than the arm', () => {
+  const armSamples = [[{
+    a: { x: 0, y: 1, z: 0 },
+    b: { x: 1, y: 1, z: 0 },
+    radius: 0.4,
+  }]];
+  const people = [{
+    radius: 0.2,
+    halfHeight: 0.8,
+    points: [{ x: 0.5, y: 0.9, z: 0.5 }],
+  }];
+
+  assert.ok(Math.abs(S.armTrajectoryClearance(armSamples, people, 0.1) + 0.1) < 1e-12);
+});

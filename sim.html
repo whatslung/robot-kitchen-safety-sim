@@ -10529,12 +10529,36 @@ function plannedMinimumBaseDistance(windowSec) {
 /* 이전 이름은 개발 콘솔·외부 점검 코드 호환용으로 남기되, 내용은 계획 경로 기반이다. */
 function avoidMinDist(windowSec) { return plannedMinimumBaseDistance(windowSec); }
 
+function basketPayloadSegments() {
+  if (!basketNode) return [];
+  basketNode.computeWorldMatrix(true);
+  const bounds = basketNode.getHierarchyBoundingVectors(true);
+  const min = bounds && bounds.min, max = bounds && bounds.max;
+  const values = min && max ? [min.x,min.y,min.z,max.x,max.y,max.z] : [];
+  if (values.length !== 6 || values.some(v => !Number.isFinite(v))) {
+    const invalid = { x:Number.NaN, y:Number.NaN, z:Number.NaN };
+    return [{ a:invalid, b:invalid, radius:Number.NaN, kind:"basket" }];
+  }
+  const center = { x:(min.x+max.x)/2, y:(min.y+max.y)/2, z:(min.z+max.z)/2 };
+  const halfX = (max.x-min.x)/2, halfY = (max.y-min.y)/2, halfZ = (max.z-min.z)/2;
+  const radius = Math.max(ARM_R, Math.min(halfX, halfZ, Math.max(halfY, SCALE.au(0.12))));
+  const xReach = Math.max(0, halfX-radius), zReach = Math.max(0, halfZ-radius);
+  return [
+    { a:{x:center.x-xReach,y:center.y,z:center.z},
+      b:{x:center.x+xReach,y:center.y,z:center.z}, radius, kind:"basket" },
+    { a:{x:center.x,y:center.y,z:center.z-zReach},
+      b:{x:center.x,y:center.y,z:center.z+zReach}, radius, kind:"basket" },
+  ];
+}
+
 function armLinksSnapshot() {
   const j = JOINTS.map(item => item.node.getAbsolutePosition());
   const tip = effector().getAbsolutePosition();
-  return [[j[1],j[2]],[j[2],j[3]],[j[3],tip]].map(([a,b]) => ({
+  const links = [[j[1],j[2]],[j[2],j[3]],[j[3],tip]].map(([a,b]) => ({
     a:safetyPoint(a, 0), b:safetyPoint(b, 0),
   }));
+  if (state.basketHeld) links.push(...basketPayloadSegments());
+  return links;
 }
 
 /* 후보 관절 궤적을 실제 Babylon 체인에 잠깐 적용해 3D 링크를 읽고 원래 자세로 복구한다.
@@ -13970,7 +13994,7 @@ function safetyPeople() {
 function armSweepTravel(previous, current) {
   let travel = 0;
   for (let i = 0; i < current.length; i++) for (const end of ["a","b"]) {
-    const a = previous[i][end], b = current[i][end];
+    const a = (previous[i] || current[i])[end], b = current[i][end];
     travel = Math.max(travel, Math.hypot(b.x-a.x, b.y-a.y, b.z-a.z));
   }
   return travel;
@@ -14001,8 +14025,10 @@ function armContactUpdate(dt) {
 
     let contact = false, clr = Infinity;
     for (let i = 0; i < current.length; i++) {
+      const segment = current[i];
       const result = SafetyMotion.sweptSegmentCapsuleContact({
-        previous:previous[i], current:current[i], linkRadius:ARM_R,
+        previous:previous[i] || segment, current:segment,
+        linkRadius:segment.radius ?? ARM_R,
         capsule:{ center:target.center, radius:target.radius, halfHeight:target.halfHeight },
         maxStep:SCALE.au(0.04),
       });
@@ -14023,7 +14049,7 @@ function armContactUpdate(dt) {
     const cx = bp.a.x + abx*along, cz = bp.a.z + abz*along;
     let nx = p.x - cx, nz = p.z - cz;
     const nl = Math.hypot(nx, nz) || 1; nx /= nl; nz /= nl;
-    const need = ARM_R + PERSON_R + 0.05;
+    const need = (bp.radius ?? ARM_R) + PERSON_R + 0.05;
     const minClear = new V3(cx + nx * need, 0, cz + nz * need);
     const pinned = resolvePersonCollision(minClear.clone());
     const esc = pinned ? minClear : new V3(cx + nx*(need + 0.30), 0, cz + nz*(need + 0.30));

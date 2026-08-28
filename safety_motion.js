@@ -359,9 +359,13 @@
           z: personPoint.z,
         };
         for (const link of links) {
+          const effectiveLinkRadius = link.radius ?? linkRadius;
+          if (!Number.isFinite(effectiveLinkRadius) || effectiveLinkRadius < 0) {
+            return Number.NEGATIVE_INFINITY;
+          }
           clearance = Math.min(
             clearance,
-            segmentSegmentDistance(link.a, link.b, bottom, top) - linkRadius - radius,
+            segmentSegmentDistance(link.a, link.b, bottom, top) - effectiveLinkRadius - radius,
           );
         }
       }
