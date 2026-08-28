@@ -1,0 +1,46 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Multimodal prediction</title>
+<style>
+ :root{--ink:#0b0b0b;--ink2:#52514e;--muted:#898781;--red:#e34948;--font:system-ui,-apple-system,"Segoe UI",sans-serif;
+   --blob:#1baf7a;--arrow:#5a5f64}
+ *{box-sizing:border-box} body{margin:0;background:#dfe1e4;font-family:var(--font);color:var(--ink)}
+ #fig12{width:1400px;background:#fff;margin:32px auto;padding:34px 40px 30px}
+ .figtitle{font-size:26px;font-weight:750;letter-spacing:-.01em;margin:0 0 4px}
+ .figsub{font-size:16px;color:var(--ink2);margin:0 0 18px;font-weight:450}
+ .well{width:100%;aspect-ratio:1379/965;border:1px solid rgba(11,11,11,.12);border-radius:10px;overflow:hidden}
+ .well img{width:100%;height:100%;object-fit:cover;display:block}
+ .legend{display:flex;flex-wrap:wrap;gap:22px;font-size:13.5px;color:var(--ink2);margin:14px 2px 2px}
+ .k{display:inline-flex;align-items:center;gap:8px}
+ .k b{color:var(--ink);font-weight:650}
+ .sw-arrow{width:30px;height:14px;display:inline-block;flex:none}
+ .sw-blob{width:22px;height:16px;border-radius:50%;flex:none;
+   background:radial-gradient(closest-side,rgba(27,175,122,.55),rgba(27,175,122,0))}
+ .sw-dash{width:30px;height:0;border-top:3px dashed var(--red);display:inline-block;flex:none}
+ .sw-dot{width:14px;height:14px;border-radius:50%;background:#3a3f45;flex:none;
+   box-shadow:0 0 0 4px rgba(58,63,69,.18)}
+ .figcap{font-size:14px;color:var(--ink2);line-height:1.55;margin:16px 2px 0;max-width:1320px}
+ .figcap b{color:var(--ink);font-weight:650}
+</style></head><body>
+<section id="fig12">
+ <h2 class="figtitle">Multimodal prediction: every worker, every likely next move</h2>
+ <p class="figsub">One overhead frame from our simulator, robot as ego &mdash; each detected worker carries a fan of likely futures, an uncertainty cloud, and a dashed path the robot plans against.</p>
+
+ <div class="well"><img src="src_predviz.png" alt="Multimodal prediction overlays over the overhead kitchen scene"></div>
+
+ <div class="legend">
+  <span class="k"><svg class="sw-arrow" viewBox="0 0 30 14"><g stroke="var(--arrow)" stroke-width="2" fill="none">
+    <line x1="2" y1="7" x2="24" y2="2"/><line x1="2" y1="7" x2="26" y2="7"/><line x1="2" y1="7" x2="24" y2="12"/>
+    <path d="M24,2 l4,0 M26,7 l3,0 M24,12 l4,0" stroke-width="2.4"/></g></svg><b>likely futures</b> (multimodal)</span>
+  <span class="k"><span class="sw-blob"></span><b>position uncertainty</b> &sigma;</span>
+  <span class="k"><span class="sw-dash"></span><b>path entering stop ring</b></span>
+  <span class="k"><span class="sw-dot"></span><b>ego</b> &mdash; plans against all</span>
+ </div>
+
+ <p class="figcap"><b>Every worker gets more than a single guessed line.</b> The colored fan is the set of paths a worker
+ might plausibly take next; the soft blob around each one is how uncertain that guess is (wider&nbsp;=&nbsp;less sure,
+ the &sigma; spread); the red dashes are the path that is about to cross into the robot's stop ring. The robot (ego, at
+ the kettle) predicts all three workers at once over a <b>1.6&nbsp;s horizon</b> and plans against the whole set &mdash;
+ not just the nearest person. Rings: red&nbsp;=&nbsp;stop, orange&nbsp;=&nbsp;slow, green&nbsp;=&nbsp;aware. Modeling each
+ agent's futures this way is after Trajectron++ (Salzmann&nbsp;et&nbsp;al., 2020).</p>
+</section>
+<script>if(location.hash==='#2x'){document.documentElement.style.zoom='2';}</script>
+</body></html>
