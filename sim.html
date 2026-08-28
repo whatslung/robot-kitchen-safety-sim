@@ -215,6 +215,13 @@
   .snode .eye{cursor:pointer;opacity:0.85;font-size:11px;margin-left:auto}
   .snode .eye.off{opacity:0.3}
   .snode.child{padding-left:26px;color:#aab2ba}
+  .snode .objname{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .snode .gravbtn{flex:0 0 auto;margin-left:auto;padding:1px 5px;border-radius:4px;
+    border:1px solid #3a4450;background:transparent;color:#7d8590;cursor:pointer;
+    font:8.5px/1.45 ui-monospace,SFMono-Regular,monospace;white-space:nowrap}
+  .snode .gravbtn:hover{border-color:#58a6ff;color:#9ecbff}
+  .snode .gravbtn.on{border-color:#76b900;color:#a6e22e;background:rgba(118,185,0,.14)}
+  .snode .fixedbadge{flex:0 0 auto;margin-left:auto;color:#6e7681;font-size:8.5px}
   /* 카메라 줄은 이름이 길어져도 **절대 두 줄이 되지 않게** 한다.
      이름을 짧게 지어도 다음 사람이 길게 바꾸면 또 밀리므로, 넘치면 …으로 자르고
      전체 이름은 title(마우스 올리면 뜸)과 카메라 드롭다운에서 본다.
@@ -268,6 +275,7 @@
     <button class="mbtn" id="edSpace" title="월드 축 / 로컬 축">월드 축</button>
     <button class="mbtn" id="edUndo" title="실행 취소 (⌘/Ctrl+Z)">↶</button>
     <button class="mbtn" id="edRedo" title="다시 실행 (⌘/Ctrl+Shift+Z)">↷</button>
+    <button class="mbtn" id="edResetAll" title="편집한 모든 설비와 물리 상태를 최초 배치로 되돌립니다">↺ 전체 원위치</button>
   </div>
   <div class="right">Babylon.js <span id="bver2"></span> · 오프라인</div>
 </div>
@@ -9150,6 +9158,7 @@ function buildPushables() {
     PUSH.bodies.push({ box, ag, holder:h, label:it.def.label, half:[w/2, d/2, ht/2], maxV:ph.maxV,
                        mass, friction:ph.friction, damping:ph.damp, baseSize:[w,ht,d],
                        home:box.position.clone(), homeYaw:it.ry,
+                       gravityEnabled:true, gravityDefault:true,
                        size:[+w.toFixed(2), +ht.toFixed(2), +d.toFixed(2)] });
   }
   if (!PUSH.bodies.length) return;
@@ -9167,6 +9176,10 @@ function buildPushables() {
   resolvePersonCollision(person.node.position);
   for (const e of EXTRAS) if (e && e.node) resolvePersonCollision(e.node.position);
   buildStaticPropColliders();
+  /* 물리 프록시가 만들어진 바로 이 시점이 동적 설비의 진짜 최초 배치다. 편집기를 처음
+     열기 전에 카트가 밀렸더라도 그 밀린 자리를 원위치로 오인하지 않게 즉시 기록한다. */
+  sceneEditorCollect();
+  sceneEditorStageRefresh();
   console.log("[PUSH] 밀 수 있는 물건 " + PUSH.bodies.length + "개 — " +
               PUSH.bodies.map(b => b.label + " " + b.size.join("×")).join(" · "));
 }
@@ -9286,7 +9299,7 @@ function sceneEditorCollect() {
        서로 다른 좌표계를 같은 초기값으로 오인하지 않도록 노드가 바뀐 때만 다시 잡는다. */
     const initial = SCENE_EDITOR.initial.get(e.id);
     if (!initial || initial.nodeUniqueId !== e.node.uniqueId)
-      SCENE_EDITOR.initial.set(e.id, sceneEditorTransform(e, []));
+      SCENE_EDITOR.initial.set(e.id, sceneEditorTransform(e, sceneEditorOwnedStations(e)));
   }
   return entries;
 }
@@ -9418,6 +9431,7 @@ function sceneEditorRebuildPushBodies() {
     ag.body.setLinearDamping(b.damping);
     ag.body.setAngularDamping(4.0);
     ag.body.setMassProperties({ mass:b.mass, inertia:new V3(0, b.mass*(w*w+d*d)/12, 0) });
+    ag.body.setGravityFactor(b.gravityEnabled ? 1 : 0);
     b.ag = ag; b.half = [w/2,d/2,ht/2]; b.size = [+w.toFixed(2),+ht.toFixed(2),+d.toFixed(2)];
     b.sceneEditing = false; b.restore = 0;
   }
@@ -9449,7 +9463,9 @@ function sceneEditorEnsureVisuals() {
   gm.boundingBoxGizmoEnabled = false;
   const pg = gm.gizmos.positionGizmo, rg = gm.gizmos.rotationGizmo, sg = gm.gizmos.scaleGizmo;
   pg.planarGizmoEnabled = true;
-  pg.scaleRatio = rg.scaleRatio = sg.scaleRatio = 1.20;
+  /* 1.20은 설비보다 축 손잡이가 더 커 보였다. 기본 크기보다 작게 하되, 작은 화면에서도
+     드래그 면적을 잃지 않는 0.80으로 맞춘다. */
+  pg.scaleRatio = rg.scaleRatio = sg.scaleRatio = 0.80;
   const drags = [pg.xGizmo,pg.yGizmo,pg.zGizmo,pg.xPlaneGizmo,pg.yPlaneGizmo,pg.zPlaneGizmo,
                  rg.xGizmo,rg.yGizmo,rg.zGizmo,sg.xGizmo,sg.yGizmo,sg.zGizmo,sg.uniformScaleGizmo];
   for (const g of drags) {
@@ -9671,6 +9687,59 @@ function sceneEditorResetSelected() {
   setStatus("선택 원위치 — " + e.label);
   return true;
 }
+function sceneEditorResetAll(announce = true) {
+  sceneEditorFinishDrag();
+  const entries = sceneEditorCollect().filter(e => e.editable);
+  const missing = entries.find(e => !SCENE_EDITOR.initial.has(e.id));
+  if (missing) throw new Error("전체 원위치의 최초 배치를 찾을 수 없습니다: " + missing.id);
+  let changed = 0;
+  for (const e of entries) {
+    const initial = SCENE_EDITOR.initial.get(e.id);
+    const before = sceneEditorTransform(e, Object.keys(initial.stations));
+    if (sceneEditorTransformsDiffer(before, initial)) changed++;
+    e.node.position.copyFrom(initial.position);
+    if (!e.node.rotationQuaternion) e.node.rotationQuaternion = initial.rotation.clone();
+    else e.node.rotationQuaternion.copyFrom(initial.rotation);
+    e.node.scaling.copyFrom(initial.scaling);
+    e.node.computeWorldMatrix(true);
+    for (const [key, p] of Object.entries(initial.stations))
+      if (STATION[key]) STATION[key].pos.copyFrom(p);
+    if (e.dynamic) {
+      if (e.dynamic.gravityEnabled !== e.dynamic.gravityDefault) changed++;
+      e.dynamic.gravityEnabled = e.dynamic.gravityDefault;
+    }
+    sceneEditorSyncEntry(e);
+  }
+  SCENE_EDITOR.undo.length = 0;
+  SCENE_EDITOR.redo.length = 0;
+  /* 편집 밖에서는 DYNAMIC 바디가 노드 변환을 소유한다. 메시 좌표만 되돌리면 다음 물리
+     프레임에 다시 밀린 자리로 덮이므로 바디 자체를 최초 좌표에서 재생성한다. */
+  if (!SCENE_EDITOR.enabled) sceneEditorRebuildPushBodies();
+  sceneEditorRebuildWorld();
+  if (SCENE_EDITOR.enabled && SCENE_EDITOR.selection) {
+    const selected = entries.find(e => e.id === SCENE_EDITOR.selection.id) || null;
+    sceneEditorSelect(selected);
+  } else {
+    sceneEditorStageRefresh();
+    sceneEditorInspectorUpdate();
+  }
+  if (announce) setStatus("전체 원위치 — 주변 설비 " + entries.length + "개와 오브젝트별 중력 상태 복구");
+  return { objects:entries.length, changed };
+}
+function sceneEditorSetGravity(entry, enabled) {
+  if (!entry || !entry.dynamic)
+    throw new Error("개별 중력을 적용할 Havok 동적 바디가 없습니다: " + (entry ? entry.id : "선택 없음"));
+  const b = entry.dynamic;
+  b.gravityEnabled = !!enabled;
+  b.ag.body.setGravityFactor(b.gravityEnabled ? 1 : 0);
+  if (!b.gravityEnabled) {
+    const v = b.ag.body.getLinearVelocity();
+    b.ag.body.setLinearVelocity(new V3(v.x, 0, v.z));
+  }
+  sceneEditorStageRefresh();
+  setStatus(entry.label + " — 중력 " + (b.gravityEnabled ? "ON (놓으면 아래로 낙하)" : "OFF (현재 높이 유지)"));
+  return b.gravityEnabled;
+}
 function sceneEditorStageRefresh() {
   const box = document.getElementById("editorEnvRows");
   if (!box) return;
@@ -9679,7 +9748,26 @@ function sceneEditorStageRefresh() {
   for (const e of entries) {
     const row = document.createElement("div");
     row.className = "snode child editable" + (SCENE_EDITOR.selection && SCENE_EDITOR.selection.id === e.id ? " selected" : "");
-    row.dataset.editorId = e.id; row.textContent = e.label; row.title = "클릭하여 장면 편집 선택";
+    row.dataset.editorId = e.id; row.title = "클릭하여 장면 편집 선택";
+    const name = document.createElement("span");
+    name.className = "objname"; name.textContent = e.label; name.title = e.label;
+    row.appendChild(name);
+    if (e.dynamic) {
+      const gravity = document.createElement("button");
+      gravity.className = "gravbtn" + (e.dynamic.gravityEnabled ? " on" : "");
+      gravity.textContent = "중력 " + (e.dynamic.gravityEnabled ? "ON" : "OFF");
+      gravity.title = "이 오브젝트만 Havok 중력을 켜거나 끕니다";
+      gravity.addEventListener("click", ev => {
+        ev.stopPropagation();
+        sceneEditorSetGravity(sceneEditorCollect().find(x => x.id === e.id), !e.dynamic.gravityEnabled);
+      });
+      row.appendChild(gravity);
+    } else {
+      const fixed = document.createElement("span");
+      fixed.className = "fixedbadge"; fixed.textContent = "고정";
+      fixed.title = "질량·충돌 프록시가 없는 고정 설비 — 개별 중력 대상 아님";
+      row.appendChild(fixed);
+    }
     row.addEventListener("click", () => { if (SCENE_EDITOR.enabled) sceneEditorSelect(sceneEditorCollect().find(x => x.id === e.id)); });
     box.appendChild(row);
   }
@@ -11731,6 +11819,7 @@ function resetBasket() {
 }
 $("resetBtn").addEventListener("click", () => {
   state.auto = false; state.cook = 0; state.burn = 0; state.inOil = false;
+  const sceneReset = sceneEditorResetAll(false);
   JOINTS.forEach(j => { j.value = j.home; applyJoint(j); });
   refreshChain(); syncJointUI();
   resetBasket();                        // 바스켓을 솥 안 시작 위치로
@@ -11753,7 +11842,7 @@ $("resetBtn").addEventListener("click", () => {
   person.node.position.copyFrom(LAYOUT.person.pos);
   if (typeof personIdle === "function") personIdle();
   if (typeof OVERLAP === "object") { OVERLAP.cool = 0; OVERLAP.events = 0; }
-  setStatus("리셋 완료 — 바스켓·사람·안전 상태 원위치 (인원 " + EXTRAS.length + "명)");
+  setStatus("리셋 완료 — 설비 " + sceneReset.objects + "개·물리·바스켓·사람·안전 상태 원위치 (인원 " + EXTRAS.length + "명)");
 });
 $("tempSlider").addEventListener("input", e => {
   state.temp = +e.target.value;
@@ -13193,7 +13282,7 @@ window.__sim = {
   // 장면 오브젝트 편집
   SCENE_EDITOR, sceneEditorSetEnabled, sceneEditorSelect, sceneEditorSetMode,
   sceneEditorSetLocal, sceneEditorApplyInspector, sceneEditorResetSelected,
-  sceneEditorUndo, sceneEditorRedo, sceneEditorCollect,
+  sceneEditorResetAll, sceneEditorSetGravity, sceneEditorUndo, sceneEditorRedo, sceneEditorCollect,
   // 모델 검증
   MIL, milCapture, milMaskBoxes, drawOverlay, effector, BE, drawBirdseye, DENS, AVOID, avoidMinDist, avoidDecide, SEQ, RARR, robotArrowsUpdate, PMODE, GRAPH,
 };
@@ -13252,6 +13341,10 @@ function logConsole(msg) {
   const envHead = document.createElement("div");
   envHead.className = "snode"; envHead.textContent = "▾ 주변 설비 (편집 가능)";
   envHead.style.marginTop = "6px"; tree.appendChild(envHead);
+  const envHint = document.createElement("div");
+  envHint.className = "streehint";
+  envHint.innerHTML = "설비 선택 · 물리 오브젝트는 <b>중력 ON/OFF</b> 개별 제어";
+  tree.appendChild(envHint);
   const envRows = document.createElement("div");
   envRows.id = "editorEnvRows"; tree.appendChild(envRows);
   sceneEditorStageRefresh();
@@ -13281,6 +13374,7 @@ $("edScale").addEventListener("click", () => sceneEditorSetMode("scale"));
 $("edSpace").addEventListener("click", () => sceneEditorSetLocal(!SCENE_EDITOR.local));
 $("edUndo").addEventListener("click", sceneEditorUndo);
 $("edRedo").addEventListener("click", sceneEditorRedo);
+$("edResetAll").addEventListener("click", () => sceneEditorResetAll(true));
 $("edApply").addEventListener("click", sceneEditorApplyInspector);
 $("edReset").addEventListener("click", sceneEditorResetSelected);
 // Inspector는 상단 툴바에서 제거 — 전문가 기능(devMode) 패널의 버튼으로만 노출한다
