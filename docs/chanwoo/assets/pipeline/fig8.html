@@ -1,0 +1,52 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Collision vs avoidance</title>
+<style>
+ :root{--ink:#0b0b0b;--ink2:#52514e;--muted:#898781;--red:#e34948;--green:#1b9e6b;
+   --font:system-ui,-apple-system,"Segoe UI",sans-serif}
+ *{box-sizing:border-box} body{margin:0;background:#dfe1e4;font-family:var(--font);color:var(--ink)}
+ #fig8{width:1500px;background:#fff;margin:32px auto;padding:34px 40px 30px}
+ .figtitle{font-size:26px;font-weight:750;letter-spacing:-.01em;margin:0 0 4px}
+ .figsub{font-size:16px;color:var(--ink2);margin:0 0 22px;font-weight:450}
+ .cols{display:flex;gap:26px}
+ .col{flex:1 1 0;min-width:0}
+ .badge{display:inline-flex;align-items:center;gap:8px;font-size:15px;font-weight:700;
+   padding:5px 12px;border-radius:6px;margin-bottom:10px}
+ .bad{background:#fdecec;color:#b5322f} .good{background:#e7f6ee;color:#12764f}
+ .dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+ .well{width:100%;aspect-ratio:1379/911;border-radius:10px;overflow:hidden;border:1px solid rgba(11,11,11,.12)}
+ .well img{width:100%;height:100%;object-fit:cover;display:block}
+ .cname{font-size:17px;font-weight:700;margin:0 0 3px}
+ .cdesc{font-size:13.5px;color:var(--ink2);margin:0 0 12px;line-height:1.45;min-height:38px}
+ .stat{font-size:13.5px;color:var(--ink2);margin-top:10px}
+ .stat b{color:var(--ink)}
+ .figcap{font-size:14px;color:var(--ink2);line-height:1.55;margin:22px 2px 0;max-width:1420px}
+ .figcap b{color:var(--ink);font-weight:650}
+</style></head><body>
+<section id="fig8">
+ <h2 class="figtitle">The payoff: prediction turns a collision into a head start</h2>
+ <p class="figsub">Same scene, same worker path, same robot &mdash; the only difference is whether the predictor is on.</p>
+ <div class="cols">
+
+  <div class="col">
+   <span class="badge bad"><span class="dot" style="background:var(--red)"></span>WITHOUT prediction</span>
+   <div class="cname">Arm sweeps into the worker</div>
+   <div class="cdesc">The robot never anticipates the approach; it keeps working and the arm makes contact &mdash; an emergency stop fires only <i>after</i> the hit.</div>
+   <div class="well"><img src="src_collision.png" alt="collision"></div>
+   <div class="stat">outcome: <b style="color:var(--red)">E-STOP on contact (wrist)</b> &middot; person&ndash;robot <b>1.48 m</b> (inside stop ring)</div>
+  </div>
+
+  <div class="col">
+   <span class="badge good"><span class="dot" style="background:var(--green)"></span>WITH prediction</span>
+   <div class="cname">Robot slows 1.6&nbsp;s early, worker safe</div>
+   <div class="cdesc">The predicted path (red dashes) is seen entering the stop ring 1.6&nbsp;s ahead, so the robot pre-emptively slows and backs off before contact.</div>
+   <div class="well"><img src="src_avoid.png" alt="avoidance"></div>
+   <div class="stat">outcome: <b style="color:var(--green)">pre-emptive slow, no contact</b> &middot; keeps <b>3.90 m</b> separation</div>
+  </div>
+
+ </div>
+ <p class="figcap"><b>This is what the whole pipeline buys.</b> Detection &rarr; world fusion &rarr; tracking feed a 1.6&nbsp;s
+ trajectory prediction; when that predicted path is about to enter the stop ring, the robot acts <i>before</i> the person
+ arrives instead of reacting to a contact. Presentation demo &mdash; transfer speeds are exaggerated for visibility; the
+ ISO/TS&nbsp;15066 safety decision is unchanged.</p>
+</section>
+<script>if(location.hash==='#2x'){document.documentElement.style.zoom='2';}</script>
+</body></html>
