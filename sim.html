@@ -312,7 +312,7 @@
       <div class="edvec"><span>S</span><input id="edSX" type="number" step="0.01" min="0.05"><input id="edSY" type="number" step="0.01" min="0.05"><input id="edSZ" type="number" step="0.01" min="0.05"></div>
       <div class="btnrow"><button id="edApply">값 적용</button><button id="edReset">선택 원위치</button></div>
       <div class="edsection">PHYSICS</div>
-      <label class="edphysrow"><span>Body</span><select id="edBodyType" aria-label="선택 오브젝트 물리 타입"><option value="none" disabled>–</option><option value="locked" disabled>Locked</option><option value="static">Static</option><option value="dynamic">Dynamic</option><option value="character" disabled>Character</option><option value="articulated" disabled>Articulated</option></select></label>
+      <label class="edphysrow"><span>Body</span><select id="edBodyType" aria-label="선택 오브젝트 물리 타입"><option value="none" disabled>–</option><option value="locked" disabled>Locked</option><option value="static">Static</option><option value="dynamic">Dynamic</option><option value="animated" disabled>Animated</option><option value="character" disabled>Character</option><option value="articulated" disabled>Articulated</option></select></label>
       <label class="edphysrow"><span>Gravity</span><input id="edGravity" type="checkbox" role="switch" aria-label="선택 오브젝트 중력"></label>
       <label class="edphysrow"><span>Mass (kg)</span><input id="edMass" type="number" min="0.1" step="1" aria-label="선택 오브젝트 질량"></label>
       <div class="edphysrow"><span>Collision</span><b id="edCollision">–</b></div>
@@ -2105,6 +2105,13 @@ if (!SHOW_PERSON) anchors["person"].placeholders.forEach(m => { m.isVisible = fa
 const R = LAYOUT.robot;
 const JOINTS = [];
 let tipNode = null, gripL = null, gripR = null;
+/* 로봇 관절 물리는 기본 애니메이션 경로와 같은 관절값을 공유한다. active=false일 때는
+   기존 IK/자동조리 경로가 그대로 노드를 돌리고, active=true일 때 applyJoint는 Havok
+   위치 모터의 목표만 바꾼다. 실제 각도는 관절 바디에서 읽어 시각 계층에 되돌린다. */
+const ROBOT_PHYS = {
+  active:false, driveEnabled:true, syncing:false, solving:false,
+  base:null, links:[], constraints:[], initialDriveEnabled:true, lastUiAt:0
+};
 
 function buildRobot() {
   const root = new BABYLON.TransformNode("robotRoot", scene);
@@ -2185,7 +2192,18 @@ function buildRobot() {
   }
   applyAll();
 }
-function applyJoint(j) { j.node.rotation[j.ax] = j.value; }
+function applyJoint(j) {
+  if (ROBOT_PHYS.active && !ROBOT_PHYS.syncing && !ROBOT_PHYS.solving) {
+    const link = ROBOT_PHYS.links[j.index];
+    if (!link || !link.constraint)
+      throw new Error("관절 물리 링크가 준비되지 않았습니다: " + j.label);
+    link.target = clamp(j.value, j.min, j.max);
+    if (ROBOT_PHYS.driveEnabled)
+      link.constraint.setAxisMotorTarget(BABYLON.PhysicsConstraintAxis.ANGULAR_X, link.target);
+    return;
+  }
+  j.node.rotation[j.ax] = j.value;
+}
 function applyAll() { JOINTS.forEach(applyJoint); refreshChain(); }
 function refreshChain() {
   for (const j of JOINTS) j.node.computeWorldMatrix(true);
@@ -2195,6 +2213,24 @@ function refreshChain() {
 /* IK 엔드이펙터 — 교반봉 블레이드 끝. 목표점 = 블레이드가 닿을 위치 */
 function effector() { return paddleTip || tipNode; }
 buildRobot();
+JOINTS.forEach((j, index) => { j.index = index; });
+ROBOT_PHYS.links = [
+  { id:"robot.link.j1", label:"J1 베이스 회전부", joint:JOINTS[0],
+    node:JOINTS[0].node, size:[0.26,0.28,0.26], center:[0,R.shoulderY-(R.pedestal+0.05),0], mass:18, maxForce:900 },
+  { id:"robot.link.j2", label:"J2 상완", joint:JOINTS[1],
+    node:JOINTS[1].node, size:[R.upper+0.06,0.21,0.19], center:[R.upper/2,0,0], mass:12, maxForce:620 },
+  { id:"robot.link.j3", label:"J3 하완", joint:JOINTS[2],
+    node:JOINTS[2].node, size:[R.fore+0.05,0.17,0.16], center:[R.fore/2,0,0], mass:8, maxForce:420 },
+  { id:"robot.link.j4", label:"J4 손목", joint:JOINTS[3],
+    node:JOINTS[3].node, size:[R.wrist+0.24,0.15,0.17], center:[(R.wrist+0.20)/2,0,0], mass:4, maxForce:220 },
+  { id:"robot.link.j5", label:"J5 도구부", joint:JOINTS[4],
+    node:JOINTS[4].node, size:[0.10,0.60,0.10], center:[R.grip+0.045,-0.30,0], mass:2.2, maxForce:120 },
+];
+for (const link of ROBOT_PHYS.links) {
+  link.mesh = null; link.ag = null; link.constraint = null;
+  link.target = link.joint.value;
+  link.gravityEnabled = true; link.gravityDefault = true;
+}
 
 /* ── CCD 역기구학 (관절축 구속) ── */
 const IK_TOL = 0.004;   // 수렴 판정 4mm
@@ -2227,21 +2263,36 @@ function ccdSolve(target, iters) {
                      같은 목표를 홈 자세부터 풀면 25회 전부 성공.
    → 1차 시도가 수렴하지 않을 때만 시드를 바꿔 재시도한다. 정상 경로에는 비용이 없다. */
 function solveIK(target, iters) {
-  let bestErr = ccdSolve(target, iters);
-  if (bestErr < IK_TOL) return bestErr;
-  let best = JOINTS.map(j => j.value);
-  for (let s = 0; s < 3 && bestErr >= IK_TOL; s++) {
-    JOINTS.forEach(j => {
-      j.value = s === 0 ? j.home    // ① 홈 자세 ②③ 홈 주변 무작위
-              : clamp(j.home + (Math.random() - 0.5) * (j.max - j.min) * 0.5, j.min, j.max);
-      applyJoint(j);
-    });
-    refreshChain();
-    const e = ccdSolve(target, iters);
-    if (e < bestErr) { bestErr = e; best = JOINTS.map(j => j.value); }
+  /* Articulated 모드에서도 IK 계산 자체는 현재 시각 관절 계층에서 수행해야 한다.
+     계산 중에만 모터 전송을 멈추고 노드를 직접 회전한 뒤, 최종 해를 다시 실제 모터
+     목표로 보낸다. ikAngles가 계산 뒤 원래 각도를 복원하면 그 복원값도 같은 경로로
+     모터에 전달되므로 기존 '계산만 하고 복원' 의미가 유지된다. */
+  const physicsSolve = ROBOT_PHYS.active;
+  if (physicsSolve) ROBOT_PHYS.solving = true;
+  let bestErr = Infinity;
+  try {
+    bestErr = ccdSolve(target, iters);
+    if (bestErr >= IK_TOL) {
+      let best = JOINTS.map(j => j.value);
+      for (let s = 0; s < 3 && bestErr >= IK_TOL; s++) {
+        JOINTS.forEach(j => {
+          j.value = s === 0 ? j.home    // ① 홈 자세 ②③ 홈 주변 무작위
+                  : clamp(j.home + (Math.random() - 0.5) * (j.max - j.min) * 0.5, j.min, j.max);
+          applyJoint(j);
+        });
+        refreshChain();
+        const e = ccdSolve(target, iters);
+        if (e < bestErr) { bestErr = e; best = JOINTS.map(j => j.value); }
+      }
+      JOINTS.forEach((j, i) => { j.value = best[i]; applyJoint(j); });
+      refreshChain();
+    }
+  } finally {
+    if (physicsSolve) {
+      ROBOT_PHYS.solving = false;
+      JOINTS.forEach(applyJoint);
+    }
   }
-  JOINTS.forEach((j, i) => { j.value = best[i]; applyJoint(j); });
-  refreshChain();
   return bestErr;
 }
 function ikAngles(target) {
@@ -9129,8 +9180,181 @@ function invisibleBox(name, size, pos, parent) {
   b.isVisible = false;
   return b;
 }
+function robotPhysicsBuildAnimatedColliders() {
+  if (ROBOT_PHYS.active) throw new Error("관절 물리 실행 중에는 Animated 링크를 만들 수 없습니다");
+  for (const link of ROBOT_PHYS.links) {
+    if (link.ag) link.ag.dispose();
+    if (link.mesh) link.mesh.dispose();
+    const m = invisibleBox("col_link_" + link.id, link.size, link.center, link.node);
+    const ag = new BABYLON.PhysicsAggregate(m, BABYLON.PhysicsShapeType.BOX, {mass:0}, scene);
+    ag.body.setMotionType(BABYLON.PhysicsMotionType.ANIMATED);
+    ag.body.disablePreStep = false;
+    link.mesh = m; link.ag = ag; link.constraint = null;
+  }
+  PHYS.links = ROBOT_PHYS.links.map(link => ({ mesh:link.mesh, label:link.label, robotLink:link }));
+}
+function robotPhysicsActivate() {
+  if (ROBOT_PHYS.active) return ROBOT_PHYS;
+  if (!PHYS.ready) throw new Error("Havok 물리가 준비되지 않아 로봇 관절 물리를 시작할 수 없습니다");
+  refreshChain();
+
+  const poses = ROBOT_PHYS.links.map(link => {
+    link.node.computeWorldMatrix(true);
+    const world = link.node.getWorldMatrix();
+    const position = BABYLON.Vector3.TransformCoordinates(
+      new V3(link.center[0],link.center[1],link.center[2]), world);
+    const rotation = new BABYLON.Quaternion();
+    world.decompose(new V3(), rotation, new V3());
+    return { position, rotation };
+  });
+  for (const link of ROBOT_PHYS.links) {
+    if (link.ag) link.ag.dispose();
+    if (link.mesh) link.mesh.dispose();
+    link.ag = null; link.mesh = null; link.constraint = null;
+  }
+
+  const root = scene.getTransformNodeByName("robotRoot");
+  root.computeWorldMatrix(true);
+  const rootRotation = new BABYLON.Quaternion();
+  root.getWorldMatrix().decompose(new V3(), rootRotation, new V3());
+  const baseMesh = invisibleBox("col_robot_articulated_base", [0.18,0.18,0.18], [0,0,0]);
+  baseMesh.position.copyFrom(JOINTS[0].node.getAbsolutePosition());
+  baseMesh.rotationQuaternion = rootRotation;
+  const baseAg = new BABYLON.PhysicsAggregate(baseMesh, BABYLON.PhysicsShapeType.BOX,
+    {mass:0, friction:0.7, restitution:0}, scene);
+  ROBOT_PHYS.base = { mesh:baseMesh, ag:baseAg };
+
+  for (let i = 0; i < ROBOT_PHYS.links.length; i++) {
+    const link = ROBOT_PHYS.links[i], pose = poses[i];
+    const mesh = invisibleBox("col_robot_articulated_" + (i+1), link.size, [0,0,0]);
+    mesh.position.copyFrom(pose.position); mesh.rotationQuaternion = pose.rotation.clone();
+    const ag = new BABYLON.PhysicsAggregate(mesh, BABYLON.PhysicsShapeType.BOX,
+      {mass:link.mass, friction:0.46, restitution:0.01}, scene);
+    ag.body.setMassProperties({mass:link.mass});
+    ag.body.setLinearDamping(0.35); ag.body.setAngularDamping(0.55);
+    ag.body.setGravityFactor(link.gravityEnabled ? 1 : 0);
+    link.mesh = mesh; link.ag = ag; link.target = link.joint.value;
+  }
+
+  const A = BABYLON.PhysicsConstraintAxis;
+  const limits = joint => [
+    {axis:A.LINEAR_X,minLimit:0,maxLimit:0},
+    {axis:A.LINEAR_Y,minLimit:0,maxLimit:0},
+    {axis:A.LINEAR_Z,minLimit:0,maxLimit:0},
+    {axis:A.ANGULAR_X,minLimit:joint.min,maxLimit:joint.max},
+    {axis:A.ANGULAR_Y,minLimit:0,maxLimit:0},
+    {axis:A.ANGULAR_Z,minLimit:0,maxLimit:0},
+  ];
+  for (let i = 0; i < ROBOT_PHYS.links.length; i++) {
+    const link = ROBOT_PHYS.links[i], joint = link.joint;
+    const parent = i === 0 ? ROBOT_PHYS.base : ROBOT_PHYS.links[i-1];
+    parent.mesh.computeWorldMatrix(true); link.mesh.computeWorldMatrix(true);
+    const invA = parent.mesh.getWorldMatrix().clone(); invA.invert();
+    const invB = link.mesh.getWorldMatrix().clone(); invB.invert();
+    const pivot = joint.node.getAbsolutePosition();
+    const axis = joint.axis.clone();
+    const perp = joint.ax === "x" ? new V3(0,1,0) : new V3(1,0,0);
+    const constraint = new BABYLON.Physics6DoFConstraint({
+      pivotA:BABYLON.Vector3.TransformCoordinates(pivot,invA),
+      pivotB:BABYLON.Vector3.TransformCoordinates(pivot,invB),
+      axisA:axis, axisB:axis.clone(), perpAxisA:perp, perpAxisB:perp.clone()
+    }, limits(joint), scene);
+    parent.ag.body.addConstraint(link.ag.body, constraint);
+    constraint.isCollisionsEnabled = false;
+    /* MotorType을 런타임에 POSITION↔NONE으로 바꾸면 이 번들 Havok에서 반복 재생성 후
+       WASM 포인터 오류가 발생했다. 위치 모터는 계속 유지하고, 서보 OFF는 공식 최대토크
+       값을 0으로 둔다. 헤드리스 실측에서 0이면 중력으로 낙하하고 토크 복구 시 목표각으로
+       돌아왔다. */
+    constraint.setAxisMotorType(A.ANGULAR_X, BABYLON.PhysicsConstraintMotorType.POSITION);
+    constraint.setAxisMotorTarget(A.ANGULAR_X, link.target);
+    constraint.setAxisMotorMaxForce(A.ANGULAR_X, ROBOT_PHYS.driveEnabled ? link.maxForce : 0);
+    link.constraint = constraint;
+    ROBOT_PHYS.constraints.push(constraint);
+  }
+  ROBOT_PHYS.active = true;
+  PHYS.links = ROBOT_PHYS.links.map(link => ({ mesh:link.mesh, label:link.label, robotLink:link }));
+  sceneEditorStageRefresh(); sceneEditorInspectorUpdate();
+  return ROBOT_PHYS;
+}
+function robotPhysicsDeactivate() {
+  if (!ROBOT_PHYS.active) return ROBOT_PHYS;
+  robotPhysicsSyncVisuals();
+  for (const constraint of ROBOT_PHYS.constraints) constraint.dispose();
+  ROBOT_PHYS.constraints.length = 0;
+  for (const link of ROBOT_PHYS.links) {
+    if (link.ag) link.ag.dispose();
+    if (link.mesh) link.mesh.dispose();
+    link.ag = null; link.mesh = null; link.constraint = null;
+  }
+  if (ROBOT_PHYS.base) {
+    ROBOT_PHYS.base.ag.dispose(); ROBOT_PHYS.base.mesh.dispose(); ROBOT_PHYS.base = null;
+  }
+  ROBOT_PHYS.active = false;
+  applyAll();
+  robotPhysicsBuildAnimatedColliders();
+  sceneEditorStageRefresh(); sceneEditorInspectorUpdate();
+  return ROBOT_PHYS;
+}
+function robotPhysicsSetDrive(enabled) {
+  if (!ROBOT_PHYS.active) robotPhysicsActivate();
+  ROBOT_PHYS.driveEnabled = !!enabled;
+  const A = BABYLON.PhysicsConstraintAxis;
+  for (const link of ROBOT_PHYS.links) {
+    link.constraint.setAxisMotorMaxForce(A.ANGULAR_X,
+      ROBOT_PHYS.driveEnabled ? link.maxForce : 0);
+    if (ROBOT_PHYS.driveEnabled) link.constraint.setAxisMotorTarget(A.ANGULAR_X, link.target);
+  }
+  sceneEditorStageRefresh(); sceneEditorInspectorUpdate();
+  setStatus("교반 로봇 — 관절 서보 " +
+    (ROBOT_PHYS.driveEnabled ? "ON · 현재 명령각 유지" : "OFF · 중력과 접촉에 자유 반응"));
+  return ROBOT_PHYS.driveEnabled;
+}
+function robotPhysicsSetGravity(link, enabled) {
+  if (!ROBOT_PHYS.active) robotPhysicsActivate();
+  if (!link || !link.ag) throw new Error("중력을 적용할 로봇 링크가 준비되지 않았습니다");
+  link.gravityEnabled = !!enabled;
+  link.ag.body.setGravityFactor(link.gravityEnabled ? 1 : 0);
+  if (!link.gravityEnabled) {
+    const v = link.ag.body.getLinearVelocity();
+    link.ag.body.setLinearVelocity(new V3(v.x,0,v.z));
+  }
+  sceneEditorStageRefresh(); sceneEditorInspectorUpdate();
+  return link.gravityEnabled;
+}
+function robotPhysicsSyncVisuals() {
+  if (!ROBOT_PHYS.active || !ROBOT_PHYS.base) return;
+  ROBOT_PHYS.syncing = true;
+  try {
+    let parentQ = ROBOT_PHYS.base.mesh.rotationQuaternion;
+    for (const link of ROBOT_PHYS.links) {
+      const childQ = link.mesh.rotationQuaternion;
+      const rel = parentQ.conjugate().multiply(childQ).normalize();
+      const axis = link.joint.axis;
+      const s = rel.x*axis.x + rel.y*axis.y + rel.z*axis.z;
+      let angle = 2*Math.atan2(s, rel.w);
+      while (angle - link.joint.value > Math.PI) angle -= Math.PI*2;
+      while (angle - link.joint.value < -Math.PI) angle += Math.PI*2;
+      link.joint.value = clamp(angle, link.joint.min, link.joint.max);
+      applyJoint(link.joint);
+      parentQ = childQ;
+    }
+    refreshChain();
+    const now = performance.now();
+    if (now - ROBOT_PHYS.lastUiAt > 100) {
+      ROBOT_PHYS.lastUiAt = now;
+      syncJointUI();
+      for (const link of ROBOT_PHYS.links) {
+        const angle = document.querySelector(
+          '#editorRobotRows [data-editor-id="' + link.id + '"] .jointangle');
+        if (angle) angle.textContent = (link.joint.value*180/Math.PI).toFixed(1) + "°";
+      }
+    }
+  } finally {
+    ROBOT_PHYS.syncing = false;
+  }
+}
 function buildColliders() {
-  const ST = BABYLON.PhysicsShapeType, MO = BABYLON.PhysicsMotionType;
+  const ST = BABYLON.PhysicsShapeType;
   // 영구 정적 환경 — 바닥·벽·로봇 페데스탈. 중앙 설비는 아래에서 별도 수명주기로 만든다.
   const RM = LAYOUT.room;
   const rcx = (RM.x0+RM.x1)/2, rcz = (RM.z0+RM.z1)/2, rW = RM.x1-RM.x0, rD = RM.z1-RM.z0;
@@ -9146,20 +9370,9 @@ function buildColliders() {
   for (const m of statics) new BABYLON.PhysicsAggregate(m, ST.BOX, {mass:0, friction:0.7, restitution:0.15}, scene);
   buildCoreStaticColliders(true);
 
-  // 로봇 링크 — 관절 노드에 부착된 보이지 않는 콜라이더 (ANIMATED: 노드를 따라감)
-  const linkDefs = [
-    [JOINTS[1].node, [R.upper+0.06,0.21,0.19], [R.upper/2,0,0], "상완"],
-    [JOINTS[2].node, [R.fore+0.05,0.17,0.16],  [R.fore/2,0,0],  "하완"],
-    [JOINTS[3].node, [R.wrist+0.24,0.15,0.17], [(R.wrist+0.20)/2,0,0], "손목"],
-    [tipNode,        [0.10,0.60,0.10],         [0,-0.30,0],     "교반봉"],
-  ];
-  for (const [node, size, pos, label] of linkDefs) {
-    const m = invisibleBox("col_link_" + label, size, pos, node);
-    const ag = new BABYLON.PhysicsAggregate(m, ST.BOX, {mass:0}, scene);
-    ag.body.setMotionType(MO.ANIMATED);
-    ag.body.disablePreStep = false;          // 매 프레임 노드 → 물리 바디 동기화
-    PHYS.links.push({ mesh:m, label });
-  }
+  // 기본은 기존 IK/자동운전과 동일한 ANIMATED 충돌체. Stage에서 관절 물리를 시작하면
+  // 이 5개가 실제 Dynamic 바디와 6DoF 제약/위치 모터 체인으로 교체된다.
+  robotPhysicsBuildAnimatedColliders();
 
   // 사람 접촉 감시용 캡슐. 실제 이동·중력은 아래 PhysicsCharacterController가 담당한다.
   // 이 메시에 Aggregate를 또 붙이면 같은 자리에 물리 캡슐이 두 개 생겨 서로 충돌한다.
@@ -9446,6 +9659,20 @@ function sceneEditorTransform(entry, stations) {
     : BABYLON.Quaternion.FromEulerAngles(n.rotation.x, n.rotation.y, n.rotation.z);
   const st = {};
   for (const key of stations || []) if (STATION[key]) st[key] = STATION[key].pos.clone();
+  if (entry.character)
+    return { nodeUniqueId:n.uniqueId, position:n.position.clone(), rotation:q,
+             scaling:n.scaling.clone(), stations:st, bodyType:"character",
+             gravityEnabled:!!entry.character.gravityEnabled, mass:null };
+  if (entry.robot || entry.robotLink)
+    return { nodeUniqueId:n.uniqueId, position:n.position.clone(), rotation:q,
+             scaling:n.scaling.clone(), stations:st,
+             bodyType:ROBOT_PHYS.active ? "articulated" : "animated",
+             gravityEnabled:entry.robotLink ? !!entry.robotLink.gravityEnabled
+               : ROBOT_PHYS.links.every(link => link.gravityEnabled),
+             mass:entry.robotLink ? entry.robotLink.mass : null,
+             driveEnabled:ROBOT_PHYS.driveEnabled,
+             joints:JOINTS.map(j => j.value),
+             linkGravity:ROBOT_PHYS.links.map(link => !!link.gravityEnabled) };
   return { nodeUniqueId:n.uniqueId, position:n.position.clone(), rotation:q,
            scaling:n.scaling.clone(), stations:st,
            bodyType:entry.dynamic ? "dynamic" : "static",
@@ -9458,8 +9685,18 @@ function sceneEditorCollect() {
     if (node) entries.push({ id, label, node, editable:false, reason, character:character || null,
                              physicsEditable:!!character });
   };
-  addLocked("core.robot", "교반 로봇", scene.getTransformNodeByName("robotRoot"),
-            "관절 계층과 안전 콜라이더가 연결된 동작 객체");
+  const robotRoot = scene.getTransformNodeByName("robotRoot");
+  if (robotRoot) {
+    entries.push({ id:"core.robot", label:"교반 로봇 전체", node:robotRoot,
+                   editable:false, physicsEditable:true, robot:ROBOT_PHYS,
+                   reason:"관절 위치는 기존 슬라이더·IK로 제어 · 물리/서보/중력은 편집 가능" });
+    for (const link of ROBOT_PHYS.links)
+      entries.push({ id:link.id, label:link.label,
+                     node:ROBOT_PHYS.active && link.mesh ? link.mesh : link.node,
+                     visualNode:link.node,
+                     editable:false, physicsEditable:true, robotLink:link,
+                     reason:"6DoF 관절 제약에 연결된 링크 · 개별 중력 편집 가능" });
+  }
   const mainPersonNode = anchors.person && anchors.person.node;
   addLocked("core.person", "조리원", mainPersonNode,
             "동선·애니메이션과 연결되어 변환은 잠금 · 중력은 편집 가능",
@@ -9506,7 +9743,7 @@ function sceneEditorCollect() {
                    editable:true, dynamic });
   }
   SCENE_EDITOR.entries = entries;
-  for (const e of entries) if (e.editable && !SCENE_EDITOR.initial.has(e.id))
+  for (const e of entries) if ((e.editable || e.physicsEditable) && !SCENE_EDITOR.initial.has(e.id))
     SCENE_EDITOR.initial.set(e.id, sceneEditorTransform(e, sceneEditorOwnedStations(e)));
   return entries;
 }
@@ -9570,8 +9807,13 @@ function sceneEditorTransformsDiffer(a, b) {
   const dp = BABYLON.Vector3.DistanceSquared(a.position, b.position);
   const ds = BABYLON.Vector3.DistanceSquared(a.scaling, b.scaling);
   const dq = 1 - Math.abs(BABYLON.Quaternion.Dot(a.rotation, b.rotation));
-  return dp > 1e-10 || ds > 1e-10 || dq > 1e-8 ||
+  const jointsDiffer = (a.joints || []).length !== (b.joints || []).length ||
+    (a.joints || []).some((v,i) => Math.abs(v - b.joints[i]) > 1e-8);
+  const gravityDiffer = (a.linkGravity || []).length !== (b.linkGravity || []).length ||
+    (a.linkGravity || []).some((v,i) => v !== b.linkGravity[i]);
+  return dp > 1e-10 || ds > 1e-10 || dq > 1e-8 || jointsDiffer || gravityDiffer ||
          a.bodyType !== b.bodyType || a.gravityEnabled !== b.gravityEnabled ||
+         a.driveEnabled !== b.driveEnabled ||
          (a.mass == null) !== (b.mass == null) ||
          (a.mass != null && Math.abs(a.mass - b.mass) > 1e-8);
 }
@@ -9639,6 +9881,32 @@ function sceneEditorCompleteChange(change, record) {
 }
 function sceneEditorApplySnapshot(entry, snap) {
   SCENE_EDITOR.inspectorDirty = false;
+  if (entry.character) {
+    const c = entry.character;
+    c.root.position.copyFrom(snap.position);
+    if (!c.root.rotationQuaternion) c.root.rotationQuaternion = snap.rotation.clone();
+    else c.root.rotationQuaternion.copyFrom(snap.rotation);
+    c.root.scaling.copyFrom(snap.scaling);
+    c.gravityEnabled = !!snap.gravityEnabled; c.verticalVelocity = 0;
+    c.controller.setPosition(c.root.position.add(new V3(0,c.height/2,0)));
+    c.start.copyFrom(c.root.position); c.lastRoot.copyFrom(c.root.position);
+    sceneEditorSelect(sceneEditorCollect().find(e => e.id === entry.id));
+    return;
+  }
+  if (entry.robot || entry.robotLink) {
+    if (ROBOT_PHYS.active) robotPhysicsDeactivate();
+    ROBOT_PHYS.driveEnabled = !!snap.driveEnabled;
+    for (let i = 0; i < ROBOT_PHYS.links.length; i++) {
+      ROBOT_PHYS.links[i].gravityEnabled = !!snap.linkGravity[i];
+      JOINTS[i].value = clamp(snap.joints[i],JOINTS[i].min,JOINTS[i].max);
+    }
+    applyAll();
+    if (snap.bodyType === "articulated") robotPhysicsActivate();
+    else if (snap.bodyType !== "animated")
+      throw new Error("지원하지 않는 로봇 물리 상태입니다: " + snap.bodyType);
+    sceneEditorSelect(sceneEditorCollect().find(e => e.id === entry.id));
+    return;
+  }
   if ((entry.dynamic ? "dynamic" : "static") !== snap.bodyType) {
     sceneEditorSetBodyType(entry, snap.bodyType, false);
     entry = sceneEditorCollect().find(e => e.id === entry.id);
@@ -10100,19 +10368,43 @@ function sceneEditorInspectorUpdate() {
   lock.textContent = e && !e.editable ? "🔒 " + e.reason : "";
   const ids = ["edPX","edPY","edPZ","edRX","edRY","edRZ","edSX","edSY","edSZ","edApply"];
   ids.forEach(id => { $(id).disabled = !e || !e.editable; });
-  $("edReset").disabled = !e || (!e.editable && !e.character);
+  $("edReset").disabled = !e || (!e.editable && !e.physicsEditable);
   const gravity = $("edGravity"), bodyType = $("edBodyType"), mass = $("edMass");
   const collision = $("edCollision"), physState = $("edPhysState"), note = $("edPhysNote");
-  bodyType.disabled = !e || !e.editable || !!e.character;
-  gravity.disabled = !e || (!e.dynamic && !e.character);
+  bodyType.disabled = !e || !e.editable || !!e.character || !!e.robot || !!e.robotLink;
+  gravity.disabled = !e || (!e.dynamic && !e.character && !e.robot && !e.robotLink);
   gravity.checked = !!(e && ((e.dynamic && e.dynamic.gravityEnabled) ||
-                             (e.character && e.character.gravityEnabled)));
+                             (e.character && e.character.gravityEnabled) ||
+                             (e.robotLink && ROBOT_PHYS.active && e.robotLink.gravityEnabled) ||
+                             (e.robot && ROBOT_PHYS.active &&
+                               ROBOT_PHYS.links.every(link => link.gravityEnabled))));
   mass.disabled = !e || !e.editable || !e.dynamic;
   physState.className = "";
   if (!e) {
     bodyType.value = "none"; mass.value = "";
     collision.textContent = physState.textContent = "–";
     note.textContent = "오브젝트를 선택하면 물리 상태가 표시됩니다.";
+    return;
+  }
+  if (e.robot || e.robotLink) {
+    bodyType.value = ROBOT_PHYS.active ? "articulated" : "animated";
+    mass.value = e.robotLink ? e.robotLink.mass.toFixed(1) : "";
+    collision.textContent = ROBOT_PHYS.active ? "Box + 6DoF" : "Animated box";
+    physState.textContent = ROBOT_PHYS.active
+      ? "Articulated · 서보 " + (ROBOT_PHYS.driveEnabled ? "ON" : "OFF")
+      : "기존 IK 직접 제어";
+    physState.className = ROBOT_PHYS.active ? "live" : "";
+    note.textContent = e.robotLink
+      ? (ROBOT_PHYS.active
+          ? "이 링크의 중력은 즉시 적용됩니다. 서보가 켜져 있으면 모터 토크가 자세를 지지합니다."
+          : "Stage의 ‘관절 물리 시작’으로 실제 Dynamic 링크와 제약을 만드세요.")
+      : "Stage에서 관절 물리/애니메이션과 위치 서보를 전환합니다. 링크별 중력은 아래 행에서 조절합니다.";
+    const n = e.node, r = (n.rotationQuaternion
+      ? n.rotationQuaternion.toEulerAngles() : n.rotation).scale(180/Math.PI);
+    [["edPX",n.position.x],["edPY",n.position.y],["edPZ",n.position.z],
+     ["edRX",r.x],["edRY",r.y],["edRZ",r.z],
+     ["edSX",n.scaling.x],["edSY",n.scaling.y],["edSZ",n.scaling.z]]
+      .forEach(([id,v]) => { $(id).value = (+v).toFixed(id[2] === "R" ? 1 : 3); });
     return;
   }
   if (e.character) {
@@ -10189,14 +10481,33 @@ function sceneEditorApplyInspector() {
 function sceneEditorResetSelected() {
   const e = SCENE_EDITOR.selection, initial = e && SCENE_EDITOR.initial.get(e.id);
   if (e && e.character) {
-    const c = e.character;
-    c.root.position.copyFrom(c.home);
-    c.verticalVelocity = 0;
-    c.gravityEnabled = c.gravityDefault;
-    if (c.controller) c.controller.setPosition(c.home.add(new V3(0,c.height/2,0)));
-    c.start.copyFrom(c.home); c.lastRoot.copyFrom(c.home);
-    sceneEditorSelect(sceneEditorCollect().find(x => x.id === e.id));
-    setStatus("선택 원위치 — " + e.label + " · Character 중력 ON");
+    if (!initial) throw new Error("사람의 최초 물리 상태를 찾을 수 없습니다: " + e.id);
+    const before = sceneEditorTransform(e, []);
+    sceneEditorApplySnapshot(e, initial);
+    const fresh = sceneEditorCollect().find(x => x.id === e.id);
+    const after = sceneEditorTransform(fresh, []);
+    if (sceneEditorTransformsDiffer(before, after)) {
+      SCENE_EDITOR.undo.push({entryId:e.id,before,after});
+      if (SCENE_EDITOR.undo.length > 50) SCENE_EDITOR.undo.shift();
+      SCENE_EDITOR.redo.length = 0;
+    }
+    setStatus("선택 원위치 — " + e.label + " · Character 중력 " +
+      (fresh.character.gravityEnabled ? "ON" : "OFF"));
+    return true;
+  }
+  if (e && (e.robot || e.robotLink)) {
+    if (!initial) throw new Error("로봇의 최초 물리 상태를 찾을 수 없습니다: " + e.id);
+    const before = sceneEditorTransform(e, []);
+    sceneEditorApplySnapshot(e, initial);
+    const fresh = sceneEditorCollect().find(x => x.id === e.id);
+    const after = sceneEditorTransform(fresh, []);
+    if (sceneEditorTransformsDiffer(before, after)) {
+      SCENE_EDITOR.undo.push({entryId:e.id,before,after});
+      if (SCENE_EDITOR.undo.length > 50) SCENE_EDITOR.undo.shift();
+      SCENE_EDITOR.redo.length = 0;
+    }
+    setStatus("선택 원위치 — " + e.label +
+      (e.robotLink ? " · 연결된 로봇 전체를 " : " · ") + "Animated·중력 기본값으로 복구");
     return true;
   }
   if (!e || !e.editable || !initial) return false;
@@ -10217,10 +10528,19 @@ function sceneEditorResetAll(announce = true) {
   sceneEditorFinishDrag();
   SCENE_EDITOR.inspectorDirty = false;
   const selectedId = SCENE_EDITOR.selection && SCENE_EDITOR.selection.id;
+  const physicsEntries = sceneEditorCollect().filter(e => e.character || e.robot);
+  const missingPhysics = physicsEntries.find(e => !SCENE_EDITOR.initial.has(e.id));
+  if (missingPhysics) throw new Error("전체 초기화의 최초 물리 상태를 찾을 수 없습니다: " + missingPhysics.id);
+  let changed = 0;
+  for (const e of physicsEntries) {
+    const initial = SCENE_EDITOR.initial.get(e.id);
+    const before = sceneEditorTransform(e, []);
+    if (sceneEditorTransformsDiffer(before, initial)) changed++;
+    sceneEditorApplySnapshot(e, initial);
+  }
   let entries = sceneEditorCollect().filter(e => e.editable);
   const missing = entries.find(e => !SCENE_EDITOR.initial.has(e.id));
   if (missing) throw new Error("전체 초기화의 최초 배치를 찾을 수 없습니다: " + missing.id);
-  let changed = 0;
   for (const e of entries) {
     const initial = SCENE_EDITOR.initial.get(e.id);
     if ((e.dynamic ? "dynamic" : "static") !== initial.bodyType) {
@@ -10255,24 +10575,32 @@ function sceneEditorResetAll(announce = true) {
   sceneEditorRebuildPushBodies();
   sceneEditorRebuildWorld();
   if (SCENE_EDITOR.enabled && selectedId) {
-    const selected = entries.find(e => e.id === selectedId) || null;
+    const selected = sceneEditorCollect().find(e => e.id === selectedId) || null;
     sceneEditorSelect(selected);
   } else {
     sceneEditorStageRefresh();
     sceneEditorInspectorUpdate();
   }
-  if (announce) setStatus("전체 초기화 — 주변 설비 " + entries.length + "개와 오브젝트별 중력 상태 복구");
-  return { objects:entries.length, changed };
+  if (announce) setStatus("전체 초기화 — 설비 " + entries.length +
+    "개 · 사람 " + PHYS.characters.length + "명 · 로봇 관절/중력 상태 복구");
+  return { objects:entries.length, people:PHYS.characters.length, robot:1, changed };
 }
 function sceneEditorSetGravity(entry, enabled, record = true) {
   if (entry && entry.character) {
     const c = entry.character;
     if (c.gravityEnabled === !!enabled) return c.gravityEnabled;
+    const before = sceneEditorTransform(entry, []);
     c.gravityEnabled = !!enabled;
     c.verticalVelocity = 0;
     if (c.controller)
       c.controller.setPosition(c.root.position.add(new V3(0,c.height/2,0)));
     c.lastRoot.copyFrom(c.root.position);
+    const after = sceneEditorTransform(entry, []);
+    if (record && sceneEditorTransformsDiffer(before, after)) {
+      SCENE_EDITOR.undo.push({entryId:entry.id,before,after});
+      if (SCENE_EDITOR.undo.length > 50) SCENE_EDITOR.undo.shift();
+      SCENE_EDITOR.redo.length = 0;
+    }
     sceneEditorStageRefresh();
     sceneEditorInspectorUpdate();
     if (SCENE_EDITOR.enabled)
@@ -10281,6 +10609,30 @@ function sceneEditorSetGravity(entry, enabled, record = true) {
     setStatus(entry.label + " — Character 중력 " +
       (c.gravityEnabled ? "ON · 즉시 낙하" : "OFF · 현재 높이 유지"));
     return c.gravityEnabled;
+  }
+  if (entry && (entry.robot || entry.robotLink)) {
+    const before = sceneEditorTransform(entry, []);
+    if (!ROBOT_PHYS.active) {
+      if (entry.robotLink) {
+        for (const link of ROBOT_PHYS.links) link.gravityEnabled = false;
+        entry.robotLink.gravityEnabled = !!enabled;
+      } else {
+        for (const link of ROBOT_PHYS.links) link.gravityEnabled = !!enabled;
+      }
+      robotPhysicsActivate();
+    } else if (entry.robotLink) robotPhysicsSetGravity(entry.robotLink, enabled);
+    else for (const link of ROBOT_PHYS.links) robotPhysicsSetGravity(link, enabled);
+    const fresh = sceneEditorCollect().find(e => e.id === entry.id);
+    const after = sceneEditorTransform(fresh, []);
+    if (record && sceneEditorTransformsDiffer(before, after)) {
+      SCENE_EDITOR.undo.push({entryId:entry.id,before,after});
+      if (SCENE_EDITOR.undo.length > 50) SCENE_EDITOR.undo.shift();
+      SCENE_EDITOR.redo.length = 0;
+    }
+    sceneEditorSelect(fresh);
+    const label = entry.robotLink ? entry.robotLink.label : "교반 로봇 전체 링크";
+    setStatus(label + " — 중력 " + (!!enabled ? "ON" : "OFF") + " · 실시간 관절 물리");
+    return !!enabled;
   }
   if (!entry || !entry.dynamic)
     throw new Error("개별 중력을 적용할 Havok 바디가 없습니다: " + (entry ? entry.id : "선택 없음"));
@@ -10307,10 +10659,123 @@ function sceneEditorSetGravity(entry, enabled, record = true) {
   setStatus(entry.label + " — 중력 " + (b.gravityEnabled ? "ON · 즉시 낙하" : "OFF · 현재 높이 유지"));
   return b.gravityEnabled;
 }
+function sceneEditorSetRobotMode(active, record = true) {
+  const entry = sceneEditorCollect().find(e => e.id === "core.robot");
+  if (!entry) throw new Error("교반 로봇 편집 엔티티를 찾을 수 없습니다");
+  if (ROBOT_PHYS.active === !!active) return ROBOT_PHYS.active;
+  const before = sceneEditorTransform(entry, []);
+  if (active) robotPhysicsActivate(); else robotPhysicsDeactivate();
+  const fresh = sceneEditorCollect().find(e => e.id === "core.robot");
+  const after = sceneEditorTransform(fresh, []);
+  if (record && sceneEditorTransformsDiffer(before, after)) {
+    SCENE_EDITOR.undo.push({entryId:fresh.id,before,after});
+    if (SCENE_EDITOR.undo.length > 50) SCENE_EDITOR.undo.shift();
+    SCENE_EDITOR.redo.length = 0;
+  }
+  sceneEditorSelect(fresh);
+  setStatus("교반 로봇 — " + (ROBOT_PHYS.active
+    ? "Articulated · Dynamic 링크 5개 · 6DoF 관절 모터"
+    : "Animated · 기존 IK/자동운전 직접 제어"));
+  return ROBOT_PHYS.active;
+}
+function sceneEditorSetRobotDrive(enabled, record = true) {
+  const entry = sceneEditorCollect().find(e => e.id === "core.robot");
+  if (!entry) throw new Error("교반 로봇 편집 엔티티를 찾을 수 없습니다");
+  const before = sceneEditorTransform(entry, []);
+  robotPhysicsSetDrive(enabled);
+  const fresh = sceneEditorCollect().find(e => e.id === "core.robot");
+  const after = sceneEditorTransform(fresh, []);
+  if (record && sceneEditorTransformsDiffer(before, after)) {
+    SCENE_EDITOR.undo.push({entryId:fresh.id,before,after});
+    if (SCENE_EDITOR.undo.length > 50) SCENE_EDITOR.undo.shift();
+    SCENE_EDITOR.redo.length = 0;
+  }
+  sceneEditorSelect(fresh);
+  return ROBOT_PHYS.driveEnabled;
+}
 function sceneEditorStageRefresh() {
   const box = document.getElementById("editorEnvRows");
   if (!box) return;
+  $("edUndo").disabled = !SCENE_EDITOR.enabled || !SCENE_EDITOR.undo.length;
+  $("edRedo").disabled = !SCENE_EDITOR.enabled || !SCENE_EDITOR.redo.length;
   const allEntries = sceneEditorCollect();
+  const robotBox = document.getElementById("editorRobotRows");
+  if (robotBox) {
+    robotBox.replaceChildren();
+    const robot = allEntries.find(e => e.robot);
+    if (robot) {
+      const row = document.createElement("div");
+      row.className = "snode child locked" +
+        (SCENE_EDITOR.selection && SCENE_EDITOR.selection.id === robot.id ? " selected" : "");
+      row.dataset.editorId = robot.id;
+      const name = document.createElement("span");
+      name.className = "objname"; name.textContent = robot.label; row.appendChild(name);
+      const mode = document.createElement("button");
+      mode.type = "button"; mode.className = "physbadge " + (ROBOT_PHYS.active ? "dynamic" : "off");
+      mode.textContent = ROBOT_PHYS.active ? "애니메이션 복귀" : "관절 물리 시작";
+      mode.title = ROBOT_PHYS.active
+        ? "Dynamic 관절 체인을 종료하고 기존 IK 직접 제어로 돌아갑니다"
+        : "5개 Dynamic 링크와 실제 6DoF 관절/모터를 만듭니다";
+      mode.disabled = !SCENE_EDITOR.enabled;
+      mode.addEventListener("click", ev => {
+        ev.stopPropagation(); if (!SCENE_EDITOR.enabled) return;
+        sceneEditorSetRobotMode(!ROBOT_PHYS.active, true);
+      });
+      row.appendChild(mode);
+      if (ROBOT_PHYS.active) {
+        const drive = document.createElement("button");
+        drive.type = "button"; drive.className = "physbadge " + (ROBOT_PHYS.driveEnabled ? "dynamic" : "off");
+        drive.textContent = ROBOT_PHYS.driveEnabled ? "서보 켬" : "서보 끔";
+        drive.title = ROBOT_PHYS.driveEnabled
+          ? "위치 모터를 끄면 관절이 중력과 접촉에 자유롭게 반응합니다"
+          : "위치 모터를 켜면 기존 명령각으로 복귀합니다";
+        drive.disabled = !SCENE_EDITOR.enabled;
+        drive.addEventListener("click", ev => {
+          ev.stopPropagation(); if (!SCENE_EDITOR.enabled) return;
+          sceneEditorSetRobotDrive(!ROBOT_PHYS.driveEnabled, true);
+        });
+        row.appendChild(drive);
+      }
+      row.addEventListener("click", () => {
+        if (SCENE_EDITOR.enabled) sceneEditorSelect(sceneEditorCollect().find(e => e.id === robot.id));
+      });
+      robotBox.appendChild(row);
+    }
+    for (const e of allEntries.filter(e => e.robotLink)) {
+      const row = document.createElement("div");
+      row.className = "snode child locked" +
+        (SCENE_EDITOR.selection && SCENE_EDITOR.selection.id === e.id ? " selected" : "");
+      row.dataset.editorId = e.id;
+      const name = document.createElement("span");
+      name.className = "objname"; name.textContent = e.label; row.appendChild(name);
+      const angle = document.createElement("span");
+      angle.className = "jointangle";
+      angle.style.cssText = "font-size:9px;color:#8b949e;white-space:nowrap";
+      angle.textContent = (e.robotLink.joint.value*180/Math.PI).toFixed(1) + "°";
+      row.appendChild(angle);
+      const gravity = document.createElement("button");
+      gravity.type = "button"; gravity.className = "physbadge " +
+        (ROBOT_PHYS.active && e.robotLink.gravityEnabled ? "dynamic" : "off");
+      gravity.textContent = ROBOT_PHYS.active
+        ? (e.robotLink.gravityEnabled ? "중력 켬" : "중력 끔") : "중력 켜기";
+      gravity.title = ROBOT_PHYS.active
+        ? "이 링크의 실제 Havok 중력을 개별 전환합니다"
+        : "이 링크만 중력 ON으로 시작하고 6DoF 관절 체인을 만듭니다";
+      gravity.disabled = !SCENE_EDITOR.enabled;
+      gravity.addEventListener("click", ev => {
+        ev.stopPropagation();
+        const current = sceneEditorCollect().find(x => x.id === e.id);
+        if (!SCENE_EDITOR.enabled || !current) return;
+        sceneEditorSelect(current);
+        sceneEditorSetGravity(current,ROBOT_PHYS.active ? !current.robotLink.gravityEnabled : true,true);
+      });
+      row.appendChild(gravity);
+      row.addEventListener("click", () => {
+        if (SCENE_EDITOR.enabled) sceneEditorSelect(sceneEditorCollect().find(x => x.id === e.id));
+      });
+      robotBox.appendChild(row);
+    }
+  }
   const coreBox = document.getElementById("editorCoreRows");
   if (coreBox) {
     coreBox.replaceChildren();
@@ -12497,7 +12962,7 @@ $("resetBtn").addEventListener("click", () => {
   person.node.position.copyFrom(LAYOUT.person.pos);
   if (typeof personIdle === "function") personIdle();
   if (typeof OVERLAP === "object") { OVERLAP.cool = 0; OVERLAP.events = 0; }
-  setStatus("리셋 완료 — 설비 " + sceneReset.objects + "개·물리·바스켓·사람·안전 상태 원위치 (인원 " + EXTRAS.length + "명)");
+  setStatus("리셋 완료 — 설비 " + sceneReset.objects + "개·로봇 관절·중력·바스켓·사람·안전 상태 원위치 (추가 인원 " + EXTRAS.length + "명)");
 });
 $("tempSlider").addEventListener("input", e => {
   state.temp = +e.target.value;
@@ -13693,6 +14158,7 @@ scene.registerBeforeRender(() => {
   const dt = Math.min(now - last, 60);
   last = now;
   characterPhysicsBeginFrame();
+  robotPhysicsSyncVisuals();    // 직전 Havok 스텝의 실제 관절각 → 시각 로봇/안전 계산
   if (SCENE_EDITOR.enabled) {
     characterPhysicsStep(dt);   // 편집기를 열어 둔 동안에도 사람별 중력은 즉시 작동한다
     sceneEditorTick();
@@ -13936,11 +14402,12 @@ window.__sim = {
   cellPlan, CELL_FIRE, CELL_FOG,      // 12칸 균등 생성 — __sim.generateDataset(0, __sim.cellPlan(3))
   GT_CLASSES, classOfMesh, showInspector,
   // 물리 · 안전
-  PHYS, ROBOT_GUARD, buildRobotGuard, resetBasket, ONNX, onnxLoadModel, onnxInfer, PRED, ENV_RAND, randomizeEnvironment, placeOccluder, setExtraCount, spawnDebris, triggerEstop, clearEstop,
+  PHYS, ROBOT_PHYS, ROBOT_GUARD, buildRobotGuard, resetBasket, ONNX, onnxLoadModel, onnxInfer, PRED, ENV_RAND, randomizeEnvironment, placeOccluder, setExtraCount, spawnDebris, triggerEstop, clearEstop,
   // 장면 오브젝트 편집
   SCENE_EDITOR, sceneEditorSetEnabled, sceneEditorSelect, sceneEditorSetMode,
   sceneEditorSetLocal, sceneEditorApplyInspector, sceneEditorResetSelected,
   sceneEditorResetAll, sceneEditorSetBodyType, sceneEditorSetGravity,
+  sceneEditorSetRobotMode, sceneEditorSetRobotDrive,
   sceneEditorUndo, sceneEditorRedo, sceneEditorCollect,
   // 모델 검증
   MIL, milCapture, milMaskBoxes, drawOverlay, effector, BE, drawBirdseye, DENS, AVOID, avoidMinDist, avoidDecide, SEQ, RARR, robotArrowsUpdate, PMODE, GRAPH,
@@ -13992,6 +14459,15 @@ function logConsole(msg) {
     }
     tree.appendChild(div);
   }
+  const robotHead = document.createElement("div");
+  robotHead.className = "snode"; robotHead.textContent = "▾ 로봇 (Articulated Body)";
+  robotHead.style.marginTop = "6px"; tree.appendChild(robotHead);
+  const robotHint = document.createElement("div");
+  robotHint.className = "streehint";
+  robotHint.textContent = "관절 물리 시작 → 링크별 중력 · 전체 서보를 실시간 전환";
+  tree.appendChild(robotHint);
+  const robotRows = document.createElement("div");
+  robotRows.id = "editorRobotRows"; tree.appendChild(robotRows);
   const coreHead = document.createElement("div");
   coreHead.className = "snode"; coreHead.textContent = "▾ 핵심 설비 (작업 기준점 연동)";
   coreHead.style.marginTop = "6px"; tree.appendChild(coreHead);
@@ -14060,7 +14536,7 @@ $("edBodyType").addEventListener("change", e => {
 });
 $("edGravity").addEventListener("change", e => {
   const entry = SCENE_EDITOR.selection;
-  if (!entry || (!entry.dynamic && !entry.character))
+  if (!entry || (!entry.dynamic && !entry.character && !entry.robot && !entry.robotLink))
     throw new Error("중력 스위치를 적용할 물리 오브젝트가 선택되지 않았습니다");
   sceneEditorSetGravity(entry, e.target.checked);
 });
