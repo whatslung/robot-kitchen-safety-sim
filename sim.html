@@ -1175,9 +1175,9 @@ camera.panningSensibility = 900;
 const hemi = new BABYLON.HemisphericLight("hemi", new V3(0.2,1,0.15), scene);
 hemi.intensity = 1.1; hemi.groundColor = new C3(0.36,0.37,0.41);   // 밝은 주방(과노출 방지 톤)
 const key = new BABYLON.DirectionalLight("key", new V3(-0.55,-1,0.42), scene);
-key.position = new V3(2.6,4.4,-2.2); key.intensity = 2.8;   // [space-q] 3.6→2.8 — IBL 필터링 도입으로 앰비언트가 늘어 직접광 과다분 제거
+key.position = new V3(2.6,4.4,-2.2); key.intensity = 3.6;   // [space-q] 초기값은 main 그대로 둔다 — 환경 프로브가 이 조명으로 구워져야 데이터셋이 종전과 같다
 const fill = new BABYLON.DirectionalLight("fill", new V3(0.5,-1,-0.35), scene);   // 반대편 보조광 — 그림자 영역 완화
-fill.position = new V3(-2.2,4.0,2.0); fill.intensity = 1.05;  // [space-q] 1.4→1.05 (동일 이유)
+fill.position = new V3(-2.2,4.0,2.0); fill.intensity = 1.4;   // [space-q] 위와 같은 이유로 초기값 유지
 /* 그림자 — 방이 9×9로 커지면서 1024 지수맵은 텍셀 밀도가 무너져 바닥에 긴 번짐이 생겼다.
    2048 + PCSS(접촉경화)로 바꾼다. 접촉부는 단단하고 멀어질수록 부드러워져 렌더 느낌이 산다.
    ESM/PCSS는 상호배타이므로 블러 지수맵은 끈다. */
@@ -7470,7 +7470,8 @@ scene.environmentTexture = probe.cubeTexture;
    파일이 필요 없다. 실측(1280x720 고정 시점): 끔 47.2ms / 켬 41.8ms 로 **오히려 빨랐다**
    (HDR 파일 방식도 47.8ms 로 이득이 없어 파일을 쓰지 않기로 했다).
    품질 LOW로 충분하다 — MEDIUM 이상은 샘플 수가 급증한다. */
-let RENDER_RTF = true;      // 현재 렌더 프로필의 realTimeFiltering 상태 (applyRenderProfile이 바꾼다)
+let RENDER_RTF = false;     // 현재 렌더 프로필의 realTimeFiltering 상태 (applyRenderProfile이 바꾼다).
+                            // 초기값 false — 첫 렌더를 main 과 같은 셰이더로 돌려 프로브를 종전대로 굽는다.
 const applyRTF = (m) => {
   if (!m || !m.getClassName || m.getClassName().indexOf("PBR") !== 0) return;
   m.realTimeFiltering = RENDER_RTF;
@@ -7489,15 +7490,14 @@ scene.onNewMaterialAddedObservable.add(applyRTF);
    1.5로 낮추면 반사가 형태를 죽이지 않아 오히려 스테인리스로 읽힌다.
    ※ 프레임에는 영향이 없다. 프로브는 RENDER_ONCE라 매 프레임 비용이 0이다
       (실측: 병목은 그림자 37% · 지오메트리 32%, 환경맵 아님). */
-scene.environmentIntensity = 0.95;  // [space-q] 1.5→0.95 — 1.5는 무필터 프로브 기준값이었다.
-// 실시간 필터링을 켜면 확산광까지 제대로 기여해, 그대로 두면 화면의 34%가 백색 포화된다(실측).
-hemi.intensity = 0.50;   // [space-q] 1.05→0.50 — IBL이 천장 확산광을 대신한다(이중 계상 제거)
+scene.environmentIntensity = 1.5;   // [space-q] 초기값 유지 (개선값 0.95는 RENDER_DEMO 가 첫 렌더 뒤에 넣는다)
+hemi.intensity = 1.05;   // [space-q] 초기값 유지 (개선값 0.50 은 RENDER_DEMO)
 
 // 톤매핑은 머티리얼 레벨(IPC) — 어느 카메라로 봐도 동일하게 적용된다
 const ipc = scene.imageProcessingConfiguration;
 ipc.toneMappingEnabled = true;
 ipc.toneMappingType = BABYLON.ImageProcessingConfiguration.TONEMAPPING_ACES;
-ipc.exposure = 1.22; ipc.contrast = 1.08;   // [space-q] 1.65→1.22 — 백색 포화 34%→6.9%(실측, 1280x720 부감 뷰)
+ipc.exposure = 1.65; ipc.contrast = 1.08;   // [space-q] 초기값 유지 (개선값 1.22 는 RENDER_DEMO)
 
 /* ── 렌더 프로필 — 화면 개선은 **데모·뷰어 전용**이다 (2026-08-29) ───────────────
    위 [space-q] 값들을 전역 기본값으로 두면 데이터셋 표본의 그림이 통째로 바뀐다.
@@ -7512,6 +7512,9 @@ ipc.exposure = 1.22; ipc.contrast = 1.08;   // [space-q] 1.65→1.22 — 백색 
       그래서 여기서 **5개 전부 + realTimeFiltering** 을 되돌린다. */
 const RENDER_BASE = { key:3.6, fill:1.4,  hemi:1.05, env:1.5,  exposure:1.65, rtf:false, decals:true  };  // 종전(main) — 데이터셋이 쓰는 기준선
 const RENDER_DEMO = { key:2.8, fill:1.05, hemi:0.50, env:0.95, exposure:1.22, rtf:true,  decals:false };  // [space-q] 개선본 — 데모·뷰어
+/* 첫 렌더가 끝나면(=프로브가 구워지면) 데모 프로필로 전환한다.
+   여기서 비로소 조명·노출·실시간 필터링이 개선값으로 바뀐다. */
+scene.onAfterRenderObservable.addOnce(() => applyRenderProfile(RENDER_DEMO));
 function applyRenderProfile(pf) {
   key.intensity  = pf.key;
   fill.intensity = pf.fill;
@@ -7520,11 +7523,11 @@ function applyRenderProfile(pf) {
   ipc.exposure   = pf.exposure;
   RENDER_RTF = pf.rtf;
   scene.materials.forEach(applyRTF);   // 이미 만들어진 재질 + 이후 생성분은 관찰자가 받는다
-  /* ⚠️ 환경 프로브를 **다시 굽는다**. 이게 없으면 프로필을 되돌려도 화면이 안 돌아온다 —
-     프로브는 REFRESHRATE_RENDER_ONCE 라 첫 렌더 때의 조명을 큐브맵에 구워 버린다.
-     데모 조명(어두움)으로 구운 환경맵이 그대로 남아 표본이 main 보다 어두워졌다
-     (실측: 평균밝기 188.3 vs main 198.5). 재굽기를 넣으니 198.x 로 맞았다. */
-  probe.refreshRate = BABYLON.RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
+  /* 프로브는 **다시 굽지 않는다.** REFRESHRATE_RENDER_ONCE 라 첫 렌더 조명이 큐브맵에
+     구워지는데, 그 첫 렌더를 main 값(RENDER_BASE)으로 돌려 두었다(위 초기값 주석).
+     그래서 두 프로필이 **같은 환경맵**을 공유한다 — 데이터셋은 종전 환경맵 그대로다.
+     재굽기를 넣어 봤지만, 두 번째 굽기는 이미 구워진 환경맵에 다시 비친 것을 굽는
+     꼴이라(1바운스 vs 2바운스) 오히려 main 과 어긋났다. */
   /* 바닥 데칼(웅덩이·정위치 표시·셀 경계 테이프) — 데모에서는 숨기고 표본에서는 되살린다.
      BASE_DECALS 는 buildRoom·GLB 로드 시점에 채워지므로 여기서 매번 훑는다. */
   BASE_DECALS.forEach(m => { m.isVisible = pf.decals; m.setEnabled(pf.decals); });
