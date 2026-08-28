@@ -1481,6 +1481,11 @@ let PERSON_RIG = null;
 let HOOD_BOX = null;
 /* ══ 방 껍데기 — 실사 근거: 참조 현장 CCTV(셀 전경)·참조 현장(타일벽+트렌치)·
       복수 참조 현장(백스플래시+창)·참조 현장(게시물벽). 전부 절차 생성. ════════ */
+/* [space-q] main 에는 있고 **데모 화면에서만 숨기는** 바닥 오브젝트들.
+   지우지 않고 숨기는 이유 — 데이터셋 표본은 종전(main) 장면 그대로 찍어야 한다.
+   지워 버리면 배경 클러터가 통째로 사라져 표본의 도메인이 바뀐다(ZoneTape 는
+   7889행에서 equipment 클래스로 라벨링까지 된다). 렌더 프로필이 켜고 끈다. */
+const BASE_DECALS = [];
 function buildRoom() {
   const RM = LAYOUT.room;
   const cx = (RM.x0+RM.x1)/2, cz = (RM.z0+RM.z1)/2, W = RM.x1-RM.x0, D = RM.z1-RM.z0;
@@ -1640,11 +1645,17 @@ function buildRoom() {
   /* ── 정위치 표시 — 참조 현장 근접 프레임에서 관찰.
      연속 테이프가 아니라 **끊긴 붉은 도막 블록**들이다. 소쿠리 카트를 세우는 자리
      표시로 보인다. 길이·간격이 제각각이라 규칙적으로 깔면 오히려 안 닮는다.       */
-  /* [space-q] 정위치 표시(markSpot) 제거 (2026-08-29, 지시) — 붉은 도막 8개가
-     바닥에 근거 없는 갈색 사각형으로 흩어져 보였다. 안전 표시는 반경 링이 담당한다.
-       SPOTS = [[0.55,1.62,0.30,0.10],[0.60,1.90,0.10,0.09],[0.86,1.86,0.12,0.09],
-                [0.72,2.12,0.09,0.14],[-0.95,1.70,0.26,0.09],[-1.02,2.02,0.10,0.10],
-                [2.90,2.62,0.28,0.09],[3.18,2.60,0.09,0.09]]                        */
+  /* [space-q] 데모 화면에서는 숨긴다 (2026-08-29, 지시) — 붉은 도막 8개가 바닥에
+     근거 없는 갈색 사각형으로 흩어져 보였다. 안전 표시는 반경 링이 담당한다.
+     **생성은 그대로 한다** — 데이터셋 표본은 종전 장면으로 찍어야 하기 때문이다. */
+  const SPOTS = [[0.55,1.62,0.30,0.10],[0.60,1.90,0.10,0.09],[0.86,1.86,0.12,0.09],
+                 [0.72,2.12,0.09,0.14],[-0.95,1.70,0.26,0.09],[-1.02,2.02,0.10,0.10],
+                 [2.90,2.62,0.28,0.09],[3.18,2.60,0.09,0.09]];
+  for (const [sx,sz,sw,sd] of SPOTS) {
+    const sp = MB.CreateBox("markSpot", {width:sw, height:0.005, depth:sd}, scene);
+    sp.position.set(sx, 0.0035, sz); sp.material = MAT.tape; sp.isPickable = false;
+    sp.isVisible = false; sp.setEnabled(false); BASE_DECALS.push(sp);
+  }
   /* ── 앵커 캡 — 참조 현장 근접 프레임에서 바닥에 박힌 원형 스테인리스 판 2개 관찰.
      설비 고정 볼트 자리다. 방 전체에 흩어져 있으므로 기기 라인 근처에만 둔다.     */
   const ANCH = [[1.35,1.55],[1.62,1.86],[3.35,1.72],[3.62,2.00],[-1.72,2.35],[4.62,3.15],
@@ -1663,8 +1674,18 @@ function buildRoom() {
   /* 물은 '회색 판'이 아니다 — 바닥을 살짝 어둡게 적시고 반사만 얹는다.
      알파를 0.55로 두니 회색 페인트를 칠한 것처럼 보였다. 0.26까지 낮추고
      색을 더 어둡게 잡아, 젖은 콘크리트가 어두워지는 방식으로 만든다. */
-  /* [space-q] 물웅덩이 제거 (2026-08-29, 지시) — 반경 0.5m 원반 8개가 바닥에
-     흐릿한 타원 얼룩으로 보였다. 위 PUDDLE 좌표는 되살릴 때를 위해 남겨 둔다. */
+  /* [space-q] 데모 화면에서는 숨긴다 (2026-08-29, 지시) — 반경 0.5m 원반 8개가
+     바닥에 흐릿한 타원 얼룩으로 보였다. 생성은 그대로 둔다(데이터셋 기준선 유지). */
+  const puddleMat = decal(pbr("puddle", "#33383d", { metallic:0.0, roughness:0.05 }));
+  puddleMat.alpha = 0.26; puddleMat.transparencyMode = BABYLON.PBRMaterial.PBRMATERIAL_ALPHABLEND;
+  for (const [px,pz,pw,pd,pr] of PUDDLE) {
+    const pu = MB.CreateDisc("floorPuddle", {radius:0.5, tessellation:26}, scene);
+    pu.rotation.x = Math.PI/2; pu.rotation.z = pr;
+    pu.scaling.set(pw*2, pd*2, 1);
+    pu.position.set(px, 0.003, pz);
+    pu.material = puddleMat; pu.isPickable = false; pu.receiveShadows = false;
+    pu.isVisible = false; pu.setEnabled(false); BASE_DECALS.push(pu);
+  }
 
   /* ── 상부 창 2개 — 서벽 (참조 현장 초록프레임 / 참조 현장 알루미늄) ── */
   for (const wz of [2.6, 4.6]) {
@@ -6282,9 +6303,11 @@ async function loadAssets() {
   {
     let hid = 0;
     scene.meshes.forEach(m => {
-      if (m.name && m.name.indexOf("ZoneTape") === 0) { m.isVisible = false; m.setEnabled(false); hid++; }
+      if (m.name && m.name.indexOf("ZoneTape") === 0) {
+        m.isVisible = false; m.setEnabled(false); BASE_DECALS.push(m); hid++;
+      }
     });
-    if (hid) console.log("[space-q] ZoneTape 숨김:", hid);
+    if (hid) console.log("[space-q] ZoneTape 숨김:", hid, "(데이터셋 생성 중에는 복원)");
   }
   /* 그림자 정리 — 렌더 비용의 41%가 그림자맵이다(실측: 18.3ms → 10.7ms).
      ① 숨긴 메시는 캐스터에서 뺀다. ASSETS 모드에서 절차 설비(potBody·hood 등)는
@@ -7443,9 +7466,10 @@ scene.environmentTexture = probe.cubeTexture;
    파일이 필요 없다. 실측(1280x720 고정 시점): 끔 47.2ms / 켬 41.8ms 로 **오히려 빨랐다**
    (HDR 파일 방식도 47.8ms 로 이득이 없어 파일을 쓰지 않기로 했다).
    품질 LOW로 충분하다 — MEDIUM 이상은 샘플 수가 급증한다. */
+let RENDER_RTF = true;      // 현재 렌더 프로필의 realTimeFiltering 상태 (applyRenderProfile이 바꾼다)
 const applyRTF = (m) => {
   if (!m || !m.getClassName || m.getClassName().indexOf("PBR") !== 0) return;
-  m.realTimeFiltering = true;
+  m.realTimeFiltering = RENDER_RTF;
   m.realTimeFilteringQuality = BABYLON.Constants.TEXTURE_FILTERING_QUALITY_LOW;
 };
 scene.materials.forEach(applyRTF);
@@ -7470,6 +7494,37 @@ const ipc = scene.imageProcessingConfiguration;
 ipc.toneMappingEnabled = true;
 ipc.toneMappingType = BABYLON.ImageProcessingConfiguration.TONEMAPPING_ACES;
 ipc.exposure = 1.22; ipc.contrast = 1.08;   // [space-q] 1.65→1.22 — 백색 포화 34%→6.9%(실측, 1280x720 부감 뷰)
+
+/* ── 렌더 프로필 — 화면 개선은 **데모·뷰어 전용**이다 (2026-08-29) ───────────────
+   위 [space-q] 값들을 전역 기본값으로 두면 데이터셋 표본의 그림이 통째로 바뀐다.
+   그러면 conditions.csv 의 조건값은 예전 표본과 같은데 이미지만 달라져서,
+   화재 표본뿐 아니라 **나디르 사람 검출 수치(recall 0.86 / 융합 0.92)의 기준이
+   어긋난다** — 10870행 부근에 이미 같은 이유로 "기본 220은 일부러 그대로 둔다"고
+   적혀 있다. 그 판단을 그대로 따른다: 발표 화면 문제는 **경로별 전환**으로 푼다.
+
+   ⚠️ randomizeScene 이 key·hemi·exposure 를 흔들어 주니 괜찮다 — 고 넘기면 안 된다.
+      randomizeEnvironment()는 `if (!ENV_RAND.enabled) return;` 로 시작한다.
+      환경 랜덤화를 끄고 데이터셋을 뽑으면 아무것도 안 흔들려 개선값이 그대로 찍힌다.
+      그래서 여기서 **5개 전부 + realTimeFiltering** 을 되돌린다. */
+const RENDER_BASE = { key:3.6, fill:1.4,  hemi:1.05, env:1.5,  exposure:1.65, rtf:false, decals:true  };  // 종전(main) — 데이터셋이 쓰는 기준선
+const RENDER_DEMO = { key:2.8, fill:1.05, hemi:0.50, env:0.95, exposure:1.22, rtf:true,  decals:false };  // [space-q] 개선본 — 데모·뷰어
+function applyRenderProfile(pf) {
+  key.intensity  = pf.key;
+  fill.intensity = pf.fill;
+  hemi.intensity = pf.hemi;
+  scene.environmentIntensity = pf.env;
+  ipc.exposure   = pf.exposure;
+  RENDER_RTF = pf.rtf;
+  scene.materials.forEach(applyRTF);   // 이미 만들어진 재질 + 이후 생성분은 관찰자가 받는다
+  /* ⚠️ 환경 프로브를 **다시 굽는다**. 이게 없으면 프로필을 되돌려도 화면이 안 돌아온다 —
+     프로브는 REFRESHRATE_RENDER_ONCE 라 첫 렌더 때의 조명을 큐브맵에 구워 버린다.
+     데모 조명(어두움)으로 구운 환경맵이 그대로 남아 표본이 main 보다 어두워졌다
+     (실측: 평균밝기 188.3 vs main 198.5). 재굽기를 넣으니 198.x 로 맞았다. */
+  probe.refreshRate = BABYLON.RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
+  /* 바닥 데칼(웅덩이·정위치 표시·셀 경계 테이프) — 데모에서는 숨기고 표본에서는 되살린다.
+     BASE_DECALS 는 buildRoom·GLB 로드 시점에 채워지므로 여기서 매번 훑는다. */
+  BASE_DECALS.forEach(m => { m.isVisible = pf.decals; m.setEnabled(pf.decals); });
+}
 
 const glow = new BABYLON.GlowLayer("glow", scene, {mainTextureSamples:2});
 glow.intensity = ASSETS.enabled ? 0.15 : 0.5;   // 밝은 주방에서 존 테이프 과발광 방지
@@ -8905,6 +8960,9 @@ function restoreAfterDataset() {
      (센서 원복을 안 해서 화면이 저품질로 굳던 것과 같은 계열의 실수). */
   SENSOR.steamAuto = true;
   const _sa = $("snSteamAuto"); if (_sa) _sa.checked = true;
+  /* 렌더 프로필도 되돌린다 — 센서·김서림과 같은 계열이다.
+     안 되돌리면 데이터셋을 한 번 뽑고 나서 화면이 종전 밝기로 굳는다. */
+  applyRenderProfile(RENDER_DEMO);
 }
 /* 데이터셋 회차의 화재 샘플 비율. ?fire= 로 덮어쓴다(0~1). */
 const FIRE_P = (() => {
@@ -8945,6 +9003,7 @@ async function generateDataset(n, plan) {
     }
   };
   DATAGEN.running = true; DATAGEN.abort = false;
+  applyRenderProfile(RENDER_BASE);   // 표본은 종전 렌더로 찍는다 — 위 RENDER_BASE 주석 참조
   $("gtGenBtn").textContent = "■ 중단";
   RUNLOG.start("dataset", {
     label: ($("runLabel").value || "").trim() || "dataset",
@@ -12685,6 +12744,7 @@ window.__sim = {
   person, personGo, SAFE, setFire, FIRE_FOG, SMOKE_LAYER, fireSeekTo, fireRandomStage, fireCheck,   // SCN 제거 (2026-08-27)
   // Ground Truth · 데이터셋
   groundTruth, generateDataset, DATAGEN, randomizeScene, restoreAfterDataset,
+  applyRenderProfile, RENDER_BASE, RENDER_DEMO,
   cellPlan, CELL_FIRE, CELL_FOG,      // 12칸 균등 생성 — __sim.generateDataset(0, __sim.cellPlan(3))
   GT_CLASSES, classOfMesh, showInspector,
   // 물리 · 안전
