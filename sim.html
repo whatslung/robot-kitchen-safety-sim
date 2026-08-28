@@ -11460,7 +11460,7 @@ function corrStart(mode) {
     corrVizOn(true);
     person.node.position.set(2.4, 0, 1.20); person.node.rotation.y = -Math.PI / 2;
     personGo([new V3(2.4, 0, 1.20), new V3(-0.5, 0, 1.20), new V3(2.4, 0, 1.20)], { loop:true, speed:1.2 });
-    setStatus("▶ 회피 — 조리원이 일정 동선으로 왕복. 로봇이 궤적을 예측해 다가오면 팔을 빼는 회피 기동 → 지나가면 작업 재개.  [demo-v12]");
+    setStatus("▶ 회피 — 조리원이 일정 동선으로 왕복. 로봇이 궤적을 예측해 팔을 편 채 좌우로 실시간 회피 → 지나가면 작업 재개.  [demo-v13]");
   } else {
     // 충돌: 로봇이 사람을 못 봄(SAFE.blind) + 스크립트로 통로를 걸어들어감(빠르게 — 대기 짧게)
     SAFE.blind = true;
@@ -11476,12 +11476,15 @@ function corrTick() {   // 매 프레임 호출 — 회피 기동(after) / 충�
   // ── 회피(after): 그냥 정지가 아니라 **능동 회피 기동** ──
   //   사람이 위험반경에 들면 팔을 높이 들어 베이스 쪽(사람 반대)으로 빼고, 지나가면 작업 재개.
   if (CORR.mode === "after") {
-    const danger = SAFE.factor < 0.45;   // 사람이 감속/정지 반경 안 → 예측 회피 발동
+    const danger = SAFE.factor < 0.5;   // 사람이 감속/정지 반경 안 → 예측 회피 발동
     if (danger) {
       if (!CORR.dodging) { CORR.dodging = true; state.auto = false; state.stirring = false; }
-      const b = LAYOUT.robot.base;
-      solveIK(new V3(b.x + 0.72, 1.48, b.z + 0.08), 10);   // 안전 포즈: 팔 들고 베이스 근처로 뺌
-      if (state.basketHeld && basketNode) {                // 캐리 중이면 손목 수평 유지
+      // 좌우 실시간 회피 — 팔을 **펴서(구부리지 않고)** 사람 반대편으로 미끄러진다.
+      //   사람이 동쪽이면 팔은 서쪽, 서쪽이면 동쪽. 사람 x를 실시간 반영해 좌우로 트래킹.
+      const px = person.node.position.x;
+      const dodgeX = clamp(-0.25 - (px + 0.25) * 0.55, -0.72, 0.18);
+      solveIK(new V3(dodgeX, 1.02, 0.98), 14);   // 통로 앞으로 편 팔이 좌우로 이동(반경 유지 → 안 구부러짐)
+      if (state.basketHeld && basketNode) {       // 캐리 중이면 손목 수평 유지
         JOINTS[3].value = clamp(-(JOINTS[1].value + JOINTS[2].value), JOINTS[3].min, JOINTS[3].max);
         JOINTS[4].value = 0; applyJoint(JOINTS[3]); applyJoint(JOINTS[4]);
       }
