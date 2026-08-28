@@ -6715,7 +6715,11 @@ function peopleList() {
   const out = [person.node];
   // 숨겨진(setEnabled(false)) EXTRAS는 예측 대상에서 제외 — 몸 없는 유령 밀도구름·화살표 방지.
   //   corrStart가 데모 정리로 EXTRAS를 숨기는데, 위치는 살아있어 MPRED가 gt:1,2를 그렸다.
-  if (typeof EXTRAS !== "undefined") for (const P of EXTRAS) if (P && P.root && P.root.isEnabled()) out.push(P.root);
+  //   ⚠️ MPRED id는 "gt:" + 배열 인덱스로 위치 기반이라, EXTRAS **일부만** 숨기면 남은 워커의
+  //   gt id가 뒤로 밀려 트랙 속도이력이 오염된다. 현 데모는 전부 숨기므로 안전.
+  //   부분 숨김을 도입하려면 안정 id(예: originalIndex 기반)로 바꿔야 한다. isEnabled(false)로
+  //   조상 검사 건너뛰어 프레임당 비용도 아낀다.
+  if (typeof EXTRAS !== "undefined") for (const P of EXTRAS) if (P && P.root && P.root.isEnabled(false)) out.push(P.root);
   return out;
 }
 function pmodeArrowsFor(agent, idx, dt) {
