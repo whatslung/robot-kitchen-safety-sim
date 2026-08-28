@@ -11498,36 +11498,57 @@ function corrStart(mode) {
   CORR.theta = (CORR.thA + CORR.thB) / 2; CORR.dir = 1;
   corrPoseArm(CORR.theta);
   CORR.on = true; CORR.mode = mode; CORR.hit = false; CORR.working = false; CORR.dodgedOnce = false;
-  // 사람: **정면(+z=카메라 쪽)**에서 로봇 앞으로 걸어들어옴 → **지나쳐 옆으로 퇴장**(단일 통과).
-  //   A(0.5,3.0)=정면·위험밖(스윙), B(0,1.35)=로봇앞·위험안(회피), EXIT(3.0,2.6)=위험밖 퇴장 → 로봇 정상작업 복귀.
-  const A = new V3(0.5, 0, 3.0), B = new V3(0.0, 0, 1.35), EXIT = new V3(3.0, 0, 2.6);
-  person.node.position.copyFrom(A);
+  CORR.t = 0; CORR.launched = false;
+  // 로봇이 **바스켓을 든 채** 작업(운반) — 포크 그립 중심에 스냅
+  if (basketNode) {
+    basketNode.setParent(JOINTS[4].node);
+    basketNode.rotationQuaternion = BABYLON.Quaternion.Identity();
+    basketNode.rotation.set(0, 0, 0);
+    basketNode.position = new V3(0.267, -0.107, 0.049);
+  }
+  state.basketHeld = true;
+  // 사람: **정면(+z)**에서 로봇 앞으로 → 지나쳐 퇴장(단일 통과). corrTick이 지연 후 진입(바스켓 작업 중 동기화).
+  CORR.A = new V3(0.5, 0, 3.0); CORR.B = new V3(0.0, 0, 1.35); CORR.EXIT = new V3(3.0, 0, 2.6);
+  person.node.position.copyFrom(CORR.A); person.node.rotation.y = 0;
   if (mode === "after") {
     SAFE.blind = false; corrVizOn(true);
-    personGo([A, B, EXIT], { speed:0.5 });
-    setStatus("▶ 회피 — 사람이 정면에서 접근 → 팔이 크게 회피 → 사람 지나가면 정상 작업 재개.  [demo-v20]");
+    setStatus("▶ 회피 — 로봇이 바스켓 작업 중 사람 정면 접근 → 크게 회피 → 사람 나가면 바스켓 작업(솥 담그기) 재개.  [demo-v21]");
   } else {
     SAFE.blind = true; corrVizOn(false);
-    personGo([A, B], { speed:1.0 });
-    setStatus("▶ 충돌 — 로봇이 못 본 채 팔 스윙. 정면 접근 사람이 팔에 휩쓸림.  [demo-v20]");
+    setStatus("▶ 충돌 — 로봇이 못 본 채 바스켓 작업. 정면 접근 사람이 팔에 휩쓸림.  [demo-v21]");
   }
 }
 function corrTick(dt) {   // 매 프레임 호출 — 팔 스윙 + 회피(after)/충돌(before)
   if (!CORR.on) return;
   const ds = (dt || 16) / 1000;
+  CORR.t += (dt || 16);
   const b = LAYOUT.robot.base, p = person.node.position;
+  // 사람 지연 진입(동기화) — 로봇이 바스켓 작업(스윙)을 먼저 보여준 뒤 ~1.4s 후 사람이 정면에서 들어온다.
+  if (!CORR.launched && CORR.t > 1400) {
+    CORR.launched = true;
+    person.freeze = false; person.mode = "idle"; person.path = [];
+    personGo(CORR.mode === "after" ? [CORR.A, CORR.B, CORR.EXIT] : [CORR.A, CORR.B],
+             { speed: CORR.mode === "after" ? 0.55 : 1.0 });
+  }
   const dist = Math.hypot(p.x - b.x, p.z - b.z);
-  // 회피(after) 후 사람이 나가면 → **정상 조리 작업 재개**(회피 → 복귀까지 보여준다)
+  // 회피(after) 후 사람이 나가면 → **바스켓 작업 재개**: 바스켓을 솥에 담근다(튀김 작업 재개).
   if (CORR.mode === "after") {
-    if (CORR.working) return;   // 정상 작업 중 — corrTick은 팔을 안 건드린다
+    if (CORR.working) {
+      solveIK(new V3(0.0, 0.82, 0.0), 12);   // 솥 중앙 위로 바스켓 담그기(정상 작업)
+      if (state.basketHeld && basketNode) {
+        JOINTS[3].value = clamp(-(JOINTS[1].value + JOINTS[2].value), JOINTS[3].min, JOINTS[3].max);
+        JOINTS[4].value = 0; applyJoint(JOINTS[3]); applyJoint(JOINTS[4]);
+      }
+      refreshChain();
+      return;
+    }
     if (CORR.dodgedOnce && dist >= 2.7 && person.mode !== "walk") {
       CORR.working = true;
-      if (!state.auto) $("autoBtn").click();   // 조리 사이클 시작(정상 작업)
-      setStatus("✅ 회피 완료 — 사람 통과, 로봇 정상 작업 재개  [demo-v20]");
+      setStatus("✅ 회피 완료 — 사람 통과, 로봇이 바스켓을 솥에 담그며 작업 재개  [demo-v21]");
       return;
     }
   }
-  const danger = (CORR.mode === "after") && dist < 2.7;   // 사람이 위험반경 안 → 회피
+  const danger = (CORR.mode === "after") && CORR.launched && dist < 2.7;   // 사람이 위험반경 안 → 회피
   if (danger) {
     CORR.dodgedOnce = true;
     // 사람 진입각(베이스 기준)의 **반대쪽**으로 팔을 회전시킨다(좌회전/우회전).
