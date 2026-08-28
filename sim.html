@@ -577,12 +577,12 @@
   <div class="section">② 사람 동선 감지 <span class="note" style="font-weight:400">발표 시나리오</span></div>
   <div class="btnrow">
     <button id="corrBefore" class="danger">▶ 충돌 (회피 OFF)</button>
-    <button id="corrAfter" class="primary">▶ 회피 (WASD 조종)</button>
+    <button id="corrAfter" class="primary">▶ 회피 (예측)</button>
     <button id="corrStop">↩ ② 되돌리기</button>
   </div>
   <div class="note" id="demo2Note"><b>충돌</b>: 로봇이 사람을 못 본 채 작업 → 걸어오는 사람을 팔이 휩쓸어 쓰러뜨립니다. ·
-    <b>회피</b>: <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>로 조리원을 직접 몰아 로봇에 다가가면 —
-    가까울수록 <b>감속 → 정지</b>, 멀어지면 <b>재개</b>. 로봇의 <b>예측</b>(화살표·경로선)이 함께 표시됩니다.</div>
+    <b>회피</b>: 조리원이 <b>일정 동선으로 통로를 왕복</b> → 로봇이 <b>궤적을 예측</b>(화살표·경로선)해
+    다가올 때 <b>감속 → 정지</b>, 지나가면 <b>재개</b>. 버튼 하나로 자동 실행됩니다.</div>
 
   <div class="section">사고 시나리오 (연쇄)</div>
   <div class="btnrow">
@@ -11429,6 +11429,7 @@ function corrVizOn(on) {
 }
 function corrReset(quiet) {
   const was = CORR.on; CORR.on = false; CORR.mode = null; CORR.hit = false;
+  if (CORR.dodging) { CORR.dodging = false; state.auto = true; }   // 회피 중이었으면 팔 멈춤 해제
   if (CORR.saved) {
     SAFE.blind = CORR.saved.blind;
     if (typeof setCtrlTarget === "function") setCtrlTarget(CORR.saved.ctrl);
@@ -11450,7 +11451,7 @@ function corrStart(mode) {
   CORR.saved = { blind: SAFE.blind, ctrl: (typeof CTRL !== "undefined") ? CTRL.target : "camera" };
   if (!state.auto) $("autoBtn").click();      // 로봇 정상 작업(튀김 사이클) — "지금 시나리오 대로"
   person.freeze = false; person.stations = null; person.path = []; person.mode = "idle";
-  CORR.on = true; CORR.mode = mode; CORR.hit = false;
+  CORR.on = true; CORR.mode = mode; CORR.hit = false; CORR.dodging = false;
   if (mode === "after") {
     // 회피: 로봇이 사람을 본다 + 사람이 **일정 동선으로 왕복**(학습된 궤적) → 로봇이 예측해 미리 감속/정지, 지나가면 재개.
     // 예측 표시(화살표·경로선)로 로봇이 "예측 중"임을 보여준다. 이게 이 연구(궤적 예측)의 핵심 시연.
@@ -11459,7 +11460,7 @@ function corrStart(mode) {
     corrVizOn(true);
     person.node.position.set(2.4, 0, 1.20); person.node.rotation.y = -Math.PI / 2;
     personGo([new V3(2.4, 0, 1.20), new V3(-0.5, 0, 1.20), new V3(2.4, 0, 1.20)], { loop:true, speed:1.2 });
-    setStatus("▶ 회피 — 조리원이 일정 동선으로 통로를 왕복. 로봇이 궤적을 예측해 미리 감속·정지 → 지나가면 재개.  [demo-v11]");
+    setStatus("▶ 회피 — 조리원이 일정 동선으로 왕복. 로봇이 궤적을 예측해 다가오면 팔을 빼는 회피 기동 → 지나가면 작업 재개.  [demo-v12]");
   } else {
     // 충돌: 로봇이 사람을 못 봄(SAFE.blind) + 스크립트로 통로를 걸어들어감(빠르게 — 대기 짧게)
     SAFE.blind = true;
@@ -11470,8 +11471,28 @@ function corrStart(mode) {
     setStatus("▶ 충돌 — 로봇이 사람을 못 본 채 작업합니다. 걸어오는 사람이 팔에 휩쓸립니다.  [demo-v11]");
   }
 }
-function corrTick() {   // 충돌 접촉 감지 → 밀어내고 쓰러뜨림 (매 프레임 호출)
-  if (!CORR.on || CORR.mode !== "before" || CORR.hit) return;
+function corrTick() {   // 매 프레임 호출 — 회피 기동(after) / 충돌 접촉(before)
+  if (!CORR.on) return;
+  // ── 회피(after): 그냥 정지가 아니라 **능동 회피 기동** ──
+  //   사람이 위험반경에 들면 팔을 높이 들어 베이스 쪽(사람 반대)으로 빼고, 지나가면 작업 재개.
+  if (CORR.mode === "after") {
+    const danger = SAFE.factor < 0.45;   // 사람이 감속/정지 반경 안 → 예측 회피 발동
+    if (danger) {
+      if (!CORR.dodging) { CORR.dodging = true; state.auto = false; state.stirring = false; }
+      const b = LAYOUT.robot.base;
+      solveIK(new V3(b.x + 0.72, 1.48, b.z + 0.08), 10);   // 안전 포즈: 팔 들고 베이스 근처로 뺌
+      if (state.basketHeld && basketNode) {                // 캐리 중이면 손목 수평 유지
+        JOINTS[3].value = clamp(-(JOINTS[1].value + JOINTS[2].value), JOINTS[3].min, JOINTS[3].max);
+        JOINTS[4].value = 0; applyJoint(JOINTS[3]); applyJoint(JOINTS[4]);
+      }
+      refreshChain();
+    } else if (CORR.dodging) {
+      CORR.dodging = false; state.auto = true;             // 사람 지나감 → 정상 작업 재개
+    }
+    return;
+  }
+  // ── 충돌(before): 팔 TCP가 사람에 닿으면 밀어내고 쓰러뜨린다 ──
+  if (CORR.mode !== "before" || CORR.hit) return;
   const p = person.node.position;
   if (armClearance(p.x, p.z) < 0) {
     CORR.hit = true;
