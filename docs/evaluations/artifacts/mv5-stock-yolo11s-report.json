@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "report_type": "sanitized evaluator summary",
+  "model": {
+    "id": "Ultralytics stock yolo11s.pt",
+    "sha256": "85a76fe86dd8afe384648546b56a7a78580c7cb7b404fc595f97969322d502d5"
+  },
+  "dataset": {
+    "id": "mv5-baseline-20260826",
+    "sha256": "5bd12bb032b4d5d156321bc205b89a9eb62fc47c47fc0b6d689be26dde46870f",
+    "images": 50,
+    "person_ground_truth": 35
+  },
+  "inference": {
+    "device": "cpu",
+    "imgsz": 640,
+    "batch": 8,
+    "min_confidence": 0.01,
+    "nms_iou": 0.7,
+    "match_iou": 0.5,
+    "person_class_ids": [0]
+  },
+  "fixed_thresholds": {
+    "0.05": {"predictions": 81, "tp": 7, "fp": 74, "fn": 28, "precision": 0.08641975308641975, "recall": 0.2, "f1": 0.12068965517241378},
+    "0.10": {"predictions": 47, "tp": 7, "fp": 40, "fn": 28, "precision": 0.14893617021276595, "recall": 0.2, "f1": 0.17073170731707318},
+    "0.25": {"predictions": 23, "tp": 4, "fp": 19, "fn": 31, "precision": 0.17391304347826086, "recall": 0.11428571428571428, "f1": 0.13793103448275862},
+    "0.35": {"predictions": 21, "tp": 4, "fp": 17, "fn": 31, "precision": 0.19047619047619047, "recall": 0.11428571428571428, "f1": 0.14285714285714285}
+  },
+  "cameras_at_0.25": {
+    "mvNW": {"ground_truth": 5, "predictions": 10, "tp": 0, "fp": 10, "fn": 5, "precision": 0.0, "recall": 0.0},
+    "mvNE": {"ground_truth": 3, "predictions": 1, "tp": 0, "fp": 1, "fn": 3, "precision": 0.0, "recall": 0.0},
+    "mvSW": {"ground_truth": 1, "predictions": 1, "tp": 0, "fp": 1, "fn": 1, "precision": 0.0, "recall": 0.0},
+    "mvSE": {"ground_truth": 12, "predictions": 4, "tp": 1, "fp": 3, "fn": 11, "precision": 0.25, "recall": 0.08333333333333333},
+    "mvCenter": {"ground_truth": 14, "predictions": 7, "tp": 3, "fp": 4, "fn": 11, "precision": 0.42857142857142855, "recall": 0.21428571428571427}
+  },
+  "best_f1": {"confidence": 0.2, "predictions": 29, "tp": 6, "fp": 23, "fn": 29, "precision": 0.20689655172413793, "recall": 0.17142857142857143, "f1": 0.1875}
+}

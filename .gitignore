@@ -49,6 +49,9 @@ yolo*.pt
 # 파이썬
 __pycache__/
 *.pyc
+.coverage
+coverage.xml
+.pytest-verification*/
 .venv/
 venv/
 

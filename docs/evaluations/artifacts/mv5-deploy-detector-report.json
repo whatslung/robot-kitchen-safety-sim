@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "report_type": "sanitized evaluator summary",
+  "model": {
+    "id": "chanubc/robot-kitchen-nadir-yolo11s/best.pt",
+    "revision": "a57736270e2594bb7540b50a24368869c3f71f3e",
+    "sha256": "fc589c9c1c36b8a998e5b3556513697edcea60b1c76d0704fda265719dfb4e1b"
+  },
+  "dataset": {
+    "id": "mv5-baseline-20260826",
+    "sha256": "5bd12bb032b4d5d156321bc205b89a9eb62fc47c47fc0b6d689be26dde46870f",
+    "images": 50,
+    "person_ground_truth": 35
+  },
+  "inference": {
+    "device": "cpu",
+    "imgsz": 640,
+    "batch": 8,
+    "min_confidence": 0.01,
+    "nms_iou": 0.7,
+    "match_iou": 0.5,
+    "person_class_ids": [0]
+  },
+  "fixed_thresholds": {
+    "0.05": {"predictions": 112, "tp": 1, "fp": 111, "fn": 34, "precision": 0.008928571428571428, "recall": 0.02857142857142857, "f1": 0.013605442176870748},
+    "0.10": {"predictions": 66, "tp": 1, "fp": 65, "fn": 34, "precision": 0.015151515151515152, "recall": 0.02857142857142857, "f1": 0.019801980198019802},
+    "0.25": {"predictions": 18, "tp": 0, "fp": 18, "fn": 35, "precision": 0.0, "recall": 0.0, "f1": 0.0},
+    "0.35": {"predictions": 6, "tp": 0, "fp": 6, "fn": 35, "precision": 0.0, "recall": 0.0, "f1": 0.0}
+  },
+  "cameras_at_0.25": {
+    "mvNW": {"ground_truth": 5, "predictions": 6, "tp": 0, "fp": 6, "fn": 5, "precision": 0.0, "recall": 0.0},
+    "mvNE": {"ground_truth": 3, "predictions": 0, "tp": 0, "fp": 0, "fn": 3, "precision": 0.0, "recall": 0.0},
+    "mvSW": {"ground_truth": 1, "predictions": 1, "tp": 0, "fp": 1, "fn": 1, "precision": 0.0, "recall": 0.0},
+    "mvSE": {"ground_truth": 12, "predictions": 5, "tp": 0, "fp": 5, "fn": 12, "precision": 0.0, "recall": 0.0},
+    "mvCenter": {"ground_truth": 14, "predictions": 6, "tp": 0, "fp": 6, "fn": 14, "precision": 0.0, "recall": 0.0}
+  },
+  "best_f1": {"confidence": 0.12, "predictions": 49, "tp": 1, "fp": 48, "fn": 34, "precision": 0.02040816326530612, "recall": 0.02857142857142857, "f1": 0.023809523809523805}
+}

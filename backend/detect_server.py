@@ -89,6 +89,8 @@ if _is_detect_off(_MODEL_PATH):
     MODE = "off"
     print(f"[detect_server] DETECT_MODEL={_MODEL_PATH!r} → 검출 비활성(예측 전용). "
           "모델 로드·허브 다운로드 안 함. /detect 는 빈 박스를 돌려준다.")
+elif os.environ.get("DETECT_DISABLE_MODEL", "").strip().lower() in {"1", "true", "yes"}:
+    print("[detect_server] DETECT_DISABLE_MODEL=1 → 검출 DUMMY")
 else:
     try:
         from ultralytics import YOLO          # pip install ultralytics
@@ -164,6 +166,19 @@ class CamState:
 
 
 CAMS = {}
+_CAMERA_UPDATED_AT = {}
+
+try:
+    from backend.multiview import CalibrationError, CameraCalibration, MultiViewFusion
+except ImportError:  # backend/detect_server.py를 스크립트로 직접 실행할 때
+    from multiview import CalibrationError, CameraCalibration, MultiViewFusion
+
+FUSION = MultiViewFusion(
+    gate=0.8,
+    fusion_window_ms=250,
+    coast_ms=750,
+    remove_ms=1500,
+)
 
 
 # ByteTrack 활성 임계값. 라이브러리 기본값은 0.7인데, 우리 시뮬 모델의 라이브 confidence는
@@ -293,7 +308,7 @@ app = FastAPI(title="detect_server", version="2.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],                  # 로컬 시뮬(다른 포트)에서 POST 하므로 허용
-    allow_methods=["POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type"],
 )
 
@@ -306,7 +321,49 @@ def _decode_image(data_url):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "mode": MODE, "cameras": list(CAMS.keys())}
+    now = time.monotonic()
+    return {
+        "status": "ok",
+        "mode": MODE,
+        "cameras": sorted(CAMS),
+        "calibrated_cameras": sorted(FUSION.calibrations),
+        "camera_update_age_ms": {
+            camera: max(0, int(round((now - updated_at) * 1000)))
+            for camera, updated_at in sorted(_CAMERA_UPDATED_AT.items())
+        },
+        "global_track_count": len(FUSION.tracks),
+    }
+
+
+@app.post("/calibrate")
+async def calibrate(req: Request):
+    try:
+        body = await req.json()
+        camera_id = str(body["camera"]).strip()
+        points = body["points"]
+        image = [point["image"] for point in points]
+        world = [point["world"] for point in points]
+        calibration = CameraCalibration.from_points(
+            image=image,
+            world=world,
+            valid_world_polygon=body["valid_world_polygon"],
+        )
+        FUSION.calibrate(camera_id, calibration)
+        return {
+            "camera": camera_id,
+            "reprojection_rms": calibration.reprojection_rms,
+            "point_count": len(points),
+        }
+    except (KeyError, TypeError, ValueError, CalibrationError):
+        return JSONResponse(status_code=422, content={"error": "invalid calibration"})
+
+
+@app.post("/tracks/reset")
+async def tracks_reset():
+    FUSION.reset_tracks()
+    CAMS.clear()
+    _CAMERA_UPDATED_AT.clear()
+    return {"ok": True, "calibrated_cameras": sorted(FUSION.calibrations)}
 
 
 @app.post("/detect")
@@ -315,6 +372,7 @@ async def detect(req: Request):
         body = await req.json()
         camera_id = body.get("camera", "?")
         t_ms = body.get("t")
+        fusion_t_ms = int(t_ms) if t_ms is not None else int(round(time.monotonic() * 1000))
         if MODE.startswith("yolo"):
             img = _decode_image(body["image"])
             img_w, img_h = img.size
@@ -322,7 +380,15 @@ async def detect(req: Request):
             img, img_w, img_h = None, 1280, 720
         dets = run_detect(img)
         boxes = track_and_measure(dets, img_w, img_h, camera_id, t_ms)
-        return {"boxes": boxes, "mode": MODE, "camera": camera_id}
+        boxes = FUSION.update(camera_id, boxes, fusion_t_ms)
+        _CAMERA_UPDATED_AT[camera_id] = time.monotonic()
+        return {
+            "boxes": boxes,
+            "mode": MODE,
+            "camera": camera_id,
+            "seq": body.get("seq"),
+            "global_tracks": FUSION.snapshot(fusion_t_ms),
+        }
     except Exception as e:                # noqa: BLE001
         return JSONResponse(status_code=500, content={"error": str(e)})
 
@@ -408,6 +474,10 @@ def _get_predictor():
     global _PREDICTOR, _PREDICTOR_ERR
     if _PREDICTOR is not None or _PREDICTOR_ERR is not None:
         return _PREDICTOR
+    if os.environ.get("PREDICT_DISABLE_MODEL", "").strip().lower() in {"1", "true", "yes"}:
+        _PREDICTOR_ERR = "disabled by PREDICT_DISABLE_MODEL"
+        print("[detect_server] PREDICT_DISABLE_MODEL=1 → 글로벌 예측은 Kalman fallback")
+        return None
     try:
         import sys
         sys.path.insert(0, str(_ROOT))
@@ -485,20 +555,50 @@ def _predict_response(body, p):
 
 @app.post("/predict")
 async def predict(req: Request):
-    """학습형 멀티모달 궤적 예측 (다인원 배치 + 위험 중재). 이슈 #2 5단계 · 감사 P0-5.
+    """단일 관측, 다인원 배치 또는 글로벌 트랙의 멀티모달 궤적 예측.
 
     배치 요청(스펙 §3):
       {"tracks":[{"id","hist":[[x,z]…8]}], "robot":{x,z}, "stopR","slowR",
        "horizon","safeKsig","safeTau"}
       → {"tracks":[{"id","modes":[{path,w,sigma}],"risk":{tEntryStop,tEntrySlow,riskMass,dMin}}],
          "worst":{id,…}|null}
+    글로벌 트랙 요청:
+      {"tracks":[{"id","history":[{"t","x","z"}],"stale"}], "robot":{x,z}}
+      → 트랙별 학습형 예측 또는 Kalman fallback.
     하위호환: {"hist":[[x,z]…8]} → {"modes":[…]}. 좌표는 씬 AU(모델 학습 단위와 동일).
     """
-    p = _get_predictor()
-    if p is None:
-        return JSONResponse(status_code=503, content={"error": _PREDICTOR_ERR or "predictor 미로드"})
     try:
         body = await req.json()
+        tracks = body.get("tracks")
+        is_global_request = "tracks" in body and (
+            any(isinstance(track, dict) and "history" in track for track in tracks or [])
+            or ("stopR" not in body and "slowR" not in body)
+        )
+        if is_global_request:
+            try:
+                from backend.prediction_contract import predict_global_tracks, resample_history
+            except ImportError:
+                from prediction_contract import predict_global_tracks, resample_history
+            needs_model = any(
+                not bool(track.get("stale"))
+                and resample_history(track.get("history", [])) is not None
+                for track in tracks or []
+            )
+            predictor = _get_predictor() if needs_model else None
+            return {
+                "tracks": predict_global_tracks(
+                    tracks or [],
+                    predictor=predictor,
+                    robot=body.get("robot"),
+                )
+            }
+
+        p = _get_predictor()
+        if p is None:
+            return JSONResponse(
+                status_code=503,
+                content={"error": _PREDICTOR_ERR or "predictor 미로드"},
+            )
         return _predict_response(body, p)
     except Exception as e:                # noqa: BLE001
         return JSONResponse(status_code=500, content={"error": str(e)})
