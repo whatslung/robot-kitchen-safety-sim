@@ -1175,9 +1175,9 @@ camera.panningSensibility = 900;
 const hemi = new BABYLON.HemisphericLight("hemi", new V3(0.2,1,0.15), scene);
 hemi.intensity = 1.1; hemi.groundColor = new C3(0.36,0.37,0.41);   // 밝은 주방(과노출 방지 톤)
 const key = new BABYLON.DirectionalLight("key", new V3(-0.55,-1,0.42), scene);
-key.position = new V3(2.6,4.4,-2.2); key.intensity = 3.6;
+key.position = new V3(2.6,4.4,-2.2); key.intensity = 3.6;   // [space-q] 초기값은 main 그대로 둔다 — 환경 프로브가 이 조명으로 구워져야 데이터셋이 종전과 같다
 const fill = new BABYLON.DirectionalLight("fill", new V3(0.5,-1,-0.35), scene);   // 반대편 보조광 — 그림자 영역 완화
-fill.position = new V3(-2.2,4.0,2.0); fill.intensity = 1.4;
+fill.position = new V3(-2.2,4.0,2.0); fill.intensity = 1.4;   // [space-q] 위와 같은 이유로 초기값 유지
 /* 그림자 — 방이 9×9로 커지면서 1024 지수맵은 텍셀 밀도가 무너져 바닥에 긴 번짐이 생겼다.
    2048 + PCSS(접촉경화)로 바꾼다. 접촉부는 단단하고 멀어질수록 부드러워져 렌더 느낌이 산다.
    ESM/PCSS는 상호배타이므로 블러 지수맵은 끈다. */
@@ -1424,6 +1424,7 @@ const steelNrm = normalMap("steelNrm", 512, (c, S) => {
     c.beginPath(); c.moveTo(Math.random()*S, y); c.lineTo(Math.random()*S, y + (Math.random()-0.5)*6); c.stroke();
   }
 }, 2.2, [3, 3]);
+
 /* 타일 — 줄눈이 파인 골 */
 const tileNrm = normalMap("tileNrm", 512, (c, S) => {
   c.fillStyle = "#808080"; c.fillRect(0,0,S,S);
@@ -1478,6 +1479,11 @@ let PERSON_RIG = null;
 let HOOD_BOX = null;
 /* ══ 방 껍데기 — 실사 근거: 참조 현장 CCTV(셀 전경)·참조 현장(타일벽+트렌치)·
       복수 참조 현장(백스플래시+창)·참조 현장(게시물벽). 전부 절차 생성. ════════ */
+/* [space-q] main 에는 있고 **데모 화면에서만 숨기는** 바닥 오브젝트들.
+   지우지 않고 숨기는 이유 — 데이터셋 표본은 종전(main) 장면 그대로 찍어야 한다.
+   지워 버리면 배경 클러터가 통째로 사라져 표본의 도메인이 바뀐다(ZoneTape 는
+   7889행에서 equipment 클래스로 라벨링까지 된다). 렌더 프로필이 켜고 끈다. */
+const BASE_DECALS = [];
 function buildRoom() {
   const RM = LAYOUT.room;
   const cx = (RM.x0+RM.x1)/2, cz = (RM.z0+RM.z1)/2, W = RM.x1-RM.x0, D = RM.z1-RM.z0;
@@ -1637,12 +1643,16 @@ function buildRoom() {
   /* ── 정위치 표시 — 참조 현장 근접 프레임에서 관찰.
      연속 테이프가 아니라 **끊긴 붉은 도막 블록**들이다. 소쿠리 카트를 세우는 자리
      표시로 보인다. 길이·간격이 제각각이라 규칙적으로 깔면 오히려 안 닮는다.       */
+  /* [space-q] 데모 화면에서는 숨긴다 (2026-08-29, 지시) — 붉은 도막 8개가 바닥에
+     근거 없는 갈색 사각형으로 흩어져 보였다. 안전 표시는 반경 링이 담당한다.
+     **생성은 그대로 한다** — 데이터셋 표본은 종전 장면으로 찍어야 하기 때문이다. */
   const SPOTS = [[0.55,1.62,0.30,0.10],[0.60,1.90,0.10,0.09],[0.86,1.86,0.12,0.09],
                  [0.72,2.12,0.09,0.14],[-0.95,1.70,0.26,0.09],[-1.02,2.02,0.10,0.10],
                  [2.90,2.62,0.28,0.09],[3.18,2.60,0.09,0.09]];
   for (const [sx,sz,sw,sd] of SPOTS) {
     const sp = MB.CreateBox("markSpot", {width:sw, height:0.005, depth:sd}, scene);
     sp.position.set(sx, 0.0035, sz); sp.material = MAT.tape; sp.isPickable = false;
+    sp.isVisible = false; sp.setEnabled(false); BASE_DECALS.push(sp);
   }
   /* ── 앵커 캡 — 참조 현장 근접 프레임에서 바닥에 박힌 원형 스테인리스 판 2개 관찰.
      설비 고정 볼트 자리다. 방 전체에 흩어져 있으므로 기기 라인 근처에만 둔다.     */
@@ -1662,6 +1672,8 @@ function buildRoom() {
   /* 물은 '회색 판'이 아니다 — 바닥을 살짝 어둡게 적시고 반사만 얹는다.
      알파를 0.55로 두니 회색 페인트를 칠한 것처럼 보였다. 0.26까지 낮추고
      색을 더 어둡게 잡아, 젖은 콘크리트가 어두워지는 방식으로 만든다. */
+  /* [space-q] 데모 화면에서는 숨긴다 (2026-08-29, 지시) — 반경 0.5m 원반 8개가
+     바닥에 흐릿한 타원 얼룩으로 보였다. 생성은 그대로 둔다(데이터셋 기준선 유지). */
   const puddleMat = decal(pbr("puddle", "#33383d", { metallic:0.0, roughness:0.05 }));
   puddleMat.alpha = 0.26; puddleMat.transparencyMode = BABYLON.PBRMaterial.PBRMATERIAL_ALPHABLEND;
   for (const [px,pz,pw,pd,pr] of PUDDLE) {
@@ -1670,6 +1682,7 @@ function buildRoom() {
     pu.scaling.set(pw*2, pd*2, 1);
     pu.position.set(px, 0.003, pz);
     pu.material = puddleMat; pu.isPickable = false; pu.receiveShadows = false;
+    pu.isVisible = false; pu.setEnabled(false); BASE_DECALS.push(pu);
   }
 
   /* ── 상부 창 2개 — 서벽 (참조 현장 초록프레임 / 참조 현장 알루미늄) ── */
@@ -5945,43 +5958,43 @@ function dressProp(file, holder, idx, inst) {
         if (Math.random() < 0.18) continue;               // 가끔 빈 자리 (전부 차 있으면 부자연스럽다)
         const x = bx + rnd(-0.05, 0.05), z = rnd(-0.08, 0.08), t = Math.random();
         if (t < 0.30) {                                   // GN 바트 (담긴 것 있음/없음)
-          gnPan(x, y + 0.014, z, 0.30, 0.24, 0.085, Math.random() < 0.55);
+          gnPan(x, y + 0.007, z, 0.30, 0.24, 0.085, Math.random() < 0.55);   // [space-q] 바닥판(12mm,중심기준) → +7mm면 바닥이 선반면+1mm
         } else if (t < 0.46) {                            // 바트 적층 — 빈 팬을 포개 둔다
           const n = 2 + ((Math.random()*3)|0);
-          for (let q = 0; q < n; q++) gnPan(x, y + 0.014 + q*0.030, z, 0.30, 0.24, 0.055, false);
+          for (let q = 0; q < n; q++) gnPan(x, y + 0.007 + q*0.030, z, 0.30, 0.24, 0.055, false);   // [space-q]
         } else if (t < 0.62) {
-          colander(x, y + 0.014, z, rnd(0.26, 0.34));
+          colander(x, y + 0.001, z, rnd(0.26, 0.34));   // [space-q] colander는 바닥이 y — 14mm 떠 있었다
         } else if (t < 0.80) {
-          tote(x, y + 0.014, z, rnd(0.24,0.30), rnd(0.19,0.24), rnd(0.13,0.18));
+          tote(x, y + 0.001, z, rnd(0.24,0.30), rnd(0.19,0.24), rnd(0.13,0.18));   // [space-q] tote도 바닥이 y
         } else {                                          // 대야 적층
           const n = 1 + ((Math.random()*3)|0);
           for (let q = 0; q < n; q++)
             add(MB.CreateCylinder("propBowl",
               {height:0.10, diameterTop:rnd(0.28,0.33), diameterBottom:0.20, tessellation:18}, scene),
-              x, y + 0.06 + q*0.045, z, ST);
+              x, y + 0.051 + q*0.045, z, ST);   // [space-q] 대야(h0.10 중심기준) — 10mm 떠 있었다
         }
       }
     }
   } else if (file === "env_table.glb") {   // 작업대 — 도마·저울·바트·병·소쿠리
     const TY = 0.850;   // 레이캐스트 실측값. 0.875로 두니 물건이 2.5cm 떠 있었다
     add(MB.CreateBox("propBoard", {width:0.42, height:0.022, depth:0.30}, scene),
-        rnd(-0.35, 0.10), TY, rnd(-0.06, 0.06), MAT.plastic);
-    if (Math.random() < 0.75) colander(rnd(0.28, 0.52), TY + 0.011, rnd(-0.12, 0.12), rnd(0.26,0.32));
-    if (Math.random() < 0.7)  gnPan(rnd(-0.15, 0.15), TY + 0.011, rnd(-0.14, 0.14), 0.32, 0.26, 0.085, true);
-    for (let b = 0; b < ((Math.random()*3)|0); b++) bottle(rnd(-0.68,-0.42), TY + 0.011, rnd(-0.18, 0.18));
-    if (Math.random() < 0.45) tote(rnd(0.20,0.60), TY + 0.011, rnd(-0.20,0.20), 0.26, 0.21, 0.15);
+        rnd(-0.35, 0.10), TY + 0.012, rnd(-0.06, 0.06), MAT.plastic);   // [space-q] 도마 중심기준(22mm) — 11mm 파묻혔다
+    if (Math.random() < 0.75) colander(rnd(0.28, 0.52), TY + 0.001, rnd(-0.12, 0.12), rnd(0.26,0.32));   // [space-q]
+    if (Math.random() < 0.7)  gnPan(rnd(-0.15, 0.15), TY + 0.007, rnd(-0.14, 0.14), 0.32, 0.26, 0.085, true);   // [space-q]
+    for (let b = 0; b < ((Math.random()*3)|0); b++) bottle(rnd(-0.68,-0.42), TY + 0.001, rnd(-0.18, 0.18));   // [space-q]
+    if (Math.random() < 0.45) tote(rnd(0.20,0.60), TY + 0.001, rnd(-0.20,0.20), 0.26, 0.21, 0.15);   // [space-q]
     if (Math.random() < 0.6) {                          // 저울 (복수 참조 현장 계량)
       const sx = rnd(-0.60, -0.30);
-      add(MB.CreateBox("propScale", {width:0.24, height:0.06, depth:0.20}, scene), sx, 0.89, 0.10, MAT.plastic);
-      add(MB.CreateBox("propScalePan", {width:0.22, height:0.012, depth:0.18}, scene), sx, 0.925, 0.10, ST);
-      add(MB.CreateBox("propScaleDisp", {width:0.10, height:0.035, depth:0.01}, scene), sx, 0.905, -0.005, MAT.red);
+      add(MB.CreateBox("propScale", {width:0.24, height:0.06, depth:0.20}, scene), sx, 0.881, 0.10, MAT.plastic);   // [space-q] 바닥이 상판+1mm
+      add(MB.CreateBox("propScalePan", {width:0.22, height:0.012, depth:0.18}, scene), sx, 0.917, 0.10, ST);   // [space-q] 저울 상면에 맞춤
+      add(MB.CreateBox("propScaleDisp", {width:0.10, height:0.035, depth:0.01}, scene), sx, 0.896, -0.005, MAT.red);   // [space-q]
     }
     // 하단 선반(z=0.24)도 비워 두지 않는다 — 실사에서 여기가 가장 잘 차 있다
     for (const bx of [-0.42, 0.06, 0.50]) {
       if (Math.random() < 0.35) continue;
-      if (Math.random() < 0.5) tote(bx, 0.25, rnd(-0.10,0.10), 0.30, 0.24, 0.17);
+      if (Math.random() < 0.5) tote(bx, 0.251, rnd(-0.10,0.10), 0.30, 0.24, 0.17);   // [space-q]
       else { const n = 2 + ((Math.random()*3)|0);
-             for (let q=0;q<n;q++) gnPan(bx, 0.25 + q*0.030, 0, 0.30, 0.24, 0.055, false); }
+             for (let q=0;q<n;q++) gnPan(bx, 0.257 + q*0.030, 0, 0.30, 0.24, 0.055, false); }   // [space-q] 하단선반 0.250 + 바닥보정
     }
   } else if (file === "env_sink.glb") {    // 싱크 — 물기 담긴 대야·소쿠리
     colander(rnd(-0.55, -0.30), 0.58, 0, rnd(0.26, 0.32));   // 볼 바닥 0.58 (0.63은 5cm 떴다)
@@ -5991,19 +6004,19 @@ function dressProp(file, holder, idx, inst) {
     if (Math.random() < 0.4) colander(0, 0.68, 0, rnd(0.26, 0.32));   // 실측 0.680 (0.71은 3cm 떠 있었다)
   } else if (file === "env_serve.glb") {   // 배식대 — 상판과 상부 선반 둘 다 찬다 (참조 현장 우측)
     const TY = 0.850;   // 레이캐스트 실측값. 0.875로 두니 물건이 2.5cm 떠 있었다
-    if (Math.random() < 0.8) gnPan(rnd(-0.55, 0.10), TY + 0.011, rnd(-0.10, 0.10), 0.32, 0.26, 0.085, true);
-    if (Math.random() < 0.7) colander(rnd(0.25, 0.65), TY + 0.011, rnd(-0.12, 0.12), rnd(0.26, 0.32));
-    for (let b = 0; b < 1 + ((Math.random()*3)|0); b++) bottle(rnd(-0.75, 0.75), TY + 0.011, rnd(-0.22, 0.05));
-    for (const z of [1.29, 1.67]) {        // 상부 선반 2단
+    if (Math.random() < 0.8) gnPan(rnd(-0.55, 0.10), TY + 0.007, rnd(-0.10, 0.10), 0.32, 0.26, 0.085, true);   // [space-q]
+    if (Math.random() < 0.7) colander(rnd(0.25, 0.65), TY + 0.001, rnd(-0.12, 0.12), rnd(0.26, 0.32));   // [space-q]
+    for (let b = 0; b < 1 + ((Math.random()*3)|0); b++) bottle(rnd(-0.75, 0.75), TY + 0.001, rnd(-0.22, 0.05));   // [space-q]
+    for (const z of [1.293, 1.673]) {      // [space-q] 실측 상단면 (1.29/1.67은 3~4mm 어긋났다) — 상부 선반 2단
       for (const bx of [-0.5, 0, 0.5]) {
         if (Math.random() < 0.3) continue;
         if (Math.random() < 0.55) {
           const n = 2 + ((Math.random()*3)|0);
-          for (let q = 0; q < n; q++) gnPan(bx + rnd(-0.06,0.06), z + q*0.030, 0.21, 0.30, 0.24, 0.055, false);
+          for (let q = 0; q < n; q++) gnPan(bx + rnd(-0.06,0.06), z + 0.007 + q*0.030, 0.21, 0.30, 0.24, 0.055, false);   // [space-q]
         } else {
           add(MB.CreateCylinder("propBowl",
             {height:0.10, diameterTop:rnd(0.26,0.32), diameterBottom:0.19, tessellation:18}, scene),
-            bx + rnd(-0.06,0.06), z + 0.06, 0.21, ST);
+            bx + rnd(-0.06,0.06), z + 0.051, 0.21, ST);   // [space-q] 대야 h0.10 중심기준
         }
       }
     }
@@ -6280,21 +6293,19 @@ async function loadAssets() {
     // 이름이 kioskPlate라 classOfMesh가 'env'(배경)로 떨어뜨린다 → 키오스크의 일부로 묶는다
     plate.metadata = { gtClass: "equip", gtInstance: "equip_kiosk" };
   }
-  /* 로봇 셀 경계 테이프 — GLB는 9×9m 방 시절에 만든 것이라 북쪽 변이 z=-1.60이다.
-     그 뒤 북벽을 솥 쪽으로 당기면서(z0=-1.45) **경계선 한 변이 벽 속에 묻혔다.**
-     방 안(z=-1.30)으로 끌어오고 옆변 길이도 그만큼 줄인다.                       */
+  /* [space-q] 로봇 셀 경계 테이프(ZoneTape) 제거 (2026-08-29, 지시).
+     GLB(kitchen_static)에 든 4.78×3.3m 주황 사각형이다. 바닥에 근거 없는 사각형으로
+     보인다는 판단 — 안전 표시는 **반경 링(zone1/zone3)** 이 담당한다.
+     GLB는 건드리지 않고 로드 후 숨긴다. 되살리려면 이 블록을 지우고 종전 위치 보정
+     코드를 복구하면 된다(9×9m 방 시절 좌표라 북쪽 변이 벽에 묻히는 것을 당기던 코드). */
   {
-    const NEW_Z0 = -1.30, OLD_Z0 = -1.60, Z1 = 1.95;
-    const north = scene.getMeshByName("ZoneTape.001");
-    if (north) north.position.z += (NEW_Z0 - OLD_Z0);
-    for (const n of ["ZoneTape.002", "ZoneTape.003"]) {
-      const s = scene.getMeshByName(n);
-      if (!s) continue;
-      s.scaling.z *= (Z1 - NEW_Z0) / (Z1 - OLD_Z0);
-      s.position.z += (NEW_Z0 - OLD_Z0) / 2;
-    }
-    const zt = scene.getMaterialByName("zoneTape");     // GLB 재질도 같은 깊이 처리
-    if (zt) { zt.zOffset = -2; zt.zOffsetUnits = -4; }
+    let hid = 0;
+    scene.meshes.forEach(m => {
+      if (m.name && m.name.indexOf("ZoneTape") === 0) {
+        m.isVisible = false; m.setEnabled(false); BASE_DECALS.push(m); hid++;
+      }
+    });
+    if (hid) console.log("[space-q] ZoneTape 숨김:", hid, "(데이터셋 생성 중에는 복원)");
   }
   /* 그림자 정리 — 렌더 비용의 41%가 그림자맵이다(실측: 18.3ms → 10.7ms).
      ① 숨긴 메시는 캐스터에서 뺀다. ASSETS 모드에서 절차 설비(potBody·hood 등)는
@@ -7452,6 +7463,24 @@ probe.position = new V3(0.4, 1.5, 0.2);
 scene.meshes.forEach(m => probe.renderList.push(m));
 probe.refreshRate = BABYLON.RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
 scene.environmentTexture = probe.cubeTexture;
+/* [space-q] 실시간 IBL 필터링 (2026-08-29).
+   프로브 큐브맵은 **거칠기별 사전 필터링이 없다.** 그대로 쓰면 러프니스가 반사에
+   반영되지 않아 스테인리스가 흰 플라스틱처럼 보인다(이 씬의 금속이 그랬다).
+   Babylon의 realTimeFiltering이 셰이더에서 거칠기별 필터링을 해 준다 — 외부 HDR
+   파일이 필요 없다. 실측(1280x720 고정 시점): 끔 47.2ms / 켬 41.8ms 로 **오히려 빨랐다**
+   (HDR 파일 방식도 47.8ms 로 이득이 없어 파일을 쓰지 않기로 했다).
+   품질 LOW로 충분하다 — MEDIUM 이상은 샘플 수가 급증한다. */
+let RENDER_RTF = false;     // 현재 렌더 프로필의 realTimeFiltering 상태 (applyRenderProfile이 바꾼다).
+                            // 초기값 false — 첫 렌더를 main 과 같은 셰이더로 돌려 프로브를 종전대로 굽는다.
+const applyRTF = (m) => {
+  if (!m || !m.getClassName || m.getClassName().indexOf("PBR") !== 0) return;
+  m.realTimeFiltering = RENDER_RTF;
+  m.realTimeFilteringQuality = BABYLON.Constants.TEXTURE_FILTERING_QUALITY_LOW;
+};
+scene.materials.forEach(applyRTF);
+/* GLB 재질은 **비동기로 나중에** 생성된다(loadAssets·loadEnvProps·loadCook).
+   위 forEach만 두면 정작 금속이 많은 설비 GLB가 빠진다 — 관찰자로 이후 생성분도 받는다. */
+scene.onNewMaterialAddedObservable.add(applyRTF);
 /* ⚠️ 이 큐브맵은 **한 번만 굽는다** — 굽는 순간 화면에 있던 것이 스테인리스 반사로 남는다.
    안전 반경 링(zone*)이 여기 박혀 있는지 의심해 재봤다(2026-08-27): 링을 켠 채 구운
    환경맵과 뺀 채 구운 환경맵에서 **솥 반사 색 픽셀 6 vs 5 — 차이 없다.**
@@ -7461,14 +7490,48 @@ scene.environmentTexture = probe.cubeTexture;
    1.5로 낮추면 반사가 형태를 죽이지 않아 오히려 스테인리스로 읽힌다.
    ※ 프레임에는 영향이 없다. 프로브는 RENDER_ONCE라 매 프레임 비용이 0이다
       (실측: 병목은 그림자 37% · 지오메트리 32%, 환경맵 아님). */
-scene.environmentIntensity = 1.5;
-hemi.intensity = 1.05;   // 프로브 환경 확정 후 최종 보정값 — 급식실 백색등 밝기
+scene.environmentIntensity = 1.5;   // [space-q] 초기값 유지 (개선값 0.95는 RENDER_DEMO 가 첫 렌더 뒤에 넣는다)
+hemi.intensity = 1.05;   // [space-q] 초기값 유지 (개선값 0.50 은 RENDER_DEMO)
 
 // 톤매핑은 머티리얼 레벨(IPC) — 어느 카메라로 봐도 동일하게 적용된다
 const ipc = scene.imageProcessingConfiguration;
 ipc.toneMappingEnabled = true;
 ipc.toneMappingType = BABYLON.ImageProcessingConfiguration.TONEMAPPING_ACES;
-ipc.exposure = 1.65; ipc.contrast = 1.08;
+ipc.exposure = 1.65; ipc.contrast = 1.08;   // [space-q] 초기값 유지 (개선값 1.22 는 RENDER_DEMO)
+
+/* ── 렌더 프로필 — 화면 개선은 **데모·뷰어 전용**이다 (2026-08-29) ───────────────
+   위 [space-q] 값들을 전역 기본값으로 두면 데이터셋 표본의 그림이 통째로 바뀐다.
+   그러면 conditions.csv 의 조건값은 예전 표본과 같은데 이미지만 달라져서,
+   화재 표본뿐 아니라 **나디르 사람 검출 수치(recall 0.86 / 융합 0.92)의 기준이
+   어긋난다** — 10870행 부근에 이미 같은 이유로 "기본 220은 일부러 그대로 둔다"고
+   적혀 있다. 그 판단을 그대로 따른다: 발표 화면 문제는 **경로별 전환**으로 푼다.
+
+   ⚠️ randomizeScene 이 key·hemi·exposure 를 흔들어 주니 괜찮다 — 고 넘기면 안 된다.
+      randomizeEnvironment()는 `if (!ENV_RAND.enabled) return;` 로 시작한다.
+      환경 랜덤화를 끄고 데이터셋을 뽑으면 아무것도 안 흔들려 개선값이 그대로 찍힌다.
+      그래서 여기서 **5개 전부 + realTimeFiltering** 을 되돌린다. */
+const RENDER_BASE = { key:3.6, fill:1.4,  hemi:1.05, env:1.5,  exposure:1.65, rtf:false, decals:true  };  // 종전(main) — 데이터셋이 쓰는 기준선
+const RENDER_DEMO = { key:2.8, fill:1.05, hemi:0.50, env:0.95, exposure:1.22, rtf:true,  decals:false };  // [space-q] 개선본 — 데모·뷰어
+/* 첫 렌더가 끝나면(=프로브가 구워지면) 데모 프로필로 전환한다.
+   여기서 비로소 조명·노출·실시간 필터링이 개선값으로 바뀐다. */
+scene.onAfterRenderObservable.addOnce(() => applyRenderProfile(RENDER_DEMO));
+function applyRenderProfile(pf) {
+  key.intensity  = pf.key;
+  fill.intensity = pf.fill;
+  hemi.intensity = pf.hemi;
+  scene.environmentIntensity = pf.env;
+  ipc.exposure   = pf.exposure;
+  RENDER_RTF = pf.rtf;
+  scene.materials.forEach(applyRTF);   // 이미 만들어진 재질 + 이후 생성분은 관찰자가 받는다
+  /* 프로브는 **다시 굽지 않는다.** REFRESHRATE_RENDER_ONCE 라 첫 렌더 조명이 큐브맵에
+     구워지는데, 그 첫 렌더를 main 값(RENDER_BASE)으로 돌려 두었다(위 초기값 주석).
+     그래서 두 프로필이 **같은 환경맵**을 공유한다 — 데이터셋은 종전 환경맵 그대로다.
+     재굽기를 넣어 봤지만, 두 번째 굽기는 이미 구워진 환경맵에 다시 비친 것을 굽는
+     꼴이라(1바운스 vs 2바운스) 오히려 main 과 어긋났다. */
+  /* 바닥 데칼(웅덩이·정위치 표시·셀 경계 테이프) — 데모에서는 숨기고 표본에서는 되살린다.
+     BASE_DECALS 는 buildRoom·GLB 로드 시점에 채워지므로 여기서 매번 훑는다. */
+  BASE_DECALS.forEach(m => { m.isVisible = pf.decals; m.setEnabled(pf.decals); });
+}
 
 const glow = new BABYLON.GlowLayer("glow", scene, {mainTextureSamples:2});
 glow.intensity = ASSETS.enabled ? 0.15 : 0.5;   // 밝은 주방에서 존 테이프 과발광 방지
@@ -8904,6 +8967,9 @@ function restoreAfterDataset() {
      (센서 원복을 안 해서 화면이 저품질로 굳던 것과 같은 계열의 실수). */
   SENSOR.steamAuto = true;
   const _sa = $("snSteamAuto"); if (_sa) _sa.checked = true;
+  /* 렌더 프로필도 되돌린다 — 센서·김서림과 같은 계열이다.
+     안 되돌리면 데이터셋을 한 번 뽑고 나서 화면이 종전 밝기로 굳는다. */
+  applyRenderProfile(RENDER_DEMO);
 }
 /* 데이터셋 회차의 화재 샘플 비율. ?fire= 로 덮어쓴다(0~1). */
 const FIRE_P = (() => {
@@ -8944,6 +9010,7 @@ async function generateDataset(n, plan) {
     }
   };
   DATAGEN.running = true; DATAGEN.abort = false;
+  applyRenderProfile(RENDER_BASE);   // 표본은 종전 렌더로 찍는다 — 위 RENDER_BASE 주석 참조
   $("gtGenBtn").textContent = "■ 중단";
   RUNLOG.start("dataset", {
     label: ($("runLabel").value || "").trim() || "dataset",
@@ -12761,6 +12828,7 @@ window.__sim = {
   person, personGo, SAFE, setFire, FIRE_FOG, SMOKE_LAYER, fireSeekTo, fireRandomStage, fireCheck,   // SCN 제거 (2026-08-27)
   // Ground Truth · 데이터셋
   groundTruth, generateDataset, DATAGEN, randomizeScene, restoreAfterDataset,
+  applyRenderProfile, RENDER_BASE, RENDER_DEMO,
   cellPlan, CELL_FIRE, CELL_FOG,      // 12칸 균등 생성 — __sim.generateDataset(0, __sim.cellPlan(3))
   GT_CLASSES, classOfMesh, showInspector,
   // 물리 · 안전
