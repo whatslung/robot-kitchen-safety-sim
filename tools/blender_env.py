@@ -78,6 +78,64 @@ def sph(r, loc, m, seg=14, ring=10, scale=None, rot=None):   # 20/14 → 14/10 (
     if rot: o.rotation_euler = rot
     return paint(o, m)
 
+# ── boolean 헬퍼 ────────────────────────────────────────────────────────────
+#   프리미티브를 겹쳐 쌓기만 하면 **속이 꽉 찬 덩어리**가 된다. 그릇처럼 안이 비어야
+#   하는 물건은 반드시 파내야 한다 — 안 그러면 뚜껑을 열어도 입구가 막혀 보인다.
+def apply_scale(o):
+    """오브젝트 스케일을 메시에 굽는다. boolean 은 스케일이 남아 있으면 결과가 틀어진다."""
+    bpy.ops.object.select_all(action='DESELECT')
+    o.select_set(True); bpy.context.view_layer.objects.active = o
+    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+    return o
+
+def bake(o):
+    """스케일과 기존 모디파이어(베벨 등)를 메시에 굽는다.
+
+    ⚠️ **boolean 전에 반드시 부른다.** 베벨이 스택에 남은 채 boolean 을 뒤에 얹어
+       적용하면 Blender 가 '첫 모디파이어가 아니다'로 처리해 결과가 틀어진다 —
+       실제로 상판이 바깥쪽까지 통째로 깎여 얇은 고리만 남았다."""
+    bpy.ops.object.select_all(action='DESELECT')
+    o.select_set(True); bpy.context.view_layer.objects.active = o
+    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+    for md in list(o.modifiers):
+        bpy.ops.object.modifier_apply(modifier=md.name)
+    return o
+
+def _boolean(a, b, op):
+    """a 에 b 를 boolean 연산하고 b 를 지운다."""
+    bake(a); bake(b)
+    md = a.modifiers.new("bool", 'BOOLEAN')
+    md.operation = op; md.object = b; md.solver = 'EXACT'
+    bpy.ops.object.select_all(action='DESELECT')
+    a.select_set(True); bpy.context.view_layer.objects.active = a
+    bpy.ops.object.modifier_apply(modifier=md.name)
+    bpy.ops.object.select_all(action='DESELECT')
+    b.select_set(True); bpy.context.view_layer.objects.active = b
+    bpy.ops.object.delete(use_global=False)
+    return a
+
+def fuse(objs):
+    """겹친 프리미티브들을 **합집합**으로 하나의 매니폴드 덩어리로 만든다.
+
+    ⚠️ `bpy.ops.object.join()`을 쓰면 안 된다. join 은 메시를 한 오브젝트에 담기만 할 뿐
+       겹친 면을 정리하지 않아 **자기교차 비매니폴드**가 된다. 그 상태로 차집합을 걸면
+       EXACT 솔버가 조용히 실패하고 결과가 두 덩어리의 합집합처럼 나온다 — 실제로
+       커터(림 위 원통)가 볼에 그대로 붙어 z 1.50 까지 뻗은 메시가 나왔다.
+       내보내기 로그의 'Mesh ... is not valid' 경고가 그 신호다."""
+    a = objs[0]
+    for b in objs[1:]:
+        a = _boolean(a, b, 'UNION')
+    return a
+
+def carve(target, cutter):
+    """target 에서 cutter 부피를 빼낸다 (차집합). 커터는 쓰고 나서 반드시 지운다.
+
+    ⚠️ 커터를 안 지우면 **그대로 GLB에 실려 나간다.** 한 번 겪었다 — 입구를 여는
+       원통 커터(림 위 0.90~1.50)가 남아, 뚜껑을 열어도 입구가 0.90에서 다시 막혔다.
+       커터는 이름으로 찾아 지우고, export 직전에 남은 게 없는지 한 번 더 쓸어낸다."""
+    cutter.name = "__cut"
+    return _boolean(target, cutter, 'DIFFERENCE')
+
 def P():
     return dict(
         steel  = mat("steel",  "#c9d0d8", 0.92, 0.34),
@@ -93,6 +151,10 @@ def P():
 
 def export(fname, prefix):
     """씬의 모든 오브젝트를 Env 접두어로 개명 후 GLB 내보내기 (GT 분류가 이름을 본다)"""
+    # boolean 커터 잔재 제거 — 남아 있으면 그대로 GLB에 실린다 (carve 주석 참조)
+    for o in [x for x in bpy.context.scene.objects if x.name.startswith("__cut")]:
+        print("  ⚠ 커터 잔재 제거:", o.name)
+        bpy.data.objects.remove(o, do_unlink=True)
     for i, o in enumerate(list(bpy.context.scene.objects)):
         o.name = "%s_%02d" % (prefix, i)
     bpy.ops.export_scene.gltf(filepath=os.path.join(OUT, fname),
@@ -184,25 +246,47 @@ def build_pancart():
 #    GT는 'kettle'로 잡는다: 로봇 대상 솥과 형상이 같은데 라벨이 다르면 학습이 모순된다
 def build_kettle_nb(lid_open=True, fname="env_kettle_nb.glb"):
     clear(); p = P()
-    CW, CH = 0.84, 0.70          # 캐비닛 폭 / 높이 — 볼 밑 반구를 품을 만큼은 돼야 한다
+    CW, CH = 0.84, 0.64          # 캐비닛 폭 / 높이 — 상판 밑까지만 (아래 ⚠️ 참조)
     TOP    = 0.735               # 상판 윗면
     RB, RIM = 0.51, 0.90         # 볼 외경 반지름 / 림 높이
     RBOT   = 0.39                # 볼 밑 반구 반지름 — 캐비닛(0.84) 안에 들어가야 옆구리가 안 터진다
+    WALL   = 0.014               # 볼 벽 두께
+
+    # ── 볼 안쪽 빈 공간 (커터) ────────────────────────────────────────────
+    #   ⚠️ **이 부피는 볼뿐 아니라 캐비닛·상판에서도 빼야 한다.** 종전에는 프리미티브를
+    #      그냥 겹쳐 놓기만 해서, ① 원뿔대의 윗면 캡이 입구를 통째로 덮고 ② 밑 반구가
+    #      '온전한 구'라 윗절반이 국물 위로 솟고 ③ 캐비닛 박스(윗면 0.76)가 볼 안으로
+    #      뚫고 올라왔다. 결과적으로 뚜껑을 열어도 **속이 꽉 막힌 솥**으로 보였다.
+    #      sim 쪽에서 겹친 메시를 숨기는 우회로 덮지 말고, 여기서 실제로 파낸다.
+    #   ⚠️ 커터 원뿔은 **림(RIM) 위로 뚫고 나가게** 0.10 더 높인다. 볼 윗면과 커터 윗면이
+    #      z=RIM 으로 정확히 겹치면(동일 평면) EXACT 솔버가 그 캡을 못 지워 **입구가
+    #      그대로 막힌 채 나온다** — 실제로 그렇게 나왔다. 테이퍼(0.6/z)는 그대로 두고
+    #      높이만 늘려 림에서의 벽 두께가 WALL 로 유지되게 한다.
+    def cavity():
+        return fuse([
+            cone(RBOT-WALL, RB-WALL + 0.06, 0.30, (0, 0, RIM-0.05), p["steel"], verts=48),
+            apply_scale(sph(RBOT-WALL, (0, 0, RIM-0.20), p["steel"],
+                            seg=40, ring=22, scale=(1, 1, 0.46))),
+        ])
 
     # 캐비닛 — 브러시드 스테인리스 박스 + 상판 + 조절발
-    box(CW, CW, CH, (0, 0, 0.06 + CH/2), p["steel"], bev=0.012)
-    box(CW+0.04, CW+0.04, 0.035, (0, 0, TOP-0.017), p["steel2"])
+    cab   = box(CW, CW, CH, (0, 0, 0.06 + CH/2), p["steel"], bev=0.012)
+    plate = box(CW+0.04, CW+0.04, 0.035, (0, 0, TOP-0.017), p["steel2"])
     for sx in (-1, 1):
         for sy in (-1, 1):
             cyl(0.022, 0.06, (sx*(CW/2-0.07), sy*(CW/2-0.07), 0.03), p["dark"], verts=10)
     box(CW-0.10, 0.006, CH-0.16, (0, -CW/2-0.004, 0.06+CH/2), p["steel2"], bev=0)   # 도어 패널선
 
     # 얕고 넓은 볼 — 아래가 둥근 접시. 둥근 밑은 캐비닛 안에 잠겨 보이지 않는다
-    cone(RBOT, RB, 0.20, (0, 0, RIM-0.10), p["steel"], verts=48)
-    sph(RBOT, (0, 0, RIM-0.20), p["steel"], seg=40, ring=22, scale=(1, 1, 0.46))
+    bowl = fuse([
+        cone(RBOT, RB, 0.20, (0, 0, RIM-0.10), p["steel"], verts=48),
+        apply_scale(sph(RBOT, (0, 0, RIM-0.20), p["steel"], seg=40, ring=22, scale=(1, 1, 0.46))),
+    ])
+    carve(bowl,  cavity())        # 볼 속을 파낸다 → 벽 두께 WALL 짜리 그릇
+    carve(cab,   cavity())        # 바닥지지대가 볼 안으로 솟지 않게 같은 부피를 뺀다
+    carve(plate, cavity())        # 상판도 마찬가지 (볼 밑을 가로막고 있었다)
     tor(RB, 0.022, (0, 0, RIM), p["steel"], seg=48)                      # 말린 림
-    cyl(RB-0.045, 0.19, (0, 0, RIM-0.095), p["steel2"], verts=44, fill='NOTHING')  # 내벽
-    cyl(RB-0.055, 0.012, (0, 0, RIM-0.075), p["food"], verts=44)         # 국물 수면
+    cyl(RB-0.11, 0.012, (0, 0, RIM-0.16), p["food"], verts=44)           # 국물 수면 — 림에서 0.16 아래
 
     # 크롬 틸팅 핸드휠 — 좌측면 (sg_5: 캐비닛 옆에 크게 붙는다)
     hx, hz = -(CW/2 + 0.16), 0.44
@@ -215,10 +299,17 @@ def build_kettle_nb(lid_open=True, fname="env_kettle_nb.glb"):
     sph(0.036, (hx, 0, hz), p["steel2"], seg=16, ring=12)
     cyl(0.014, 0.075, (hx-0.03, 0.155, hz), p["black"], rot=(0, math.pi/2, 0), verts=10)  # 손잡이 노브
 
-    # 상판 E-STOP — 노란 베이스 + 빨간 버섯버튼 (sg_5: 상판 앞쪽에 노출)
-    cyl(0.046, 0.022, (-0.20, -0.26, TOP+0.011), p["yellow"], verts=20)
-    cyl(0.032, 0.028, (-0.20, -0.26, TOP+0.036), p["red"], verts=20)
-    sph(0.032, (-0.20, -0.26, TOP+0.050), p["red"], seg=18, ring=10, scale=(1,1,0.5))
+    # E-STOP — 노란 베이스 + 빨간 버섯버튼. **앞면**에 붙인다 (온도 컨트롤러 옆).
+    #   ⚠️ 종전에는 상판(TOP) 위에 뒀는데, 이 솥은 볼(반경 RB=0.51)이 캐비닛(0.42)보다
+    #      넓어 상판을 통째로 덮는다. 그래서 버튼이 **솥 안에 떠 있었다** — 반경 0.328
+    #      지점인데 그 높이의 볼 내부 반경이 0.40~0.44다(실측). 볼 속을 파내기 전에는
+    #      막힌 바닥에 가려 안 보였을 뿐, 원래부터 잘못된 자리였다.
+    #      실물(sg_5)도 볼이 상판을 덮는 형식이라 정지버튼은 앞면·측면에 있다.
+    EY = -CW/2                                    # 앞면 (프롭 정면 = -Y)
+    cyl(0.046, 0.022, (-0.20, EY-0.011, 0.60), p["yellow"], rot=(math.pi/2, 0, 0), verts=20)
+    cyl(0.032, 0.028, (-0.20, EY-0.036, 0.60), p["red"],    rot=(math.pi/2, 0, 0), verts=20)
+    sph(0.032, (-0.20, EY-0.056, 0.60), p["red"], seg=18, ring=10,
+        scale=(1, 1, 0.5), rot=(math.pi/2, 0, 0))
 
     # 디지털 온도 컨트롤러 — 앞면 상부 (참조 현장: 검정판 + 빨간 7세그)
     box(0.17, 0.012, 0.11, (0.20, -CW/2-0.008, 0.60), p["black"], bev=0)
