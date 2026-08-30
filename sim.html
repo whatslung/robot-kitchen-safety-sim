@@ -666,6 +666,7 @@
 
   <div class="section">화면 품질</div>
   <div class="row"><span>품질</span><select id="qualitySel">
+    <option value="rec">촬영 — 해상도 1.33배(슈퍼샘플링) + 그림자 4096. 녹화용, 프레임 낮음</option>
     <option value="high">높음 — 부드러운 그림자 + MSAA 4x</option>
     <option value="medium">보통 — 그림자 간소화, MSAA 2x</option>
     <option value="low">낮음 — 그림자 최소, MSAA 끔, 해상도 0.74배</option>
@@ -7624,6 +7625,12 @@ const QUALITY = {
     high:   { label:"높음", msaa:4, pcss:true,  quality:"HIGH", scale:1,    map:2048, caster:0    },
     medium: { label:"보통", msaa:2, pcss:false, quality:"LOW",  scale:1,    map:1024, caster:0.18 },
     low:    { label:"낮음", msaa:1, pcss:false, quality:"LOW",  scale:1.25, map:512,  caster:0.30 },
+    /* 촬영용. `scale`은 **하드웨어 스케일링 레벨**이라 1보다 작을수록 내부 해상도가
+       올라간다(0.75 → 1.33배, 픽셀 1.78배 = 슈퍼샘플링). 종전 최고가 scale 1(네이티브)
+       이라 위쪽이 그대로 비어 있었다. 그림자 맵도 2048 → 4096.
+       ⚠️ **실시간 시연용이 아니다.** 픽셀이 1.78배라 프레임이 그만큼 떨어진다.
+          영상 녹화처럼 프레임보다 화질이 중요한 자리에서만 쓴다. */
+    rec:    { label:"촬영", msaa:4, pcss:true,  quality:"HIGH", scale:0.75, map:4096, caster:0    },
   },
   name: "high", cur: null, autoDone: false,
   apply(name) {
@@ -12331,7 +12338,14 @@ $("predModel").value = PRED.model;
 $("qualitySel").addEventListener("change", e => {
   QUALITY.autoDone = true;                     // 사용자가 직접 골랐으면 자동 강등은 그만
   const p = QUALITY.apply(e.target.value);
-  setStatus("화면 품질: " + (p ? p.label : e.target.value));
+  /* ⚠️ 촬영 화질은 **데이터셋 표본을 바꾼다.** 회차 meta 에 quality 가 남긴 하지만
+     (RUNLOG 의 quality 필드), 같은 조건값인데 이미지만 다른 표본이 섞이면 검출
+     기준선이 어긋난다. 화면용이라는 것을 여기서 말해 준다 — 조용히 두면 그대로
+     데이터셋을 돌린다. */
+  if (e.target.value === "rec")
+    setStatus("화면 품질: 촬영 — 녹화용입니다. 이 상태로 데이터셋을 생성하면 표본이 달라집니다");
+  else
+    setStatus("화면 품질: " + (p ? p.label : e.target.value));
 });
 
 /* 시각화 오버레이 on/off — 플래그만 바꾸면 렌더러가 매 프레임 알아서 숨긴다(로직 무수정). */
@@ -12765,7 +12779,11 @@ scene.registerBeforeRender(() => {
        autoDone으로 멈춰 medium·6fps에 갇혔다(실측). 단계 사이 4초 쿨다운으로 튐 방지.
        사용자가 직접 품질을 고르면(autoDone) 그만둔다. low인데도 느리면 원인은
        고폴리 캐릭터(속눈썹 1.2만·옷주름 2만 삼각형)와 PiP 이중 렌더 — 렌더 설정 밖이다. */
-    if (!QUALITY.autoDone && QUALITY.name !== "low" && ENV_READY
+    /* ⚠️ **촬영 화질은 자동 강등에서 제외한다** (2026-08-30). 'rec' 은 프레임을 내주고
+       화질을 사는 프리셋이라, 자동 강등이 켜져 있으면 켜자마자 30fps 밑으로 떨어져
+       **곧바로 medium 으로 되돌려진다** — 녹화하려고 올린 화질이 유지되지 않는다.
+       사용자가 직접 고른 화질이므로 손대지 않는 게 맞다. */
+    if (!QUALITY.autoDone && QUALITY.name !== "low" && QUALITY.name !== "rec" && ENV_READY
         && performance.now() - (QUALITY.lastAuto || 0) > 4000) {
       const f = fpsAcc / fpsN;
       if (f > 0 && f < 30) {
