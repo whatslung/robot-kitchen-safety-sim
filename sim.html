@@ -4838,6 +4838,21 @@ function snapStations() {
    접촉이 물리 엔진에 전달되게 한다(사람 캡슐이 ANIMATED라 닿으면 카트를 밀어낸다).
    기본값은 true(막는다) — 스테이션 배치·통행 격자·경로 검증은 전부 카트를 장애물로 봐야
    한다. 사람의 **실제 이동 두 곳**(자동 보행·WASD)만 false로 부른다. */
+/* ══ 출입구 x 구간 — 벽 차단에서 여기만 비운다 ═══════════════════════════════
+   ⚠️ 문짝의 절대 x를 그냥 읽으면 안 된다. doorBuild가 문을 경첩에 붙인 뒤에는 문이
+      열리면서 중심이 같이 움직인다(실측: 닫힘 1.80 → 열림 1.24). 그 값을 쓰면 문이
+      열리는 동안 통과 구간이 옆으로 밀려, 대피하던 사람이 벽에 막힌다.
+      경첩이 있으면 경첩 기준(doorCenterX와 같은 규칙), 없으면 문 메시에서 한 번 읽어
+      캐시한다. DOOR 상수를 직접 참조하지 않는다 — 이 함수는 씬 구성 중에도 불린다. */
+let DOOR_GAP_X = null;
+function doorGapCenterX() {
+  const h = scene.getTransformNodeByName("doorHinge");
+  if (h) return (DOOR_GAP_X = h.position.x + 0.475);   // 0.475 = 문 폭 0.95의 절반
+  if (DOOR_GAP_X !== null) return DOOR_GAP_X;
+  const d = scene.getMeshByName("door");
+  return d ? (DOOR_GAP_X = d.getAbsolutePosition().x) : null;
+}
+
 function resolvePersonCollision(pos, solid) {
   let pushed = false;
   const boxes = (solid === false)
@@ -4852,6 +4867,25 @@ function resolvePersonCollision(pos, solid) {
       else         pos.z = f[1] + (dz >= 0 ? 1 : -1) * hd;
       pushed = true;
     }
+  }
+  /* ── 방 벽 — 출입구만 빼고 막는다 (2026-08-30) ────────────────────────────
+     종전에는 벽이 **사람 충돌 목록에 아예 없었다.** 벽 충돌체(col_wallN/S/E/W)는
+     Havok 물리용이라 파편에만 걸리고, 사람은 스크립트로 좌표를 더해 걷기 때문에
+     어느 벽으로든 그냥 빠져나갔다. 대피 시나리오가 "문이 열리면 그리로 뛰어나간다"를
+     보여주는 것인데, 아무 벽으로나 나가면 그 연출이 성립하지 않는다.
+     ⚠️ **설비 밀어내기 뒤에 건다.** 벽 옆 설비에서 밀려나면서 벽을 뚫는 경우가 있어,
+        벽 검사가 마지막이어야 방 안에 확실히 남는다.
+     ⚠️ 남벽은 출입구 폭(0.95)만 열어 둔다. 사람 반경을 빼지 않고 **중심이 개구부 안**이면
+        통과시킨다 — 반경까지 빼면 통과 폭이 0.43m로 좁아져, 문에 세 명이 몰리는
+        대피 장면에서 서로 밀려난 사람이 문턱 앞에 갇힌다.
+     대피 목표점은 z1+0.18(문턱 바깥)이라 이 예외가 있어야 끝까지 걸어 나간다. */
+  const RM = LAYOUT.room;
+  if (pos.x < RM.x0 + PERSON_R) { pos.x = RM.x0 + PERSON_R; pushed = true; }
+  if (pos.x > RM.x1 - PERSON_R) { pos.x = RM.x1 - PERSON_R; pushed = true; }
+  if (pos.z < RM.z0 + PERSON_R) { pos.z = RM.z0 + PERSON_R; pushed = true; }
+  if (pos.z > RM.z1 - PERSON_R) {
+    const gx = doorGapCenterX();
+    if (gx === null || Math.abs(pos.x - gx) > 0.475) { pos.z = RM.z1 - PERSON_R; pushed = true; }
   }
   return pushed;
 }
