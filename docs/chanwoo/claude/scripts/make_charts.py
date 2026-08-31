@@ -24,7 +24,7 @@ EMBER   = "#FF6A32"   # 위험/정지/hero after
 TEAL    = "#3CC7C0"   # 안전/검출 win
 AMBERL  = "#F2B705"   # 참고(context)
 
-OUT = os.path.join(os.path.dirname(__file__), "..", "charts")
+OUT = os.path.join(os.path.dirname(__file__), "_generated")  # 생성 후 person/motion 폴더로 분류
 os.makedirs(OUT, exist_ok=True)
 
 def base_ax(figsize=(7.2, 4.6)):
@@ -140,48 +140,4 @@ title(ax, "예측 오차 · 라이브 제어 지평선 1.6초", "안전 판단�
 source(fig, "출처: prediction-eval.md 1.6s test · P0-1 split · scene 단위 95%CI")
 save(fig, "5_pred_ade.png")
 
-# =====================================================================
-# 6. 화재 — ablation (배경이 아니라 불을 본다)
-# =====================================================================
-fig, ax = base_ax(figsize=(6.6, 4.6))
-labels = ["불꽃 있음", "불꽃만 제거"]
-vals   = [0.808, 0.005]
-bars = ax.bar(labels, vals, color=[EMBER, GREY], width=0.5)
-barlabels(ax, bars, vals)
-ax.set_ylim(0, 1.0); ax.set_ylabel("화재 검출 recall", color=MUTED)
-title(ax, "배경이 아니라, 불을 본다", "합성 화면에서 불꽃만 지우면 검출이 사라짐 (ablation)  ·  0.81 → 0.005")
-source(fig, "출처: kitchen-fire-noise-poc README/TIMELINE · ablation 통과 · 음성 오탐 0/116")
-save(fig, "6_fire_ablation.png")
-
-# =====================================================================
-# 7. 화재 — 노이즈 강건성 (무너졌다 → 학습하면 회복)  sev5
-# =====================================================================
-fig, ax = base_ax(figsize=(8.4, 4.6))
-noises = ["저조도", "가우시안", "흑백화", "대비저하"]
-base   = [0.31, 0.00, 0.16, 0.60]
-modelA = [0.79, 0.31, 0.46, 0.76]
-x = range(len(noises)); w = 0.36
-b1 = ax.bar([i-w/2 for i in x], base,   w, color=GREY, label="증강 전 baseline (severity 5)")
-b2 = ax.bar([i+w/2 for i in x], modelA, w, color=TEAL, label="노이즈 증강 학습 후 (modelA)")
-barlabels(ax, b1, base, dy=0.008, size=10); barlabels(ax, b2, modelA, dy=0.008, size=10)
-ax.set_xticks(list(x)); ax.set_xticklabels(noises, color=INK, fontsize=12)
-ax.set_ylim(0, 1.0); ax.set_ylabel("화재 검출 recall (severity 5)", color=MUTED)
-title(ax, "노이즈에 무너졌다, 학습하면 회복", "현장 CCTV는 깨끗하지 않다 · 미리 겪게 한다  ·  단, 합성 분포 안에서")
-ax.legend(facecolor=BG, edgecolor=GRID, labelcolor=INK, fontsize=10, loc="upper right")
-source(fig, "출처: kitchen-fire-noise-poc TIMELINE §결과 · Phase A 저하 / Phase B modelA 회복 · 강도 0~5")
-save(fig, "7_fire_noise_robust.png")
-
-# =====================================================================
-# 8. 화재 — 합성 in-domain vs 실사 전이 (정직한 한계)
-# =====================================================================
-fig, ax = base_ax(figsize=(6.8, 4.6))
-labels = ["합성 in-domain\n(test 309장)", "실사 화재 전이\n(영상 5편)"]
-vals   = [0.81, 0.31]
-bars = ax.bar(labels, vals, color=[TEAL, EMBER], width=0.52)
-barlabels(ax, bars, vals)
-ax.set_ylim(0, 1.0); ax.set_ylabel("화재 검출 recall", color=MUTED)
-title(ax, "합성은 되지만, 실제 불 전이는 약하다", "정직한 한계 — 그래서 시뮬(v3) 커리큘럼으로 전환  ·  0.81 → 0.31(하한)")
-source(fig, "출처: kitchen-fire-noise-poc SUMMARY/DETAIL · realfire recall 0.31 하한 · v1~v3 일관 0.25~0.31")
-save(fig, "8_fire_transfer_honesty.png")
-
-print("\nDONE →", OUT)
+print("charts 1-5 ->", OUT, "  (화재는 fire_chart.py — 실사 0.899 기준)")
