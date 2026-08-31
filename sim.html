@@ -10755,7 +10755,11 @@ function drawDetPip(ctx, W, H){
     const fb = fireBoxNorm(cam);  if(fb) items.push({ id:"fire",  norm:fb, col:MIL_COLORS.fire,  tag:"fire "  + DEMO_FIRE_CONF  + "%" });
     const sb = smokeBoxNorm(cam); if(sb) items.push({ id:"smoke", norm:sb, col:MIL_COLORS.smoke, tag:"smoke " + DEMO_SMOKE_CONF + "%" });
   } else {
-    const pb = personBoxNorm(cam); if(pb) items.push({ id:"person", norm:pb, col:MIL_COLORS.person, tag:"person " + DEMO_PERSON_CONF + "%" });
+    /* 충돌 = 객체검출 + **ByteTrack 트래킹 ID**. 대본상 1명이라 트랙은 #1 로 고정 —
+       매 프레임 같은 id 를 달아 "한 사람을 계속 추적한다"를 보여준다(drawMilBoxes 의 #id 규약).
+       밀도구름·예측선(밀도 구름/이동선)은 corrVizOn 이 켠 3D 오버레이라 이 나디르 PiP 에
+       그대로 나온다 — 별도 그리기 없이 같은 화면에 얹힌다. */
+    const pb = personBoxNorm(cam); if(pb) items.push({ id:"person", norm:pb, col:MIL_COLORS.person, tag:"person " + DEMO_PERSON_CONF + "% #1" });
   }
   if(!DEMO_DET.sm) DEMO_DET.sm = {};
   const R = pipRect(), rsx = W / R.W, rsy = H / R.H;
