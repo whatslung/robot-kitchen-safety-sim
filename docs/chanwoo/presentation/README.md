@@ -29,12 +29,17 @@
    수치로 보임). 화재 정본 서사 = **합성 in-domain은 되지만(0.81) 실사 전이는 약함(0.31) →
    그래서 시뮬(v3) 커리큘럼**. `6·7·8`번 그래프가 이 정본 서사를 따른다.
 
-## 미완 — 박스 검출 이미지 (raw 프레임 필요)
+## 박스 검출 이미지 — before/after (`boxes/`)
 
-"검출 박스 친 이미지 before/after"는 **원본(raw) 프레임**이 있어야 생성 가능. 현재 로컬에 없음:
-- **실사**: Roboflow `overhead-person-szky0` 원본 필요 (`.env`의 `ROBOFLOW_API_KEY`) — 채우면
-  기성 vs 실사모델(HF `chanubc/overhead-person-yolo11`) before/after 자동 생성.
-- **합성**: `sim.html`(island 나디르 CAM11)에서 오버레이 없는 프레임 캡처 필요 — 기성 vs
-  나디르모델(HF `chanubc/robot-kitchen-nadir-yolo11s`) before/after 생성.
-- 모델·추론 파이프라인은 로컬에서 동작 확인됨(Colab 불필요). `assets/samples/*.jpg`는 이미
-  박스가 구워진 데모 출력이라 입력으로 못 씀.
+기성 YOLO11s(파인튜닝 전) vs 파인튜닝 모델의 사람 검출 박스 대비. **Colab 없이 로컬 CPU 추론**으로 생성.
+재생성: `python scripts/infer_boxes.py` (가중치는 HF 공개 저장소에서 자동 다운로드).
+
+| 파일 | before → after | 입력 프레임 | 모델 |
+|---|---|---|---|
+| `boxes/sim_person_ba.png` | 기성 3명 → 나디르 **10명** | sim.html 전체 나디르 캡처(오버레이 억제 `groundTruth`) | 기성 vs HF `chanubc/robot-kitchen-nadir-yolo11s` (합성 학습) |
+| `boxes/real_person_ba.png` | 기성 **0명** → 실사 **13명** | Roboflow `overhead-person-szky0` v3 **test 원본**(학습 0장) | 기성 vs HF `chanubc/overhead-person-yolo11` (실사 학습, recall 0.98) |
+
+- **합성**: 방 중앙 위 직교(ortho) 나디르로 캡처 → 사람이 작게 보이는 5m 나디르 도메인 = 기성 검출기가
+  무너지는 바로 그 조건. 라벨/오버레이 없는 clean RGB(`groundTruth(cam,{noDepth:true})`).
+- **실사**: Roboflow test 137장 중 대비가 큰 프레임 선택(before 0 / after 13). 실사 라벨 출처 CC BY 4.0.
+- `overhead-person-yolo11/assets/samples/*.jpg`는 이미 박스가 구워진 데모 출력이라 입력으로 쓰지 않음(원본 필요).
