@@ -632,6 +632,12 @@
     <button id="trajRunBtn">궤적 수집 시작</button>
   </div>
   <div class="hint">WORKFLOW 동선을 고정 간격으로 돌려 추가 인원 궤적을 <b>dataset/trajectories/</b>에 저장합니다.</div>
+  <div class="btnrow">
+    <button id="histVizBtn">동선 히스토리 그리기 (PNG 2장)</button>
+  </div>
+  <div class="hint">나디르(직하방)로 <b>A 동선 히스토리</b>(3역할 트레일·스테이션·로봇 링)와
+    <b>B 관측→예측 K=3</b>을 각각 PNG로 저장합니다. B의 예측 갈래는 백엔드
+    <code>/predict</code>가 켜져 있으면 <b>학습형</b>, 없으면 <b>예시 분기</b>입니다.</div>
 
   <div class="section">전문가 기능</div>
   <label class="row" style="cursor:pointer"><input type="checkbox" id="devMode" style="accent-color:#76b900">
@@ -12399,6 +12405,12 @@ $("trajRunBtn").addEventListener("click", async () => {
   try { await trajRun({ scenes: +$("trajScenes").value }); }
   finally { btn.disabled = false; btn.textContent = "궤적 수집 시작"; }
 });
+$("histVizBtn").addEventListener("click", async () => {
+  const btn = $("histVizBtn"), t = btn.textContent; btn.disabled = true; btn.textContent = "렌더 중…";
+  try { await renderHistoryOverlay(); }
+  catch (e) { console.error("[HISTVIZ]", e); setStatus("동선 히스토리 실패: " + (e.message || e)); }
+  finally { btn.disabled = false; btn.textContent = t; }
+});
 $("inspectorBtn").addEventListener("click", showInspector);
 
 /* 물리 · 안전 UI */
@@ -13066,6 +13078,8 @@ window.__sim = {
   WF, WORKFLOW, wfPlan, workflowTarget, personWorkflow,
   get TRAJ() { return TRAJ; },   // 선언이 이 블록보다 뒤 — TDZ 회피(EXTRAS·OVERLAP과 같은 규약)
   trajRun, trajRunScene,         // 궤적 데이터 수집(이슈 #2 2단계) — 함수 선언이라 hoisted
+  renderHistoryOverlay, histRunTrails, histRender, histNadirCam,   // 동선 히스토리 나디르 오버레이 PNG 2장(A 히스토리 · B 관측→예측)
+  get HISTVIZ() { return HISTVIZ; },   // 선언이 이 블록보다 뒤 — TDZ 회피(EXTRAS·OVERLAP과 같은 규약)
   resolvePeopleSeparation, makeRNG, armClearance, armContactUpdate,
   demoHazard, demoHazardClear, findHazardSpot, workOverlapUpdate,
   get OVERLAP() { return OVERLAP; },   // 선언이 이 블록보다 뒤 — 직접 넣으면 TDZ로 스크립트가 죽는다
@@ -14386,6 +14400,276 @@ async function trajRun(opts) {
   setStatus("궤적 수집 완료 — scene " + out.length + " (유효 " + kept + ")");
   return out;
 }
+
+/* ══ 동선 히스토리 오버레이 — 나디르 정지 PNG 2장 (발표용) ══════════════════════
+   왼쪽 슬라이드(Trajectory training sample)의 "전체 씬" 그림을 **실제 3D 주방**과
+   결합한다. CAM11 orthotop(직교 나디르)로 주방을 직하방으로 렌더한 뒤, 그 위에
+   조리원 역할별(prep·cook·carry) 실제 걸은 궤적을 색깔 폴리라인으로 얹는다.
+     A(history)  — 3역할 트레일 + 스테이션 마커 + 로봇 정지/감속 링.
+     B(predict)  — 한 명의 관측 8스텝 + 실제 미래 12스텝 + 예측 K=3 갈래(줌인).
+   궤적은 trajRunScene과 같은 고정 dt 스텝(GPU 무관)으로 뽑아 재현된다. */
+const HISTVIZ = {
+  seed: 10, seconds: 60, roles: ["prep", "cook", "carry"],
+  W: 1440, H: 1080,                                  // orthotop 8.9×6.675 = 4:3
+  col: { prep:"#3f6fd1", cook:"#e8703a", carry:"#37a05f", lead:"#9b59b6", wash:"#3fb0c4" },
+  ko:  { prep:"준비(prep)", cook:"조리(cook)", carry:"운반(carry)", lead:"리드(lead)", wash:"세척(wash)" },
+};
+/* 전용 나디르 직교 카메라 — orthotop 정의값(pos 1.375,5,1.85 · tgt 직하 · ortho 8.9×6.675 ·
+   noCeil)을 그대로 쓴다. orthotop CAM_DEF는 발표용 10대 정리에서 CAM_DEFS에서 splice돼
+   SURV로 안 만들어지므로(2026-08-24 결정), 여기서 직접 1대 세워 재사용한다.
+   layerMask: 하위 28비트(씬)에서 천장 비트만 뺀다 — 카메라 하우징은 상위 비트라 자동 제외. */
+let HIST_CAM = null;
+function histNadirCam() {
+  if (HIST_CAM) return HIST_CAM;
+  const c = new BABYLON.UniversalCamera("cam_histNadir", new V3(1.375, 5.0, 1.850), scene);
+  c.setTarget(new V3(1.375, 0, 1.851)); c.minZ = 0.05; c.maxZ = 40;
+  c.mode = BABYLON.Camera.ORTHOGRAPHIC_CAMERA;
+  const hw = 8.9 / 2, hh = 6.675 / 2;
+  c.orthoLeft = -hw; c.orthoRight = hw; c.orthoBottom = -hh; c.orthoTop = hh;
+  c.layerMask = 0x0FFFFFFF & ~((typeof CEIL_BIT !== "undefined") ? CEIL_BIT : 0);
+  HIST_CAM = c; return c;
+}
+/* trajRunScene의 궤적 부분만 재사용 — /traj POST·geom·discard 검사는 뺀다(발표 그림용). */
+async function histRunTrails(seed, seconds, roles) {
+  const saved = { seedBase: TRAJ.seedBase, wf: WF.on, gen: EXTRA_GEN };
+  try {
+    await trajWarmup();                              // 첫 스폰 워밍업 소진(스켈레톤 fit) — 없으면 3번째 인원이 멈춘다
+    TRAJ.seedBase = seed >>> 0; EXTRA_GEN = 0; RNG.reseed(seed); WF.on = true;
+    await spawnJobList(roles);                        // 내부에서 setExtraCount(0) 후 역할별 스폰
+    const nodes = trajNodes();
+    if (!nodes.length) throw new Error("스폰된 인원이 없다 — ?person=1·캐릭터 확인");
+    const subMs = TRAJ.subDt * 1000;
+    for (let e = 0; e < TRAJ.stabilizeSec * 1000; e += subMs) trajStep(subMs);   // 안정화(기록 안 함)
+    const perSnap = Math.max(1, Math.round(TRAJ.dt / TRAJ.subDt));
+    const snapDt = perSnap * TRAJ.subDt;
+    const steps = Math.round(seconds / snapDt);
+    trajSnap(nodes, 0);
+    for (let s = 1; s <= steps - 1; s++) {
+      for (let k = 0; k < perSnap; k++) trajStep(subMs);
+      trajSnap(nodes, s * snapDt);
+    }
+    return nodes.map(nd => ({ id: nd.id, job: nd.job, role: nd.role, frames: nd.frames }));
+  } finally {
+    TRAJ.seedBase = saved.seedBase; WF.on = saved.wf; EXTRA_GEN = saved.gen;
+  }
+}
+/* orthotop을 화면 밖 오프스크린으로 렌더 → 2D 캔버스에 얹고, 같은 카메라 행렬로 월드(x,z)→픽셀 투영.
+   orthoOverride 를 주면 직교 프러스텀을 그 창으로 좁혀(줌인) B용 확대 프레임을 만든다. */
+async function histRender(drawFn, orthoOverride, filename) {
+  const cam = histNadirCam();
+  const prevW = engine.getRenderWidth(), prevH = engine.getRenderHeight();
+  const so = { l:cam.orthoLeft, r:cam.orthoRight, b:cam.orthoBottom, t:cam.orthoTop };
+  const pNode = (typeof person !== "undefined" && person.node) ? person.node : null;
+  const pWas = pNode ? pNode.isEnabled() : null;
+  try {
+    if (pNode) pNode.setEnabled(false);              // 주인공은 트레일이 없다 — 깔끔하게 뺀다
+    if (orthoOverride) { cam.orthoLeft = orthoOverride.l; cam.orthoRight = orthoOverride.r;
+                         cam.orthoBottom = orthoOverride.b; cam.orthoTop = orthoOverride.t; }
+    engine.setSize(HISTVIZ.W, HISTVIZ.H);
+    scene.render();                                  // 리사이즈 직후 첫 프레임 드롭 방지
+    const r = await renderWith(cam, null, null, { wait: true });
+    const cv = document.createElement("canvas"); cv.width = r.w; cv.height = r.h;
+    const ctx = cv.getContext("2d");
+    const im = ctx.createImageData(r.w, r.h);
+    for (let y = 0; y < r.h; y++) {                  // readPixels 하단 원점 → 상하 반전
+      const s = (r.h - 1 - y) * r.w * 4, d = y * r.w * 4;
+      im.data.set(r.data.subarray(s, s + r.w * 4), d);
+    }
+    ctx.putImageData(im, 0, 0);
+    const tr = cam.getViewMatrix().multiply(cam.getProjectionMatrix(true));
+    const vp = new BABYLON.Viewport(0, 0, r.w, r.h);
+    const project = (x, z) => { const p = BABYLON.Vector3.Project(new V3(x, 0.02, z),
+                                  BABYLON.Matrix.Identity(), tr, vp); return [p.x, p.y]; };
+    drawFn(ctx, r.w, r.h, project);
+    const data = cv.toDataURL("image/png");
+    const a = document.createElement("a"); a.href = data; a.download = filename; a.click();
+    return data;
+  } finally {
+    cam.orthoLeft = so.l; cam.orthoRight = so.r; cam.orthoBottom = so.b; cam.orthoTop = so.t;
+    if (pNode && pWas) pNode.setEnabled(true);
+    engine.setSize(prevW, prevH); engine.resize(); applyCameras();
+  }
+}
+/* ── 캔버스 그리기 헬퍼 (3D 배경 위 가독성 위해 어두운 헤일로를 깐다) ── */
+function histStroke(ctx, pts, color, width, alpha, dash) {
+  if (!pts || pts.length < 2) return;
+  const line = () => { ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]); ctx.stroke(); };
+  ctx.save(); ctx.globalAlpha = alpha == null ? 1 : alpha; ctx.lineJoin = "round"; ctx.lineCap = "round";
+  if (dash) ctx.setLineDash(dash);
+  ctx.strokeStyle = "rgba(12,16,22,0.55)"; ctx.lineWidth = width + 2.5; line();
+  ctx.strokeStyle = color; ctx.lineWidth = width; line();
+  ctx.restore();
+}
+function histMarker(ctx, p, color, filled) {
+  ctx.save(); ctx.beginPath(); ctx.arc(p[0], p[1], 6, 0, Math.PI * 2); ctx.lineWidth = 2.5;
+  ctx.strokeStyle = filled ? "rgba(12,16,22,0.7)" : color;
+  ctx.fillStyle = filled ? color : "rgba(20,24,30,0.55)"; ctx.fill();
+  if (!filled) { ctx.strokeStyle = color; } ctx.stroke(); ctx.restore();
+}
+function histText(ctx, s, x, y, color, font, align) {
+  ctx.save(); ctx.font = font; ctx.textAlign = align || "left"; ctx.textBaseline = "middle";
+  ctx.lineWidth = 3.5; ctx.strokeStyle = "rgba(8,10,14,0.8)"; ctx.strokeText(s, x, y);
+  ctx.fillStyle = color; ctx.fillText(s, x, y); ctx.restore();
+}
+function histTitle(ctx, w, h, title, sub) {
+  histText(ctx, title, 28, 40, "#f2f5f8", "700 30px system-ui,sans-serif", "left");
+  histText(ctx, sub, 28, 72, "#aeb6bf", "500 18px system-ui,sans-serif", "left");
+}
+function histArrow(ctx, a, b, col, wdt) {
+  const ang = Math.atan2(b[1] - a[1], b[0] - a[0]), s = 9 + wdt;
+  ctx.save(); ctx.fillStyle = col; ctx.strokeStyle = "rgba(8,10,14,0.6)"; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(b[0], b[1]);
+  ctx.lineTo(b[0] - s * Math.cos(ang - 0.42), b[1] - s * Math.sin(ang - 0.42));
+  ctx.lineTo(b[0] - s * Math.cos(ang + 0.42), b[1] - s * Math.sin(ang + 0.42));
+  ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();
+}
+/* 로봇 점 + 정지/감속 링 + 스테이션 마커(슬라이드의 사각+라벨). goals = 그릴 스테이션 키 집합. */
+function histBase(ctx, w, h, project, goals) {
+  const rb = LAYOUT.robot.base, c0 = project(rb.x, rb.z);
+  const rpx = R => { const p = project(rb.x + SCALE.au(R), rb.z); return Math.hypot(p[0] - c0[0], p[1] - c0[1]); };
+  const ring = (R, color, label) => {
+    ctx.save(); ctx.setLineDash([9, 7]); ctx.lineWidth = 2; ctx.strokeStyle = color;
+    ctx.beginPath(); ctx.arc(c0[0], c0[1], rpx(R), 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+    histText(ctx, label, c0[0], c0[1] - rpx(R) - 10, color, "600 13px system-ui,sans-serif", "center");
+  };
+  ring(SAFE.slowR, "#e0a63a", "감속 " + SAFE.slowR.toFixed(1) + "m");
+  ring(SAFE.stopR, "#e2695f", "정지 " + SAFE.stopR.toFixed(1) + "m");
+  for (const key of goals) {
+    const st = STATION[key]; if (!st || !st.pos) continue;
+    const p = project(st.pos.x, st.pos.z);
+    if (p[0] < -40 || p[0] > w + 40 || p[1] < -40 || p[1] > h + 40) continue;
+    ctx.save(); ctx.fillStyle = "rgba(222,228,233,0.9)"; ctx.fillRect(p[0] - 4, p[1] - 4, 8, 8);
+    ctx.strokeStyle = "rgba(70,78,88,0.9)"; ctx.lineWidth = 1; ctx.strokeRect(p[0] - 4, p[1] - 4, 8, 8); ctx.restore();
+    histText(ctx, key, p[0] + 7, p[1], "rgba(230,235,240,0.95)", "500 13px system-ui,sans-serif", "left");
+  }
+  ctx.save(); ctx.beginPath(); ctx.arc(c0[0], c0[1], 7, 0, Math.PI * 2);
+  ctx.fillStyle = "#111"; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = "#fff"; ctx.stroke(); ctx.restore();
+  histText(ctx, "robot", c0[0], c0[1] - 18, "#f2f5f8", "700 14px system-ui,sans-serif", "center");
+}
+function histDrawA(nodes) {
+  const goals = new Set(); nodes.forEach(n => n.frames.forEach(f => { if (f.goal) goals.add(f.goal); }));
+  return (ctx, w, h, project) => {
+    histBase(ctx, w, h, project, goals);
+    for (const nd of nodes) {
+      const col = HISTVIZ.col[nd.job] || "#cccccc";
+      const pts = nd.frames.map(f => project(f.x, f.z));
+      histStroke(ctx, pts, col, 3.2, 0.92);
+      histMarker(ctx, pts[0], col, false);
+      histMarker(ctx, pts[pts.length - 1], col, true);
+    }
+    histTitle(ctx, w, h, "동선 히스토리 · 나디르(직하방)",
+              "조리원 " + nodes.length + "명 · WORKFLOW 동선 · " + HISTVIZ.seconds + "s · ○시작 ●끝");
+    // 범례
+    ctx.save(); let x = 28, y = h - 34;
+    for (const nd of nodes) {
+      const col = HISTVIZ.col[nd.job] || "#ccc", lab = HISTVIZ.ko[nd.job] || nd.job;
+      ctx.fillStyle = col; ctx.fillRect(x, y - 3, 28, 5);
+      histText(ctx, lab, x + 36, y, "#e6eaee", "600 17px system-ui,sans-serif", "left");
+      ctx.font = "600 17px system-ui,sans-serif"; x += 36 + ctx.measureText(lab).width + 30;
+    }
+    ctx.restore();
+  };
+}
+/* B용 창 선택 — 가장 긴 트레일에서 목표가 바뀌는(경로가 꺾이는) 지점을 관측8·예측12가 담기게. */
+function histPickWindow(nodes) {
+  const sorted = nodes.slice().sort((a, b) => b.frames.length - a.frames.length);
+  for (const nd of sorted) {
+    const f = nd.frames; if (f.length < 22) continue;
+    for (let i = 8; i <= f.length - 13; i++)
+      if (f[i].moving && f[i].goal && f[i + 1] && f[i].goal !== f[i + 1].goal) return { nd, now: i };
+  }
+  const nd = sorted[0]; return { nd, now: Math.min(Math.max(8, nd.frames.length >> 1), nd.frames.length - 13) };
+}
+async function histPredictModes(obs) {                // 백엔드 /predict = 실제 학습형 예측기(있을 때만)
+  if (BACKEND.ok !== true) return null;
+  try {
+    const r = await fetch("/predict", { method: "POST", headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify({ hist: obs.map(f => [f.x, f.z]) }) });
+    if (!r.ok) return null;
+    const j = await r.json();
+    const modes = (j.modes || []).map(m => ({ path: m.path, w: m.w }));
+    return modes.length ? modes : null;
+  } catch (e) { return null; }
+}
+function histConstructModes(obs, gt) {                // 백엔드 부재 시 예시 분기(진행방향 유지 + 좌우 2갈래)
+  const p = obs[obs.length - 1], v = { x: p.x - obs[0].x, z: p.z - obs[0].z };
+  const n = Math.hypot(v.x, v.z) || 1, ux = v.x / n, uz = v.z / n;
+  let reach = 0; for (let i = 0; i < gt.length; i++) {
+    const a = i ? gt[i - 1] : p; reach += Math.hypot(gt[i].x - a.x, gt[i].z - a.z); }
+  const L = Math.max(1.6, reach);
+  const mk = (ang, len, wt) => {
+    const c = Math.cos(ang), s = Math.sin(ang), dx = ux * c - uz * s, dz = ux * s + uz * c;
+    const path = []; for (let i = 1; i <= 12; i++) { const t = i / 12; path.push([p.x + dx * len * t, p.z + dz * len * t]); }
+    return { path, w: wt };
+  };
+  return [mk(0, L, 0.55), mk(0.5, L * 0.85, 0.28), mk(-0.5, L * 0.8, 0.17)];
+}
+function histDrawB(nodes, win, modes, usedBackend) {
+  const nd = win.nd, now = win.now;
+  const obs = nd.frames.slice(now - 7, now + 1), gt = nd.frames.slice(now + 1, now + 13);
+  const goals = new Set(); nd.frames.forEach(f => { if (f.goal) goals.add(f.goal); });
+  const cols = ["#d6478f", "#4f8cff", "#eaa43c"];
+  return (ctx, w, h, project) => {
+    histBase(ctx, w, h, project, goals);
+    const po = obs.map(f => project(f.x, f.z)), nowP = po[po.length - 1];
+    const pg = [nowP].concat(gt.map(f => project(f.x, f.z)));
+    histStroke(ctx, pg, "#9aa4ad", 3, 0.9, [8, 7]);                 // 실제 미래(GT)
+    histStroke(ctx, po, "#2f6fdb", 4, 0.95); po.forEach(pp => histMarker(ctx, pp, "#2f6fdb", true));  // 관측
+    modes.forEach((m, i) => {                                       // 예측 K=3
+      const pts = [nowP].concat(m.path.map(([x, z]) => project(x, z)));
+      const col = cols[i % cols.length], wd = 2.4 + 4.6 * (m.w || 0.3);
+      histStroke(ctx, pts, col, wd, 0.95);
+      histArrow(ctx, pts[pts.length - 2], pts[pts.length - 1], col, wd);
+      const e = pts[pts.length - 1];
+      histText(ctx, Math.round((m.w || 0) * 100) + "%", e[0] + 9, e[1], col, "700 15px system-ui,sans-serif", "left");
+    });
+    histMarker(ctx, nowP, "#1f5fd0", true);
+    histText(ctx, "now", nowP[0] + 11, nowP[1] - 2, "#dfe7f2", "700 16px system-ui,sans-serif", "left");
+    histTitle(ctx, w, h, "관측 → 예측 (K=3)",
+              (HISTVIZ.ko[nd.job] || nd.job) + " · 관측 8(3.2s) → 예측 12(4.8s) · " +
+              (usedBackend ? "학습형 예측기" : "예시 분기(백엔드 미가동)"));
+    ctx.save(); let x = 28, y = h - 34;
+    const leg = (color, label, dash) => {
+      ctx.save(); if (dash) ctx.setLineDash([7, 6]); ctx.strokeStyle = color; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 30, y); ctx.stroke(); ctx.restore();
+      histText(ctx, label, x + 38, y, "#e6eaee", "600 16px system-ui,sans-serif", "left");
+      ctx.font = "600 16px system-ui,sans-serif"; x += 38 + ctx.measureText(label).width + 26;
+    };
+    leg("#2f6fdb", "관측 8", false); leg("#9aa4ad", "실제 미래 12", true); leg(cols[0], "예측 K=3", false);
+    ctx.restore();
+  };
+}
+/* 진입점 — __sim.renderHistoryOverlay(). PNG 2장(A·B) 저장 + dataURL 반환. */
+async function renderHistoryOverlay(opts) {
+  opts = opts || {};
+  const roles = opts.roles || HISTVIZ.roles, seconds = opts.seconds || HISTVIZ.seconds;
+  const seed = (opts.seed != null ? opts.seed : HISTVIZ.seed) >>> 0, stamp = Date.now();
+  setStatus("동선 히스토리 — 시뮬 " + seconds + "s 스텝 중…");
+  const nodes = await histRunTrails(seed, seconds, roles);
+  setStatus("동선 히스토리 — A(히스토리) 렌더…");
+  const a = await histRender(histDrawA(nodes), null, "history_A_nadir_" + stamp + ".png");
+  const win = histPickWindow(nodes);
+  const obs = win.nd.frames.slice(win.now - 7, win.now + 1), gt = win.nd.frames.slice(win.now + 1, win.now + 13);
+  let modes = await histPredictModes(obs); const usedBackend = !!modes;
+  if (!modes) modes = histConstructModes(obs, gt);
+  const xs = [], zs = [];                              // B 줌: 관측+미래+예측을 담는 창
+  obs.concat(gt).forEach(f => { xs.push(f.x); zs.push(f.z); });
+  modes.forEach(m => m.path.forEach(([x, z]) => { xs.push(x); zs.push(z); }));
+  let minx = Math.min(...xs) - 1.0, maxx = Math.max(...xs) + 1.0,
+      minz = Math.min(...zs) - 1.0, maxz = Math.max(...zs) + 1.0;
+  const asp = HISTVIZ.W / HISTVIZ.H, bw = maxx - minx, bh = maxz - minz;
+  if (bw / bh > asp) { const nh = bw / asp, cz = (minz + maxz) / 2; minz = cz - nh / 2; maxz = cz + nh / 2; }
+  else { const nw = bh * asp, cx = (minx + maxx) / 2; minx = cx - nw / 2; maxx = cx + nw / 2; }
+  const cam = histNadirCam(), cX = cam.position.x, cZ = cam.position.z;
+  const ov = { l: minx - cX, r: maxx - cX, b: minz - cZ, t: maxz - cZ };
+  setStatus("동선 히스토리 — B(관측→예측) 렌더…" + (usedBackend ? " (학습형)" : " (예시)"));
+  const b = await histRender(histDrawB(nodes, win, modes, usedBackend), ov, "history_B_predict_" + stamp + ".png");
+  await setExtraCount(0);
+  setStatus("동선 히스토리 완료 — PNG 2장 저장" + (usedBackend ? "" : " · B는 예시 분기(백엔드 켜면 학습형)"));
+  return { a, b, usedBackend };
+}
+
 /* 역할을 지정해 인원을 추가한다. 회의 요구의 A/B/C가 이것으로 만들어진다. */
 /* 추가 인원 상한 — 주인공 포함 4명. 통로가 좁아 그 이상은 동선이 뭉개진다
    (「추가 인원」 슬라이더가 2로 제한된 것과 같은 이유). 종전에는 상한도 제거 수단도
