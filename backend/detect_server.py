@@ -411,21 +411,30 @@ def _get_predictor():
     try:
         import sys
         sys.path.insert(0, str(_ROOT))
-        from trajectory.learned_predictor import LearnedPredictor
+        from trajectory.learned_predictor import (
+            LearnedPredictor, build_net, build_transformer_net)
+        # 아키텍처 선택: PREDICT_NET=transformer 면 self-attention 인코더, 기본은 LSTM.
+        #   두 아키텍처는 head·출력 계약(paths/logits/logsig)이 같아 LearnedPredictor를
+        #   그대로 재사용한다. 기본 허브 repo도 아키텍처에 맞춰 갈라진다.
+        net_kind = os.environ.get("PREDICT_NET", "lstm").strip().lower()
+        is_tf = net_kind in ("transformer", "tf", "xf")
+        net = build_transformer_net() if is_tf else build_net()
+        default_repo = "chanubc/human-move-transformer" if is_tf else "chanubc/human-move-lstm"
+        default_local = "model_tf.pt" if is_tf else "model.pt"
         # YOLO와 동일: 로컬 가중치 있으면 그대로, 없으면 허깅페이스 허브에서 받아 캐시.
         # → 팀원은 재학습 없이 서버만 켜면 된다. 재학습본 스왑: PREDICT_MODEL=경로/model.pt
-        w = Path(os.environ.get("PREDICT_MODEL", str(_ROOT / "training" / "traj_predictor" / "model.pt")))
+        w = Path(os.environ.get("PREDICT_MODEL", str(_ROOT / "training" / "traj_predictor" / default_local)))
         if w.exists():
             wpath = str(w)
         else:
-            repo = os.environ.get("PREDICT_MODEL_REPO", "chanubc/human-move-lstm")
+            repo = os.environ.get("PREDICT_MODEL_REPO", default_repo)
             file = os.environ.get("PREDICT_MODEL_FILE", "model.pt")
             print(f"[detect_server] 예측기 가중치 로컬 없음 ({w}) → 허브에서 받는다: {repo}/{file}")
             from huggingface_hub import hf_hub_download
             wpath = hf_hub_download(repo_id=repo, filename=file)
             print(f"[detect_server] 허브 캐시: {wpath}")
-        _PREDICTOR = LearnedPredictor(weights_path=wpath, device="cpu")
-        print(f"[detect_server] 궤적 예측기 로드: {wpath}")
+        _PREDICTOR = LearnedPredictor(weights_path=wpath, net=net, device="cpu")
+        print(f"[detect_server] 궤적 예측기 로드({net_kind}): {wpath}")
     except Exception as e:                # noqa: BLE001
         _PREDICTOR_ERR = str(e)
         print(f"[detect_server] 궤적 예측기 로드 실패 → /predict 비활성 ({e})")

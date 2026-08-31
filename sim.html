@@ -7112,8 +7112,18 @@ function densUpdate(dtMs) {
           const dx = wx - g.x, dz = wz - g.z;
           const rr = 3 * (g.sAlong > g.sAcross ? g.sAlong : g.sAcross);
           if (dx > rr || dx < -rr || dz > rr || dz < -rr) continue;   // 회전 계산 전 컷
-          const al = dx*g.ux + dz*g.uz, ac = -dx*g.uz + dz*g.ux;
-          const a1 = al/g.sAlong, a2 = ac/g.sAcross, q = a1*a1 + a2*a2;
+          /* 성분 좌표계로 정규화. ux,uz는 **진행 방향 단위벡터**여야 회전(al=따라,ac=가로)이
+             성립한다. 학습형(LSTM/Transformer) 등방 블롭은 방향이 없어 ux=uz=0으로 들어오는데,
+             그대로 투영하면 al=ac=0 → q=0 → 3σ 박스 전체가 균일 채움(=사각형 구름)이 된다.
+             방향이 없으면 등방이므로 회전 없이 **반경 가우시안**으로 평가한다(sAlong==sAcross → 원). */
+          let a1, a2;
+          if (g.ux || g.uz) {
+            const al = dx*g.ux + dz*g.uz, ac = -dx*g.uz + dz*g.ux;
+            a1 = al/g.sAlong; a2 = ac/g.sAcross;
+          } else {
+            a1 = dx/g.sAlong; a2 = dz/g.sAcross;
+          }
+          const q = a1*a1 + a2*a2;
           if (q < 18) {
             const v = g.w * Math.exp(-0.5*q);
             acc += v*v*v*v;                      // p=4 노름 — max보다 이음새가 매끈하다
