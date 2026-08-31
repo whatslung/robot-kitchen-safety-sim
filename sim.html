@@ -10427,7 +10427,14 @@ function drawOverlay() {
       drawCctvHud(ctx, R.x*sx, R.y*sy, R.w*sx, R.h*sy, pipView, true, true);
     }
   }
-  drawMilBoxes(ctx, overlayCv.width, overlayCv.height, SURV[mainView] ? mainView : MIL.cam);
+  /* ⚠️ 메인이 연출 시점(free)일 때 CCTV 박스를 그리면 **안 된다** (2026-08-31).
+     종전에는 SURV[mainView]가 없으면 MIL.cam("cvN")을 넘겼는데, 그러면 cvN에서 뽑은
+     정규좌표가 연출 카메라 화면에 그대로 찍힌다 — 좌표계가 달라 **엉뚱한 자리에 박스가 뜬다**.
+     ④에서 CCTV로 컷을 넘기던 동안에는 안 드러났고, ⑤ 대피(자유 시점)에서만 조용히 틀렸다.
+     그 컷을 없앤 지금은 ④부터 바로 보이므로 여기서 막는다.
+     화재 박스는 아래 drawFireBox가 메인 카메라 기준으로 따로 그린다. */
+  drawMilBoxes(ctx, overlayCv.width, overlayCv.height, SURV[mainView] ? mainView : null);
+  drawFireBox(ctx, overlayCv.width, overlayCv.height);
   drawBirdseye(ctx, overlayCv.width, overlayCv.height);
 }
 /* 모델 출력 박스 — 화면 오버레이와 캡처가 **같은 그림**을 쓰도록 떼어냈다.
@@ -10498,6 +10505,133 @@ function drawBirdseye(ctx, W, H) {
     ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.beginPath();   // 예측 경로 선
     ctx.moveTo(pp[0][0], pp[0][1]); for (const q of pp) ctx.lineTo(q[0], q[1]); ctx.stroke();
   }
+  ctx.restore();
+}
+/* 박스에 찍히는 신뢰도. 고정값인 것을 숨기지 않는다 — 추론이 아니기 때문이다(drawFireBox 주석). */
+const DEMO_FIRE_CONF = 96;
+/* 불꽃 몸통으로 볼 높이(유면 기준, m). 박스 크기 손잡이는 이것 하나다.
+   0.75 = 솥 림(0.76) 위로 조금. 키우면 연기 기둥까지 먹고, 줄이면 유면에 붙은 띠가 된다. */
+const FIRE_BOX_H = 0.75;
+/* 화재 박스 상태. **DEMO 객체에 넣지 않는다** — DEMO 는 이 줄보다 한참 아래에서 const 로
+   선언되는데 drawOverlay 는 초기화 중에 이미 한 번 돈다. TDZ 라서 `typeof DEMO` 조차
+   ReferenceError 를 던지고(typeof 가드는 *미선언* 변수만 막는다) 초기화가 통째로 죽는다.
+   실측: "Cannot access 'DEMO' before initialization" 으로 씬이 아예 안 떴다.
+   ④ demoDetectOn 이 on 을 켜고, ① demoNormalWork · demoReset 이 끈다.
+     on — 감지 비트를 지났는가. before 는 그 비트가 없으므로 끝까지 false 다.
+     sm — 직전 프레임 박스(떨림 완화용). 컷이 바뀌면 null 로 끊는다. */
+const FIRE_BOX = { on:false, sm:null, view:null };
+/* 발화 → 감지까지 둘 재현 지연(ms). **화재 감지 시스템의 성능을 말하는 숫자**이므로
+   비트 시각에 맡기지 않는다 — 아래 demoTick 의 감지 분기가 이 값을 쓴다. */
+/* 발화 → 감지 지연(ms).
+   ⚠️ **③ 자막보다 먼저 감지되면 안 된다.** 0.8초로 줄였더니 ④(15.6초)가 ③(16.0초)보다
+      앞서 나와 화면이 "감지했습니다 → 불이 붙었습니다" 순서가 됐다(실측).
+   그래서 ③ 비트를 **13초**로 당겨 점화를 확정시킨다 — 자연 발화(실측 13.9~15.9초)보다
+   먼저라 demoIgnite 가 반드시 먼저 걸리고, `state.fire` 가 켜지면 과열 모델의
+   "눌어붙은 기름이 발화했습니다" 는 스스로 건너뛴다(그쪽 `if (state.fire) return`).
+   즉 ③ → ④ 순서가 구조로 보장되므로 지연을 0.9초까지 줄일 수 있다. */
+const DEMO_DETECT_LAG = 800;
+/* ③ "불이 붙었습니다" 자막을 띄우는 시각(발화 기준, ms). **감지보다 반드시 앞서야 한다.**
+   ⚠️ 비트 시각에 맡기면 안 된다 — 자연 발화 시각이 회차마다 12.2~15.9초로 흔들려서,
+      비트를 13초에 두면 어떤 회차는 발화 12.2초 → 감지 13.1초 → ③ 비트 13.0초로
+      **간격이 0.1초까지 좁아진다**(실측). 조금만 더 빨리 붙으면 순서가 뒤집힌다.
+   발화 시각에 같이 매달아 두면 언제 붙든 ③ → ④ 간격이 항상 0.5초로 고정된다. */
+const DEMO_IGNITE_MSG_LAG = 300;
+/* 발화 → 쓰러짐(ms). **before 전용.**
+   종전에는 흡입량(SMOKE.FAINT 4.45)만 끌었는데, 실측 발화 12.2초 → 쓰러짐 23.6초로
+   **11.4초**가 걸렸다 — 불이 난 뒤 화면이 한참 그대로다(사용자 지적).
+   흡입 모델은 그대로 두고(연기 농도·가시성은 그게 만든다) **쓰러지는 시각만** 발화에
+   매단다. 흡입 임계가 먼저 오면 그쪽이 이긴다 — 둘 중 빠른 쪽이다.
+   ⚠️ 희생자가 쓰러질 자리까지 걸어갈 시간은 남겨야 한다 — 대기 자리에서 약 1.9m,
+      1.5㎧ 로 1.3초. 4.2초면 도착하고 1초 정도 서 있다 눕는다. */
+const DEMO_COLLAPSE_LAG = 4200;
+/* ⚠️ **끌 때는 오버레이를 즉시 다시 그려야 한다** (2026-08-31, 사용자 지적).
+   렌더 루프는 `engine.runRenderLoop(() => scene.render())` 뿐이고, `drawOverlay()` 는
+   **주기 갱신에서만** 돈다. 그래서 on 을 false 로 내려도 캔버스에 이미 그려진 박스는
+   **다음 갱신이 올 때까지 그대로 남는다** — 컷이 대피 장면으로 넘어간 뒤에도 불 박스가
+   사람 위에 떠 있었다(사용자 지적). 플래그를 내리는 것과 지우는 것이 한 동작이어야 한다.
+   ⚠️ drawFireBox 안에서는 부르지 않는다 — 그쪽은 drawOverlay 가 부르는 중이라 재귀가 된다. */
+function fireBoxOff() {
+  FIRE_BOX.on = false; FIRE_BOX.sm = null;
+  if (window.__overlayReady && typeof drawOverlay === "function") drawOverlay();
+}
+
+/* ══ 화재 박스 — **메인 화면(연출 카메라)에 그린다** (2026-08-31) ══════════════
+   왜 검출 마스크 경로(milMaskBoxes)를 안 쓰나 — **그 경로로는 불이 나올 수가 없다.**
+   불은 파티클(firePS)이고, milMaskBoxes 는 마스크를 만들 때 `scene.particlesEnabled=false`
+   로 파티클을 꺼 놓고 **메시만** 클래스 색으로 칠한다. 게다가 classOfMesh 에는 "fire"를
+   돌려주는 규칙이 아예 없다(person·robot·kettle·equip·env 뿐). 그래서 mock 검출은
+   솥과 설비는 잡아도 화재는 구조적으로 못 잡는다 — 실측에서도 그랬다.
+   데이터셋 쪽은 gtParticleMask 로 파티클을 마스크에 따로 그려 넣어서 잡는다(fire 7,545px).
+   → 그 경로(3초마다 오프스크린 렌더 한 장)를 발표 화면으로 끌어오는 대신, 불꽃 입자의
+     월드 AABB 를 화면에 투영해 **테두리만** 친다. 렌더가 늘지 않아 화면이 안 끊긴다.
+   ⚠️ 이것은 '추론'이 아니라 아는 위치를 그리는 것이다. mock 검출도 GT 마스크를 보고
+      그리는 같은 성격이라(그쪽 주석의 "완벽한 검출") 정직성 수준은 달라지지 않는다.
+      실제 추론의 근거는 우하단 실영상 패널이 따로 맡는다. */
+function drawFireBox(ctx, W, H) {
+  if (!FIRE_BOX.on || !state.fire) { FIRE_BOX.sm = null; return; }
+  /* 사용자가 카메라 탭에서 시점을 직접 바꾼 경우 — 데모 컷이 아니라 이름이 바뀐다. */
+  if (FIRE_BOX.view && mainView !== FIRE_BOX.view) { FIRE_BOX.on = false; FIRE_BOX.sm = null; return; }
+  const cam = camOf(mainView);
+  if (!cam) { FIRE_BOX.sm = null; return; }
+  /* 입자 위치는 **월드 기준**이다 — emitter 를 노드에 붙이지 않고 좌표로 넘겼다(firePS 정의).
+     배열이 비면 아직 배출 전이거나 방금 꺼진 것이라 그리지 않는다. */
+  const ps = firePS.particles;
+  if (!ps || !ps.length) { FIRE_BOX.sm = null; return; }
+  /* ⚠️ **월드 AABB 8꼭짓점 방식은 버렸다** (2026-08-31, 실측 실패).
+     두 가지가 동시에 틀렸다.
+       ① 불꽃 입자는 gravity(0,1.6,0)·life 0.85s 로 **2.74m 까지 솟는다**(솥 림 0.76m).
+          그 꼭대기까지 AABB 에 넣으니 박스가 솥이 아니라 **연기 기둥**을 감쌌다.
+       ② AABB 꼭짓점 중 카메라에 바싹 붙은 것이 생기면 투영이 튄다 — 실측 raw 박스가
+          x 1441 · w 2251(화면 폭 978)로 화면 밖으로 2.3배 벗어났다.
+     → 입자를 **하나씩 투영**하고 **백분위(3~97%)**로 자른다. 튀는 입자와 높이 뜬 입자가
+       같이 걸러져 솥 안 불꽃 덩어리만 남는다. 270개 정렬은 프레임당 무시할 비용이다. */
+  const view = cam.getViewMatrix(true);
+  const m = view.multiply(cam.getProjectionMatrix(true));
+  const vp = new BABYLON.Viewport(0, 0, 1, 1);
+  /* **높이는 월드에서 자른다** — 화면 백분위로만 자르면 카메라 각도에 따라 자르는 높이가
+     달라진다. 요청은 "솥 안의 불"이므로 유면(F.oilY)에서 FIRE_BOX_H 위까지만 불꽃 몸통으로
+     본다. 그 위는 연기 쪽으로 넘어가는 구간이라 박스에 넣으면 솥이 아니라 기둥을 감싼다
+     (실측: 입자가 2.74m 까지 솟는데 솥 림은 0.76m 다). */
+  const yCap = F.oilY + FIRE_BOX_H;
+  const xs = [], ys = [];
+  for (const q of ps) {
+    const w = q.position;
+    if (w.y > yCap) continue;
+    /* 카메라 뒤로 넘어간 입자는 Project 가 화면 안쪽으로 접어 넣는다 — 반드시 버린다. */
+    if (BABYLON.Vector3.TransformCoordinates(w, view).z <= 0.05) continue;
+    const pr = BABYLON.Vector3.Project(w, BABYLON.Matrix.Identity(), m, vp);
+    xs.push(pr.x); ys.push(pr.y);
+  }
+  if (xs.length < 8) { FIRE_BOX.sm = null; return; }   // 표본이 적으면 박스가 요동친다
+  xs.sort((a,c)=>a-c); ys.sort((a,c)=>a-c);
+  const q = (arr, t) => arr[Math.min(arr.length-1, Math.max(0, Math.round((arr.length-1)*t)))];
+  /* 높이는 이미 월드에서 잘랐으므로 여기서는 **튀는 입자만** 떨군다(3~97%). */
+  const sx0 = q(xs, 0.03), sx1 = q(xs, 0.97), sy0 = q(ys, 0.03), sy1 = q(ys, 0.97);
+  let b = { x:sx0*W, y:sy0*H, w:(sx1-sx0)*W, h:(sy1-sy0)*H };
+  /* 떨림 완화. 불꽃은 매 프레임 모양이 바뀌어 AABB 가 몇 px 씩 흔들린다 — 실제 검출기도
+     떨지만, 안 잡아 주면 '박스가 부글거린다'로 보인다. 0.25 는 따라가는 티는 나되
+     부글거림은 안 보이는 값이다. 화면이 바뀌면(회차·컷) null 로 끊어 새로 잡는다. */
+  /* ⚠️ 큰 점프는 **이어 붙이지 않는다.** 컷 전환·창 크기 변경·첫 등장에서 직전 박스를
+     끌고 가면 박스가 엉뚱한 데서 미끄러져 들어온다 — 실측: 오버레이가 0→978 로 잡히는
+     순간 (0,0)에서 화면을 가로질러 기어왔다. 화면 폭 20% 넘게 벌어지면 그냥 갈아탄다. */
+  const sm = (FIRE_BOX.sm && Math.abs(FIRE_BOX.sm.x - b.x) < W*0.2
+                          && Math.abs(FIRE_BOX.sm.y - b.y) < H*0.2) ? FIRE_BOX.sm : null;
+  if (sm) { const k = 0.25;
+    b = { x: sm.x+(b.x-sm.x)*k, y: sm.y+(b.y-sm.y)*k,
+          w: sm.w+(b.w-sm.w)*k, h: sm.h+(b.h-sm.h)*k }; }
+  FIRE_BOX.sm = b;
+  if (b.w < 2 || b.h < 2) return;
+  const s = Math.max(1, W / 900), col = MIL_COLORS.fire;
+  ctx.save();
+  ctx.lineWidth = 2*s; ctx.strokeStyle = col;
+  ctx.strokeRect(b.x, b.y, b.w, b.h);
+  const tag = "fire " + DEMO_FIRE_CONF + "%";
+  ctx.font = Math.round(12*s) + "px ui-monospace,monospace";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = col;
+  ctx.fillRect(b.x, b.y - 16*s, ctx.measureText(tag).width + 10*s, 16*s);
+  ctx.fillStyle = "#0d1117";
+  ctx.fillText(tag, b.x + 5*s, b.y - 4*s);
   ctx.restore();
 }
 function drawMilBoxes(ctx, W, H, camId) {
@@ -12719,6 +12853,7 @@ scene.registerBeforeRender(() => {
   pushUpdate(dt);              // 사람이 카트에 파고든 만큼 카트를 밀어낸다 (사람 이동 뒤)
   pushPoseUpdate(dt);          // 손이 물건에 닿게 상체를 숙인다 (애니메이션 평가 뒤라야 먹는다)
   resolvePeopleSeparation();   // 사람끼리 겹쳐 서지 않게 — GT 박스가 붙는 프레임 방지
+  enforceRoleRing();           // ⚠️ 분리 처리가 링 안으로 밀어 넣은 것을 되돌린다(그쪽 주석)
   workOverlapUpdate(dt);       // 로봇 이송 단계에 배식 담당을 카트로 부른다 (작업 겹침)
   armContactUpdate(dt);        // 팔↔사람 접촉 — 링 판정과 달리 '팔이 향한 방향'을 본다
   accUpdate(dt);
@@ -13578,7 +13713,7 @@ async function spawnExtraPerson(i) {
     // ReferenceError: uni is not defined 로 추가 인원 스폰이 통째로 실패했다.
     // → 데이터셋 생성이 1명이라도 스폰되는 순간 크래시. 참조 제거.
     gear, shell: uni_shell, bones: bmap, height: H, uniform: null, wearCap, wearMask,
-    ACT, role: "far", stations: null, dwellT: 0, acting: null, lastD: undefined, stallT: 0,
+    ACT, role: "far", stations: null, dwellT: 0, acting: null, lastD: undefined, stallT: 0, evacWait: 0,
     wfStep: null,                 // 직무 사이클 진행도 (WF 모드) — 키로 되짚으면 왕복이 죽는다
     /* 인원마다 독립 시드 — 전역 시드에서 파생시키되 간격을 크게 벌린다.
        한 명을 추가해도 기존 인원의 궤적이 바뀌지 않는다(각자 자기 흐름만 소비). */
@@ -13598,6 +13733,24 @@ function extraPlay(P, name) {
   P.playing = name;
 }
 /* 추가 인원용 액션 재생 — 본체의 personAct와 같은 역할 */
+/* ══ 붙박이 방지 — 잡아 두는 동안 **제자리 작업 동작**을 돌린다 (2026-08-31) ═══════
+   holdExtras 는 인원이 설비에 바싹 붙은 작업 자리로 걸어가는 것을 막으려고 세웠다
+   (그 자리에서 대피 경로를 받으면 콜라이더에 물려 제자리걸음이 난다 — 그쪽 주석).
+   그런데 자리만 묶어 두니 두 사람이 **20초 넘게 미동도 없이** 서 있었다(사용자 지적).
+   조리실인데 아무도 아무것도 안 하는 그림이 된다.
+   → **자리는 그대로 두고 동작만 돌린다.** 집기·조작·대화 자세를 번갈아 재생하면
+     한자리에서 일하는 것으로 읽힌다. 이동이 없으니 막힌 칸으로 걸어갈 일도 없다.
+   ⚠️ 무작위를 안 쓴다 — 회차 재현이 깨지면 리허설에서 본 그림과 발표가 달라진다.
+      인원 번호와 순번으로 흔든다(같은 시드면 같은 그림). */
+const HOLD_ACTS = ["idleTalk", "pickup", "idle", "interact", "idleTalk", "kneel"];
+function holdBusy(P, dt, i) {
+  P.busyT = (P.busyT || 0) - dt;
+  if (P.busyT > 0) return;
+  P.busyN = (P.busyN || 0) + 1;
+  const k = HOLD_ACTS[(P.busyN + i) % HOLD_ACTS.length];
+  extraAct(P, k, undefined, 0.85 + ((P.busyN * 7 + i * 3) % 5) * 0.06);
+  P.busyT = 2400 + ((P.busyN * 13 + i * 5) % 7) * 450;   // 2.4~5.1초씩
+}
 function extraAct(P, key, loop, speed) {
   const g = P.ACT && P.ACT[key]; if (!g) return null;
   Object.values(P.ACT).forEach(a => { if (a !== g) a.stop(); });
@@ -13896,7 +14049,16 @@ function extrasUpdate(dt) {
     /* 맞아서 쓰러져 있는 동안은 **손대지 않는다.** 여기서 idle을 재생하면 down 클립을
        덮어써서 쓰러진 사람이 벌떡 서 있는 그림이 된다(실측). */
     if (P.struckT > 0) continue;
-    if (P.mode === "crouch" || P.mode === "idle") { extraPlay(P, P.mode === "crouch" ? "crouch" : "idle"); continue; }
+    /* 대피 출발 시차 (2026-08-31). 정렬점을 하나로 모은 뒤로 셋이 **동시에** 같은 점에
+       몰려, 서로 밀어내느라 도착 반경 안에 못 들어가고 그 자리에서 뛰는 그림이 났다.
+       0.7초씩 늦춰 보내면 2.5㎧ 기준 1.75m 간격이 생겨 줄지어 통과한다.
+       ⚠️ dwellT 를 쓰면 안 된다 — 만료될 때 extraNextTarget 이 **대피 경로를 갈아엎는다.** */
+    if (P.evacWait > 0) { P.evacWait -= dt; extraPlay(P, "idle"); continue; }
+    if (P.mode === "crouch" || P.mode === "idle") {
+      /* 잡아 두는 중이면 붙박이로 두지 않는다(holdBusy 주석) */
+      if (typeof DEMO !== "undefined" && DEMO.holdExtras) { holdBusy(P, dt, EXTRAS.indexOf(P)); continue; }
+      extraPlay(P, P.mode === "crouch" ? "crouch" : "idle"); continue;
+    }
     const tgt = P.path[P.pi];
     if (!tgt) { extraNextTarget(P); continue; }
     const dx = tgt.x - n.x, dz = tgt.z - n.z, d = Math.hypot(dx, dz);
@@ -13923,16 +14085,31 @@ function extrasUpdate(dt) {
            (0.2, 4.15)·(2.86, 3.66) 로 문(1.8, 5.93)과 한참 떨어진 자리에서 enabled=false.
            화면에서는 "한 명만 탈출하는" 그림이 된다(사용자 지적).
            문에서 1.6m 밖이면 아직 못 나간 것이다 — 목표를 다시 깔아 계속 가게 한다. */
-        const dxo = doorCenterX(), zo = LAYOUT.room.z1 + 0.18;
-        if (Math.hypot(n.x - dxo, n.z - zo) > 1.6) {
-          const inner2 = new V3(dxo, 0, zo - 0.55);
-          if (!setPathTo(P, inner2)) P.path = [inner2];
+        /* ⚠️ **문턱을 넘었는지로 판단한다** (2026-08-31). 종전에는 "문 목표점에서
+           1.6m 안"이면 나간 것으로 봤는데, 셋이 같은 정렬점으로 몰리면 서로 밀려
+           개구부 가장자리로 밀려나고 그 자리에서 사라졌다 — 실측: (2.23, 5.28) 로
+           벽선(5.75) **안쪽** 0.47m 에서 enabled=false. 화면에서는 문 옆에서 증발한다.
+           벽선을 넘었으면 나간 것이고, 아니면 아직 방 안이다 — 경로를 다시 깐다. */
+        const dxo = doorCenterX(), zo = evacOutZ();
+        if (n.z < LAYOUT.room.z1) {
+          const gate2 = evacGate();
+          if (!setPathTo(P, gate2)) P.path = [gate2];
+          P.path.push(gate2);
           P.path.push(new V3(dxo, 0, zo));
           P.pi = 0; P.lastD = undefined; P.stallT = 0; P.mode = "walk";
           console.log("[DEMO] 대피 재시도 — " + n.x.toFixed(2) + "," + n.z.toFixed(2) + " 에서 경로 재생성");
         } else {                             // 문밖으로 나갔다. 되돌아오지 않게 숨긴다
           P.evac = false; P.root.setEnabled(false);
           doorCloseWhenClear(700);           // 마지막 한 명이면 여기서 문이 닫힌다
+          /* 주인공이 없는 회차에서는 **완료 자막을 여기서** 띄운다 — 종전에는
+             주인공 도착(DEMO.evac)이 띄웠기 때문에 아무도 말해 주지 않았다. */
+          /* ⚠️ **after 에서만** 말한다 (2026-08-31). before 에서도 인원 한 명은 연기를
+             자각해 빠져나가는데, 그때 "대피 완료"가 뜨면 before 의 논지("아무도 모른다")와
+             정면으로 부딪힌다 — 실측: 22.08초 "대피 완료" 직후 22.14초에 "조리원이
+             쓰러집니다"가 떴다. before 의 결말은 대피가 아니라 쓰러짐이다. */
+          if (DEMO.kind === "after" && DEMO.hidePerson &&
+              !EXTRAS.some(q => q.evac && q.root.isEnabled()))
+            demoSay("⑤ 조리원이 밖으로 빠져나갔습니다 — 대피 완료");
         }
       } else {                               // 통과 끝 — 구역 밖에서 잠깐 쉬고 다시 통과
         extraAct(P, rng.next() < 0.5 ? "idleTalk" : "idle");
@@ -13973,7 +14150,10 @@ function extrasUpdate(dt) {
        목적지가 잘못된 게 아니라 지금 서 있는 자리가 나쁜 것이므로, 목적지를 버리면
        같은 일이 다음 목적지에서 또 난다(실측: 카트 모서리 (0.2,2.7)에서만 26회).
        한 칸 물러나 정상 통로로 나온 뒤 원래 경로를 그대로 이어 간다. */
-    if (P.stallT > 900 && !P.unstick) {
+    /* 대피 중에는 **더 빨리** 푼다 (2026-08-31). 900ms 는 평상시 기준이고, 발표
+       화면에서는 0.9초 제자리도 눈에 띈다. 대피는 카메라가 그 사람을 보고 있는
+       구간이므로 0.4초에 끊는다. */
+    if (P.stallT > (P.evac ? 400 : 900) && !P.unstick) {
       const c = navNearestOpen(...navCellOf(n.x, n.z));
       if (c) {
         const back = new V3(NAV.x0 + (c[0] + 0.5) * NAV.cell, 0,
@@ -13993,9 +14173,14 @@ function extrasUpdate(dt) {
          갑자기 딴 데로 걸어가고 **한 명만 탈출한 것처럼 보인다**(사용자 지적).
          대피 중이면 문으로 가는 경로를 다시 깔아 준다 — 목적지는 바뀌지 않는다. */
       if (P.evac) {
-        const dxo = doorCenterX(), zo = LAYOUT.room.z1 + 0.18;
-        const inner2 = new V3(dxo, 0, zo - 0.55);
-        if (!setPathTo(P, inner2)) P.path = [inner2];
+        /* ⚠️ 목표는 **정렬점**이다 (2026-08-31). 종전에는 (문x, zOut−0.55) 를 썼는데
+           그 칸은 통행 격자에서 **막힘**이라(문 앞 z 4.90~5.60 이 전부 막힘) setPathTo 가
+           엉뚱한 데로 스냅하거나 실패한다. 정체 → 막힌 목표 재설정 → 다시 정체가
+           반복되면 화면에서는 **그 자리에서 계속 뛰는 그림**이 된다. */
+        const dxo = doorCenterX(), zo = evacOutZ(), g2 = evacGate();
+        if (!setPathTo(P, g2)) P.path = [g2];
+        const tl2 = P.path[P.path.length - 1];
+        if (Math.hypot(tl2.x - g2.x, tl2.z - g2.z) > 0.30) P.path.push(g2);
         P.path.push(new V3(dxo, 0, zo));
         P.pi = 0; P.mode = "walk";
         console.log("[DEMO] 대피 정체 — 경로 재생성 (" + n.x.toFixed(2) + "," + n.z.toFixed(2) + ")");
@@ -14110,7 +14295,7 @@ function trajSnap(nodes, t) {
 }
 /* 모션에 필요한 최소 집합만 고정 dt로 돌린다(로봇·조리·안전 판정 제외 → 전역 RNG 소비가
    사람 모션에만 국한돼 결정성이 는다). */
-function trajStep(dtMs) { extrasUpdate(dtMs); resolvePeopleSeparation(); }
+function trajStep(dtMs) { extrasUpdate(dtMs); resolvePeopleSeparation(); enforceRoleRing(); }
 /* scene 하나 생성 → JSON 반환(+ /traj POST). 하네스 상태(seedBase·WF·EXTRA_GEN)는
    이 함수가 스스로 저장·복원한다 — 직접 호출해도 평소 스폰 시드가 오염되지 않게. */
 async function trajRunScene(sceneSeed, seconds, jobs, idx) {
@@ -14246,6 +14431,46 @@ const PERSON_SEP = 0.62;
    (실측: 3명일 때 최소 간격 0.39m — 반경 0.26 두 사람이 0.13m 겹친다).
    3패스면 실측 위반이 0으로 떨어진다. 사람 수가 적어 비용은 무시할 만하다. */
 const SEP_PASSES = 3;
+/* ══ 역할 반경 **재적용** (2026-08-31, 사용자 요청: 자동 작업 때 링 밖으로 다니게) ══
+   ROLE.far 는 "감속 반경(3.90m) 밖에서만 일한다"는 규칙이고, extrasUpdate 의 이동 단계가
+   그 반경으로 밀어낸다. 그런데 **그 뒤에 resolvePeopleSeparation 이 돈다** — 두 사람이
+   겹치면 서로 밀어내는데, 그 힘에는 로봇 반경 개념이 없어서 한 명이 링 안으로 밀려 들어간다.
+   그 뒤로 아무도 다시 안 밀어낸다.
+   실측(자동 작업 22초): 역할이 둘 다 far 인데 한 명이 로봇에서 **2.25m** 까지 들어왔고
+   (정지 반경 3.10m 침범), 그 결과 로봇이 **93% 프레임 감속 · 31% 정지** 상태였다.
+   → 분리 처리 **뒤에** 링을 다시 건다. 순서만 바로잡는 것이라 회피 로직은 손대지 않는다.
+   ⚠️ 대피 중·쓰러진 사람은 건너뛴다. 대피 경로는 로봇 옆을 지날 수 있고, 쓰러진 몸을
+      밀면 바닥에서 미끄러진다. */
+function enforceRoleRing() {
+  if (typeof EXTRAS === "undefined" || !EXTRAS.length) return;
+  /* ⚠️ **로봇이 돌 때만 건다** (2026-08-31, 사용자 지적: 유휴 상태에서 걸음이 막힌다).
+     이 규칙의 목적은 "사람이 링에 들어와 로봇을 멈추게 하는 것"을 막는 것이다.
+     로봇이 서 있으면 막을 것이 없는데, 그때도 강제하면 링 안쪽에 목적지를 받은 사람이
+     경계에 눌려 **제자리걸음**을 한다 — 실측(유휴 22초): 한 명이 걷는 시간의 **40%**를
+     제자리에서 보냈고, 그 목적지는 로봇에서 1.70m(링 3.90m 한참 안쪽)였다. */
+  if (!state.auto) return;
+  const B = LAYOUT.robot.base;
+  for (const P of EXTRAS) {
+    if (!P.root || !P.root.isEnabled()) continue;
+    if (P.evac || P.acting === "down" || P.struckT > 0) continue;
+    /* 희생자는 대본이 정한 자리로 간다 — 링 밖으로 밀면 그 자리에 못 눕는다.
+       그때 로봇은 이미 holdInOil 로 스스로 멈춰 있어 안전 로직과 부딪히지 않는다. */
+    if (typeof DEMO !== "undefined" && DEMO.victim === P) continue;
+    const RR = ROLE[P.role] || ROLE.far;
+    const minR = RR.zone === "out" ? SAFE.NOM_SLOW : RR.zone === "slow" ? SAFE.NOM_STOP : 0;
+    if (minR <= 0) continue;
+    const n = P.root.position;
+    const ox = n.x - B.x, oz = n.z - B.z, od = Math.hypot(ox, oz);
+    if (od < minR && od > 1e-4) {
+      n.x = B.x + ox / od * minR; n.z = B.z + oz / od * minR;
+      /* ⚠️ **눌린 채로 두지 않는다.** 목적지가 링 안이면 사람은 경계를 계속 밀고,
+         화면에서는 제자리걸음이 된다. 목적지 선정(extraNextTarget)은 링을 안 보므로
+         여기서 끊고 다시 뽑게 한다 — 0.5초쯤 눌리면 그 목적지는 못 가는 곳이다. */
+      P.ringT = (P.ringT || 0) + 1;
+      if (P.ringT > 30) { P.ringT = 0; P.station = null; P.dwellT = 0; extraNextTarget(P); }
+    } else P.ringT = 0;
+  }
+}
 function resolvePeopleSeparation() {
   if (!EXTRAS.length) return;
   const mp = person.node.position;
@@ -14589,6 +14814,13 @@ function demoSay(msg) {
    둘 다 0~1 범위 밖이라 **아무것도 안 보이는 채로 자막만 나왔다.**
    비트가 무엇을 보여주려는지에 따라 사람 / 솥 / 방 전체로 나눈다. */
 function demoFreeCam(alpha, beta, radius, target) {
+  /* ⚠️ **컷이 바뀌면 화재 박스를 끈다** (2026-08-31, 사용자 지적).
+     박스는 ④ 감지 비트가 켠 뒤 스스로 꺼지지 않아서, ⑤ 문 쪽 컷으로 넘어간 뒤에도
+     계속 떠 있었다(실측 로그: 29.1s·30.9s 모두 box=ON). 검출 화면이 아닌 컷 위에
+     검출 박스가 남으면 그 컷이 무엇을 보여주는지가 흐려진다.
+     ⚠️ mainView 비교로는 못 잡는다 — 데모의 컷은 전부 mainView "free" 안에서
+        각도만 바꾸기 때문에 이름이 그대로다. 그래서 전환 함수에서 직접 끈다. */
+  fireBoxOff();                                 // 컷 전환 — 끄고 즉시 지운다
   if (mainView !== "free") {
     mainView = "free";
     if (typeof viewSel !== "undefined" && viewSel) viewSel.value = "free";
@@ -14692,8 +14924,46 @@ function DEMO_COLLAPSE_SPOT(){ return new V3(1.5, 0,  1.5); }   // ④에서 이
    컷을 네 번 나누던 것을 **한 번으로 줄인 것**이지, 고정 원칙을 버린 게 아니다. */
 function demoCollapseView() {
   DEMO.follow = null;
-  const c = DEMO_COLLAPSE_SPOT();
-  demoFreeCam(1.30, 1.45, 3.2, new V3(c.x, 0.35, c.z));
+  /* ⚠️ **실제로 쓰러진 사람을 겨냥한다** (2026-08-31). 고정 좌표(DEMO_COLLAPSE_SPOT)는
+     주인공이 그 자리로 걸어가던 시절의 값이다. 지금은 인원 한 명이 희생자인데, 그 사람이
+     쓰러질 자리까지 못 가고 대기 자리에서 쓰러지는 회차가 있다 — 실측: 몸은 (3.37, 1.62),
+     카메라는 (1.5, 1.5) 를 봐서 **1.87m 벗어나 프레임 밖**이었다.
+     걸어가는 데 성공하든 못 하든 컷은 몸을 잡아야 한다. */
+  let c = DEMO_COLLAPSE_SPOT();
+  if (DEMO.hidePerson && DEMO.victim && DEMO.victim.root) {
+    const q = DEMO.victim.root.position; c = new V3(q.x, 0, q.z);
+  }
+  /* ⚠️ **가리지 않는 각도를 골라서 선다** (2026-08-31, 사용자 지적).
+     위에서 조준점만 몸으로 옮겼는데, 그 시선이 **뚫리는지는 안 봤다** — 실측 화면에서
+     카트·선반이 앞을 막아 다리만 보였다. 조리실은 설비로 꽉 차 있어서 한 각도로
+     고정해 두면 사람이 어디서 쓰러지든 막힐 수밖에 없다.
+     → 몸 주위를 한 바퀴 돌며 **광선을 쏴 실제로 막히는지 재고**, 뚫리는 각도에 선다.
+       이 파일이 솥 가림률을 잴 때 쓴 방법과 같다(demoHatchView 주석의 24점 실측).
+     기준 각도(1.30)를 먼저 보고, 막히면 좌우로 벌려 가며 찾는다 — 되도록 종전 그림에
+     가깝게 두기 위해서다. 다 막히면 기준 각도로 돌아간다(없는 것보다 낫다). */
+  const tgt = new V3(c.x, 0.35, c.z);
+  const beta = 1.45, r = 3.2;
+  const R = LAYOUT.room;
+  const mine = (m) => {                                   // 희생자 자신은 가림이 아니다
+    let n = m; const root = DEMO.victim && DEMO.victim.root;
+    while (n) { if (n === root) return true; n = n.parent; }
+    return false;
+  };
+  let best = 1.30;
+  for (const off of [0, 0.5, -0.5, 1.0, -1.0, 1.5, -1.5, 2.1, -2.1, 2.6, -2.6, 3.14]) {
+    const a = 1.30 + off;
+    const px = tgt.x + r * Math.sin(beta) * Math.cos(a);
+    const pz = tgt.z + r * Math.sin(beta) * Math.sin(a);
+    const py = tgt.y + r * Math.cos(beta);
+    if (px < R.x0 + 0.3 || px > R.x1 - 0.3 || pz < R.z0 + 0.3 || pz > R.z1 - 0.3) continue;  // 벽 밖
+    const from = new V3(px, py, pz);
+    const dir = tgt.subtract(from);
+    const dist = dir.length(); dir.normalize();
+    const hit = scene.pickWithRay(new BABYLON.Ray(from, dir, dist - 0.35),
+      (m) => m.isEnabled() && m.isVisible && m.isPickable !== false && !mine(m));
+    if (!hit || !hit.hit) { best = a; break; }             // 막는 게 없다 — 이 각도로 선다
+  }
+  demoFreeCam(best, beta, r, tgt);
 }
 
 function demoPersonToCollapse() {
@@ -14729,6 +14999,26 @@ function demoWideView() {                         // 방 전체 — 연기가 �
    안 지우면 before를 돌린 뒤 after를 눌렀을 때 이미 쓰러진 사람에서 시작한다. */
 function demoNormalWork() {
   if (typeof ACC !== "undefined" && ACC.on) accReset();
+  /* ══ after 는 **주인공을 화면에 두지 않는다** (2026-08-31, 사용자 지시) ══════════
+     대피는 추가 인원 2명만 한다. 주인공 캐릭터는 숨기고 대피 로직에서도 뺀다.
+     ⚠️ before 는 그대로 둔다 — 거기서는 주인공이 연기 속에 쓰러지는 것이 결말이고,
+        그 사람이 없으면 시나리오 자체가 성립하지 않는다.
+     ⚠️ 위치는 건드리지 않는다. 숨긴 몸의 좌표는 회피·밀도 계산이 계속 참조하므로
+        엉뚱한 데로 옮기면 로봇이 없는 사람을 피한다. freeze 로 묶어만 둔다. */
+  /* **두 시나리오 모두 주인공 캐릭터를 화면에 두지 않는다** (2026-08-31, 사용자 지시 2회).
+     before 는 "쓰러지는 사람"이 결말이라 종전에는 주인공을 남겼는데, 그 캐릭터를 아예
+     안 보이게 해 달라는 요구이므로 **인원 한 명이 희생자 역할을 맡는다** —
+     한 명은 대피하고(EXTRAS[1]) 한 명은 연기에 쓰러진다(EXTRAS[0], DEMO.victim). */
+  DEMO.hidePerson = true;
+  DEMO.victim = (DEMO.kind === "before" && typeof EXTRAS !== "undefined" && EXTRAS.length)
+              ? EXTRAS[0] : null;
+  if (DEMO.hidePerson) {
+    person.freeze = true; person.path = []; person.mode = "idle";
+    person.node.setEnabled(false);
+  } else {
+    person.node.setEnabled(true);
+  }
+  fireBoxOff();                              // 직전 회차의 박스를 끈다(①은 before/after 공통)
   demoHazardClear();
   demoStandUp();
   setFire(false);
@@ -14748,8 +15038,27 @@ function demoNormalWork() {
   if (typeof EXTRAS !== "undefined") {
     const rb = LAYOUT.robot.base, R = SAFE.slowR + 1.0;
     EXTRAS.forEach((P, i) => {
-      const a = -0.6 + i * 0.9;                       // 서로 겹치지 않게 부채꼴로
-      P.root.position.set(rb.x + Math.cos(a) * R, 0, rb.z + Math.sin(a) * R);
+      /* 부채꼴 각도를 **문 쪽(+z)으로 돌렸다** (2026-08-31, 사용자 지적: 제자리걸음).
+         종전 −0.6 + i·0.9 는 첫 사람을 (2.64, −2.26) — **옆 국솥 남쪽**에 세웠다.
+         거기서 문으로 가려면 A* 가 국솥(x 2.77~3.83)과 벽 사이 **좁은 틈**으로 돌리고,
+         첫 경유점 (4.07, −0.83) 이 콜라이더에 물려 그 자리에서 뛰게 된다
+         (실측 498~674ms. 경로·정체복구·탈출점 어느 것으로도 안 풀렸다 — 통과 자체가
+         안 되는 틈이라 길을 고칠 게 아니라 **거기로 안 보내야** 한다).
+         0.25 + i·0.55 → (3.35, 1.72) · (2.01, 4.03). 둘 다 국솥 북쪽이라 문까지 열린 길이고,
+         반경은 그대로 SAFE.slowR + 1.0 이라 로봇 회피 보류 조건도 종전과 같다. */
+      const a = 0.25 + i * 0.55;                      // 서로 겹치지 않게 부채꼴로(문 쪽)
+      let px = rb.x + Math.cos(a) * R, pz = rb.z + Math.sin(a) * R;
+      /* ⚠️ **통행 가능한 칸으로 스냅한다** (2026-08-31, 사용자 지적: 제자리걸음).
+         부채꼴 좌표를 그대로 쓰면 설비 안이나 모서리에 사람이 놓인다. 평상시에는
+         티가 안 나는데(가만히 서 있으므로), ⑤에서 대피 경로를 받는 순간 걸으려 하면
+         콜라이더가 되밀어 **그 자리에서 뛰는 그림**이 된다 — 실측: 인원0 이
+         (3.91, −0.87) 에서 542ms 제자리. 정체 복구는 900ms 부터라 그 전까지 그대로 보인다.
+         빈 칸 위에 세워 두면 애초에 안 갇힌다. */
+      if (typeof navCellOf === "function" && typeof navNearestOpen === "function") {
+        const c = navNearestOpen(...navCellOf(px, pz));
+        if (c) { px = NAV.x0 + (c[0] + 0.5) * NAV.cell; pz = NAV.z0 + (c[1] + 0.5) * NAV.cell; }
+      }
+      P.root.position.set(px, 0, pz);
       P.mode = "idle"; P.path = []; P.pi = 0; P.dwellT = 0; P.station = null;
     });
     /* ⚠️ **밀어내는 것만으로는 부족하다 — 발화까지 그 자리에 세워 둔다** (2026-08-28).
@@ -14929,8 +15238,8 @@ function demoDetectReal() {
    먼저 거짓말하는 게 제일 위험하다. 비트 실행기가 함수 msg를 받아 준다. */
 function demoDetectMsg() {
   return demoDetectReal()
-    ? "③ 화재 감지 — 같은 모델이 세 조건에서 모두 잡습니다"
-    : "③ 화재 감지 — 검증은 이 실제 급식실 영상으로 합니다";
+    ? "④ 화재 감지 — 같은 모델이 세 조건에서 모두 잡습니다"
+    : "④ 화재 감지 — 검증은 이 실제 급식실 영상으로 합니다";
 }
 
 function demoDetectOn() {
@@ -14940,13 +15249,17 @@ function demoDetectOn() {
      제때 못 나가고, 나머지는 연기가 눈에 보일 만큼 찬 뒤에야 자각한다.
      근거 문자열은 **정직하게** 남긴다. 지금 붙은 모델은 더미라 실제 추론이 아니고,
      시뮬 쪽 mock은 GT 마스크 기반이다(demoDetectReal 주석). */
+  if (DEMO.detected) return;                     // 비트·발화 양쪽에서 불려도 한 번만
+  DEMO.detected = true;
   alarmRaise(demoDetectReal() ? "실모델 검출" : "시뮬 검출(GT 기준)");
-  DEMO.follow = null;                            // CCTV 화면으로 넘어간다
-  if (!SURV[mainView]) {
-    mainView = "cvN";
-    if (typeof viewSel !== "undefined" && viewSel) viewSel.value = "cvN";
-    applyCameras();
-  }
+  DEMO.follow = null;
+  /* ⚠️ **CCTV로 컷을 넘기지 않는다** (2026-08-31, 사용자 지시).
+     종전에는 여기서 mainView를 cvN으로 바꿨다. 그런데 ②③이 잡아 둔 고정 로봇샷
+     (demoHatchView — 솥·불·로봇·조리원이 한 화면에 남는 그 각도)이 **정작 감지·경보
+     순간에 버려진다.** "로봇이 조리하다가 감지하고 경고를 뱉는다"가 이 발표의 그림인데
+     그 장면에서 로봇이 화면 밖으로 나가는 것이다.
+     → 고정샷을 끝까지 유지하고, 감지됐다는 표시는 화재 박스로 한다(drawFireBox). */
+  FIRE_BOX.on = true; FIRE_BOX.view = mainView;
   /* **좌우가 같은 모델이어야 증명이 된다.**
      `mock`은 `milMaskBoxes()`가 GT 마스크에서 박스를 뽑는다 — 주석에도 "완벽한 검출"이라
      적혀 있는, 정답지를 보고 그리는 경로다. 그 상태로 우측(실영상, 진짜 추론)과 나란히
@@ -15009,13 +15322,36 @@ function demoDetectOn() {
    일하고 있으면 그 요지가 안 산다. 다들 빠져나가고 한 명만 남는 그림이어야 한다. */
 function demoCollapse() {
   SMOKE.fell = true;              // 어디서 불렸든 한 번만
+  /* ⚠️ **쓰러짐이 컷을 직접 부른다** (2026-08-31, 사용자 지적).
+     종전에는 ④ 비트(30초)가 demoCollapseView() 를 부르고 그 다음에 쓰러뜨렸다. 그런데
+     쓰러짐은 흡입량(SMOKE.dose)이 끌기 때문에 **비트보다 먼저 오는 회차가 있다** —
+     그러면 발화 컷(demoHatchView, 눈높이 2.04m)에 그대로 걸린다. 그 각도에서 쓰러진 몸은
+     높이 0.32m 로 납작해 바닥 마킹과 구분이 안 된다(demoCollapseView 주석의 실측).
+     ③ 비트를 앞당긴 뒤로는 연기도 일찍 차서 이 회차가 더 흔해졌다.
+     → 원인이 먼저 걸리든 비트가 먼저 걸리든 **쓰러지는 순간 컷이 따라온다.**
+     ⚠️ after 에서는 부르지 않는다 — 거기선 대피가 결말이고 주인공은 화면에 없다. */
+  if (typeof DEMO !== "undefined" && DEMO.on && DEMO.kind === "before") {
+    demoCollapseView();
+    /* 자막도 여기서 띄운다 — 쓰러짐은 흡입량이 끌기 때문에 비트 시각(30초)보다
+       한참 먼저 온다(실측 22.2초, 7.8초 어긋남). 비트는 늦은 회차용 보험으로 남는다. */
+    demoSay("④ 연기 속에서 조리원이 쓰러집니다 — 아무도 모릅니다");
+  }
   /* ⚠️ 쓰러뜨리기 전에 **걷기를 끊는다** (2026-08-28). 안 그러면 Death01이 한 번 재생된 뒤
      남아 있던 경로/모드가 걷기 애니메이션을 다시 켜서 **쓰러진 사람이 일어나 걷는다**
      (실측: 데모 53초 시점에 Death01은 끝나고 Walk_Formal_Loop가 재생 중이었다).
      실신 버튼 경로는 사람이 이미 멈춰 있어서 이 문제가 안 보였다. */
-  person.path = []; person.pi = 0; person.mode = "idle"; person.stations = null;
-  person.freeze = true;
-  personFall();
+  if (DEMO.hidePerson && DEMO.victim) {
+    /* 주인공이 화면에 없는 회차 — 희생자 인원이 쓰러진다(demoNormalWork 의 victim 주석). */
+    const P = DEMO.victim;
+    P.path = []; P.pi = 0; P.mode = "idle"; P.station = null; P.dwellT = 0;
+    P.evac = false; P.evacWait = 0;
+    extraAct(P, "down", false);
+    P.struckT = 1e9;                     // 다시 걷지 않게 못 박는다(extrasUpdate 의 struckT 검사)
+  } else {
+    person.path = []; person.pi = 0; person.mode = "idle"; person.stations = null;
+    person.freeze = true;
+    personFall();
+  }
 }
 
 /* 실신 상태를 푼다. demoHazardClear()로는 안 풀린다 — 그쪽은 엑스트라의 충돌/끼임
@@ -15034,6 +15370,7 @@ function demoStandUp() { if (PERSON && PERSON.acting === "down") personGetUp(); 
    → 대피 비트에서만 **자유 시점을 문 쪽으로 돌린다.** 실제 CCTV 성능을 속이는 게 아니라
      (그건 ④ 감지 비트가 CCTV로 보여준다) 이야기를 보여주는 컷이다. */
 function demoExitView() {
+  fireBoxOff();                                  // 컷 전환 — 끄고 즉시 지운다
   DEMO.follow = null;                            // 문 쪽 고정 컷 — 따라가기와 싸우면 안 된다
   if (mainView !== "free") {
     mainView = "free";
@@ -15058,7 +15395,16 @@ function demoExitView() {
      (정규좌표 y=1.03). 반대로 종전 5.3은 여유는 있지만 연기 속에서 흐리다.
      → 사람과 문 사이 거리에 여유 2.6m를 더해 **둘 다 들어오는 최소 거리**를 쓴다.
      연기 자체는 손대지 않는다 — before와 조건이 달라지면 "조건이 달랐잖아"가 된다. */
-  const gap = Math.hypot(person.node.position.x - dx, person.node.position.z - zt);
+  /* 기준 인물 — 주인공이 숨겨진 회차에서는 **대피 중인 인원**을 기준으로 잡는다.
+     숨긴 사람 좌표를 쓰면 화면이 아무도 없는 자리를 겨냥한다. */
+  let ref = person.node.position;
+  if (DEMO.hidePerson && typeof EXTRAS !== "undefined") {
+    const alive = EXTRAS.filter(P => P.root.isEnabled());
+    if (alive.length) ref = alive.reduce((a, b) =>
+      Math.hypot(a.root.position.x - dx, a.root.position.z - zt) <
+      Math.hypot(b.root.position.x - dx, b.root.position.z - zt) ? a : b).root.position;
+  }
+  const gap = Math.hypot(ref.x - dx, ref.z - zt);
   camera.alpha = -2.60; camera.beta = 1.28;
   camera.radius = Math.min(5.6, Math.max(4.0, gap + 2.6));
 }
@@ -15178,7 +15524,7 @@ function demoEvacuate() {
   /* ⚠️ `position`이 아니라 `getAbsolutePosition()`이다 — doorBuild가 문을 경첩에 붙이면
      `position`은 로컬(0.475)이 되어 문이 방 한가운데에 있는 것처럼 읽힌다. */
   const dx = doorCenterX();
-  const zOut = LAYOUT.room.z1 + 0.18;           // 문턱을 **지나** 어두운 출입구 안쪽
+  const zOut = evacOutZ();                      // 문턱을 **지나** 어두운 출입구 안쪽(evacOutZ 주석)
   /* ⚠️ **직선으로 잇지 않는다 — 그리고 조건부로 길찾기를 하지도 않는다** (2026-08-28).
      종전 코드는 "접근점(문 1.5m 앞)을 이미 지나쳤으면 건너뛴다"였는데, ⑤ 시점의
      조리원은 키오스크 뒤 z=4.52에 서 있고 접근점은 z=4.43이다. **9cm 차이로** 그
@@ -15187,13 +15533,28 @@ function demoEvacuate() {
      화면에는 조리실 안에 서 있다(실측, after 40~51초 내내 같은 자리).
      지그재그를 막으려던 원래 의도는 navPath가 대신 지킨다 — A*는 최단 경로라
      되돌아가지 않는다. 그래서 분기를 없애고 **언제나** 격자를 태운다. */
-  const inner = new V3(dx, 0, zOut - 0.55);     // 문 안쪽 — 통행 격자의 마지막 칸
-  const route = navPath(person.node.position, inner)
-             || navPath(person.node.position, new V3(dx, 0, zOut - 1.5));
-  const path = (route && route.length) ? route.slice() : [inner];
+  const gate = evacGate();                      // 문 중앙 정렬점(evacGate 주석)
+  const route = navPath(person.node.position, gate);
+  const path = (route && route.length) ? route.slice() : [gate];
+  /* 격자 경로가 정렬점에서 조금 벗어나 끝났으면 정렬점을 한 번 더 찍는다 —
+     마지막 직선이 문 중앙에서 시작해야 개구부를 그대로 통과한다. */
+  const tail = path[path.length - 1];
+  if (Math.hypot(tail.x - gate.x, tail.z - gate.z) > 0.30) path.push(gate);
   path.push(new V3(dx, 0, zOut));               // 문턱 넘는 마지막 한 걸음은 격자 밖
   /* 주인공도 뛴다(위 demoExtrasFlee 주석과 같은 이유). 2.6㎧ → 배속 0.96. */
+  if (DEMO.hidePerson) {
+    /* 주인공을 숨긴 회차 — 인원 2명만 내보낸다(demoNormalWork 의 hidePerson 주석).
+       DEMO.evac 도 세우지 않는다. 세우면 demoTick 이 보이지도 않는 사람의 도착을
+       기다리다 "대피 완료" 자막을 영영 못 띄운다. */
+    demoSay("⑤ 경보를 듣고 조리원이 문밖으로 대피합니다");
+    demoExitView();
+    demoExtrasFlee();
+    return;
+  }
   personGo(path, { speed:2.6 });
+  /* 자막을 여기서 띄운다 — 대피를 부르는 것은 ⑤ 비트 시각이 아니라 경보다(반응 3초).
+     비트를 기다리면 이미 문 앞까지 간 뒤에 "지금 대피합니다"가 뜬다(실측 1.2초 어긋남). */
+  demoSay("⑤ 경보를 듣고 조리원이 문밖으로 대피합니다");
   demoExitView();
   DEMO.evac = { x:dx, z:zOut };                 // 도착 판정은 demoTick이 한다
   demoExtrasFlee();                             // 나머지 인원도 같이 빠져나간다
@@ -15206,16 +15567,49 @@ function demoEvacuate() {
    문에 닿으면 **숨긴다.** 안 그러면 도착 뒤 extraNextTarget이 새 목적지를 잡아
    불난 조리실로 되돌아온다(extrasUpdate의 "통과 끝" 분기). 나갔으면 화면에 없는 게 맞다.
    demoReset이 다시 보이게 한다. */
+/* 대피 목표 z — **문턱보다 확실히 밖**이어야 한다 (2026-08-31, 사용자 지적).
+   종전 값은 room.z1 + 0.18 이었는데, 숨김 판정 반경이 주인공 0.45m · 추가 인원 0.6m 라
+   목표에 닿기 전에 사라진다 — 실측: 주인공이 z 5.52 (벽선 5.75 **안쪽**)에서 증발했다.
+   화면에서는 "문 앞에서 사라진다"로 보인다. 반경만큼 목표를 밖으로 밀어 둔다:
+     주인공  6.45 − 0.45 = 6.00  (벽선 +0.25) · 추가인원 6.45 − 0.60 = 5.85 (벽선 +0.10)
+   더 밀지는 않는다 — 방 밖은 바닥 지오메트리가 없어 오래 걸으면 허공에 뜬다. */
+function evacOutZ() { return LAYOUT.room.z1 + 0.70; }
+/* 문 앞 **정렬점** (2026-08-31, 사용자 지적: 집기가 동선을 방해한다).
+   실측한 통행 격자(칸 0.35m)는 문 앞 z 4.90~5.60 이 **전부 막힘**이다. 실제로는 문
+   양옆 작업대(x ≤ 0.95)와 선반(x ≥ 2.47) 사이가 1.52m 뚫려 있는데, 길찾기가 사람 폭만큼
+   장애물을 부풀리면서 그 목이 닫힌 것으로 잡힌다.
+   그래서 경로는 z 4.55 에서 끝나고, 문까지 남은 1.9m 는 격자 밖 직선으로 붙는다.
+   사람마다 격자 끝 위치가 달라 그 직선이 **제각각 대각선**이 되고, 집기를 스치면서
+   정체·어색한 비껴감이 난다(주석에 남은 763ms·1136ms 정체가 이 구간이다).
+   → 배치도 격자도 안 건드린다. **문 중앙선으로 한 번 모아** 마지막을 항상 같은
+     직선으로 만든다. x=1.80·z=4.55 는 격자에서 열려 있고, 문 개구부(1.32~2.24)
+     한가운데라 거기서 문밖까지는 처음부터 비어 있다. */
+function evacGate() { return new V3(doorCenterX(), 0, LAYOUT.room.z1 - 1.20); }
+
 function demoExtrasFlee() {
   if (typeof EXTRAS === "undefined" || !EXTRAS.length) return;
+  DEMO.holdExtras = false;        // 대피는 잡아 두지 않는다(위 holdExtras 주석)
   SMOKE.fled = true;              // 어디서 불렸든 한 번만 (흡입 임계·비트 보험 양쪽)
   const dx = doorCenterX();
-  const zOut = LAYOUT.room.z1 + 0.18;
+  const zOut = evacOutZ();
   let n = 0;
   EXTRAS.forEach((P, i) => {
     if (!P.root.isEnabled()) return;
+    /* 희생자는 내보내지 않는다 — 쓰러질 자리(DEMO_COLLAPSE_SPOT)로 보낸다.
+       거기서 쓰러져야 ④ 컷(demoCollapseView)이 그 몸을 프레임에 담는다. */
+    if (DEMO.victim === P) {
+      const c = DEMO_COLLAPSE_SPOT();
+      if (!setPathTo(P, c)) P.path = [c];
+      P.pi = 0; P.mode = "walk"; P.evac = false; P.evacWait = 0;
+      P.lastD = undefined; P.stallT = 0; P.station = null; P.dwellT = 0;
+      return;
+    }
     P.station = null; P.dwellT = 0; P.acting = null; P.struckT = 0;
     P.mode = "walk"; P.pi = 0; P.evac = true;
+    /* **주인공이 가장 먼저 나간다** (2026-08-31, 사용자 지시). 종전 i*700 은 첫 인원이
+       주인공과 동시에 출발해 누가 주인공인지 읽히지 않았다. (i+1)*700 이면
+       주인공 → 0.7초 → 1.4초 순으로 줄이 선다. */
+    P.evacWait = (i + 1) * 700;                  // 줄지어 나가게 (위 evacWait 주석)
     /* **뛴다.** 보행 클립은 속도로 갈린다 — `locoPlay`가 `RUN_AT`(1.9㎧) 이상이면
        달리기 클립을 쓴다. 종전 1.05~1.13㎧는 그 아래라 **불이 났는데 걸어 나갔다**.
        2.5~2.65㎧면 달리기 클립이고, 재생 배속이 `speed / RUN_REF(2.717)` = 0.92~0.98이라
@@ -15231,12 +15625,33 @@ function demoExtrasFlee() {
        demoEvacuate가 주인공을 보내는 (dx, zOut-0.55)는 **실제로 통하는 것이 확인된**
        지점이다(주인공 36.8초 대피 완료). 인원도 거기로 보낸다. 문 앞에서 겹치는 건
        도착 반경(아래 arriveR)과 회피 조향이 흡수한다 — 문은 원래 하나씩 지난다. */
-    const inner = new V3(dx, 0, zOut - 0.55), out = new V3(dx, 0, zOut);
+    const gate = evacGate(), out = new V3(dx, 0, zOut);   // 주인공과 같은 정렬점(evacGate 주석)
     /* ⚠️ **직선을 깔면 안 된다** (2026-08-28). 처음엔 [문앞, 문밖] 두 점만 넣었는데,
        조리실 반대편에 있던 인원의 직선이 설비를 관통해 **거기서 그대로 멈췄다**
        (실측: 대피 시작 24초 뒤에도 5.2m 남은 채 정체 766ms, 화면에서는 제자리걸음). */
-    if (setPathTo(P, inner)) P.path.push(out);
-    else P.path = [inner, out];                 // 길이 아예 없으면 최소한 시도는 한다
+    if (setPathTo(P, gate)) {
+      const tl = P.path[P.path.length - 1];
+      if (Math.hypot(tl.x - gate.x, tl.z - gate.z) > 0.30) P.path.push(gate);
+      P.path.push(out);
+    } else P.path = [gate, out];                // 길이 아예 없으면 최소한 시도는 한다
+    /* ⚠️ **막힌 칸에서 시작하면 첫 걸음을 못 뗀다** (2026-08-31, 사용자 지적: 제자리걸음).
+       평상시 작업 자리는 설비에 바싹 붙어 있어 통행 격자에서 **막힘**인 경우가 많다
+       (실측: 인원0 이 옆 국솥 앞 (3.90, −0.87) — 격자 막힘). 서 있을 때는 티가 안 나지만,
+       대피 경로를 받아 걸으려 하면 콜라이더가 되밀어 **그 자리에서 뛰는 그림**이 된다
+       (실측 498~542ms. 정체 복구가 받아 주기 전까지 그대로 보인다).
+       → 경로 **맨 앞에** 가장 가까운 열린 칸을 끼워 넣어 일단 통로로 빠져나오게 한다. */
+    if (typeof navCellOf === "function" && typeof navNearestOpen === "function") {
+      const here = navCellOf(P.root.position.x, P.root.position.z);
+      if (!NAV.open[here[1] * NAV.nx + here[0]]) {
+        const c = navNearestOpen(here[0], here[1]);
+        if (c) {
+          const esc = new V3(NAV.x0 + (c[0] + 0.5) * NAV.cell, 0,
+                             NAV.z0 + (c[1] + 0.5) * NAV.cell);
+          if (Math.hypot(esc.x - P.root.position.x, esc.z - P.root.position.z) > 0.12)
+            P.path.unshift(esc);
+        }
+      }
+    }
     /* 겹치는 경유점을 걷어낸다 — navPath가 시작 칸과 목표 칸이 같을 때 **같은 점을
        여러 개** 돌려줬다(실측 7개). 도착 판정이 0.12m라 그 자리에서 못 벗어난다. */
     P.path = P.path.filter((v, k, a) => k === 0 ||
@@ -15294,7 +15709,9 @@ const DEMO_SCRIPTS = {
        뺐던 근거(1.16%)는 전체 화면 평균이라 국소 기둥에는 안 맞는 지표였다.
        자세한 숫자는 demoHatchView 주석에 있다. */
     { at:7000,  msg:"② 정상 조리 — 국솥에서 수증기가 오릅니다",   act: () => { demoSteamUp(); demoHatchView(); } },  /* 영상 패널은 ④ 화재 감지에서만 (회의 after④). 조리·수증기 중엔 안 띄운다 */
-    { at:20000, msg:"③ 과조리 — 기름에 불이 붙었습니다",                  act: () => { demoIgnite(); demoHatchView(); } },
+    /* ③ 20초 → **16초** — after 와 같은 이유(그쪽 주석). ③까지는 두 시나리오가
+       완전히 같아야 "조건이 달랐잖아"가 안 나온다. */
+    { at:13000, msg:"③ 과조리 — 기름에 불이 붙었습니다",                  act: () => { demoIgnite(); demoHatchView(); } },
     /* ④에서 **나머지 인원이 도망친다.** ⑤(쓰러짐)에서 같이 하면 문까지 갈 시간이 없다
        (실측: 38초 시작 → 53초 종료까지 한 명이 도착 못 함). 연기가 자욱해지는 이 시점에
        빠져나가는 게 이야기로도 맞다 — 다들 나가는데 한 명만 남아 쓰러진다. */
@@ -15307,7 +15724,10 @@ const DEMO_SCRIPTS = {
        smokeTick 의 연기 자각 분기가 인과로 처리한다(그쪽 주석). */
     /* ⚠️ demoHazard는 "push"/"pinch"만 받는다. 처음에 "fall"을 넘겼더니 findHazardSpot이
        null을 돌려주고 **조용히 아무 일도 안 일어났다.** 실신은 주인공 액션이다. */
-    { at:30000, msg:"④ 연기 속에서 조리원이 쓰러집니다 — 아무도 모릅니다", act: () => { demoCollapseView(); demoCollapseBeat(); } },   /* 유일한 컷 전환 — demoCollapseView 주석 */
+    /* ④ 30초 → **24초** (2026-08-31). 흡입량이 끄는 실제 쓰러짐이 22초쯤이라
+       30초 비트는 이미 벌어진 일을 6초 뒤에 말하고, 그만큼 데모가 늘어졌다.
+       실제 쓰러짐이 자막·컷을 직접 부르므로(demoCollapse) 이 비트는 보험이다. */
+    { at:24000, msg:"④ 연기 속에서 조리원이 쓰러집니다 — 아무도 모릅니다", act: () => { demoCollapseView(); demoCollapseBeat(); } },   /* 유일한 컷 전환 — demoCollapseView 주석 */
     /* ⑥ 비트 삭제 — ④ 자막이 "아무도 모릅니다"를 이미 말한다(씬 4개 구성) */
   ],
   /* after — 같은 사고에 감지를 넣으면 어디서 갈라지는가.
@@ -15319,11 +15739,20 @@ const DEMO_SCRIPTS = {
        뺐던 근거(1.16%)는 전체 화면 평균이라 국소 기둥에는 안 맞는 지표였다.
        자세한 숫자는 demoHatchView 주석에 있다. */
     { at:7000,  msg:"② 정상 조리 — 국솥에서 수증기가 오릅니다",   act: () => { demoSteamUp(); demoHatchView(); } },  /* 영상 패널은 ④ 화재 감지에서만 (회의 after④). 조리·수증기 중엔 안 띄운다 */
-    { at:20000, msg:"③ 과조리 — 기름에 불이 붙었습니다",                  act: () => { demoIgnite(); demoHatchView(); } },
+    /* ③ 20초 → **16초** (2026-08-31). 과열 모델이 스스로 점화하는 시각이 15.9초라
+       종전 20초 자막은 **불이 붙고 4초 뒤에** "이제 불이 붙었습니다"라고 말했다.
+       화면과 자막이 어긋나면 관객은 둘 중 하나를 거짓으로 받아들인다. */
+    /* ③ 12초 → **10초** (2026-08-31, 사용자 지적: after 가 길다). 과열 모델은 "③까지
+       눌음이 1.0 이 되도록" 배수를 맞추므로, ③을 당기면 발화도 같이 당겨진다
+       (실측: ③ 12초 → 발화 11.3초 · ③ 15초 → 발화 13.9초). 바스켓이 기름에 들어가는
+       6.7초 뒤이므로 2.6초 방치면 붙는다 — 그 아래로는 바스켓이 내려가는 중에 불이 붙는다. */
+    { at:10000, msg:"③ 과조리 — 기름에 불이 붙었습니다",                  act: () => { demoIgnite(); demoHatchView(); } },
     /* ④ 자막이 "화재를 즉시 감지했습니다"였는데, 우측에 **정상 조리 영상부터** 뜨는
        순서로 바꿨으므로 자막과 화면이 어긋난다. 이 비트가 실제로 증명하는 것으로 고쳤다 —
        조건을 바꿔 가며 **같은 모델이 계속 잡는다**는 것. 화재 감지는 그 셋 중 마지막이다. */
-    { at:26000, msg: demoDetectMsg, act: demoDetectOn },
+    /* ④ 26초 → **19초** (발화 16초 + 감지 지연 3초). 실제 감지는 위 demoTick 분기가
+       발화 시각 기준으로 걸고, 이 비트는 늦은 회차를 받는 **보험**이다. */
+    { at:12000, msg: demoDetectMsg, act: demoDetectOn },
     /* ⑤⑥를 6초씩 뒤로 밀었다 (30→36 · 42→48). ④에 클립 3개가 들어가야 하는데
        종전 ④→⑤ 간격이 **9초**뿐이라 한 개도 다 못 틀었다. 15초면 클립당 5초다.
        ⑤→⑥ 간격 12초는 그대로 지켰다 — 대피 지점까지 9.6m라 그 아래로 줄이면
@@ -15345,7 +15774,13 @@ const DEMO_SCRIPTS = {
        "경보를 듣고 나간다"로 읽힌다. 35초에 두면 이미 나간 뒤에 자막이 뜬다.
        ⑥(47초)까지 18초라 문까지 걷는 시간(약 2초)은 넉넉하다.
        act는 **보험**이다 — 경보 고리가 안 걸린 회차에서만 여기서 내보낸다. */
-    { at:29000, msg:"④ 경보를 듣고 조리원이 문밖으로 대피합니다",          act: demoEvacuateBeat },
+    /* 번호는 ①조리실 ②정상조리 ③발화 ④감지 ⑤대피 로 이어진다 (2026-08-31).
+       종전에는 감지와 발화가 **둘 다 ③**이었고 대피가 ④였다 — 관객이 자막만 보면
+       같은 단계가 두 번 나온 것으로 읽힌다. demoEvacuate 끝의 "⑤ 대피 완료"와도
+       어긋나 있었다(그쪽이 맞는 번호였다). before 는 ①②③④ 로 이미 맞아 안 건드린다. */
+    /* ⑤ 29초 → **22초**. 대피를 부르는 것은 시각이 아니라 ④에서 올라간 경보이고
+       (반응 3초), 감지가 19초로 앞당겨졌으므로 자막도 같이 당겨야 화면과 맞는다. */
+    { at:12000, msg:"⑤ 경보를 듣고 조리원이 문밖으로 대피합니다",          act: demoEvacuateBeat },
     /* ⑥ 진화 비트 삭제 — 씬 4개 구성(2026-08-30). after 의 결말은 "문밖으로 나간다"이고,
        진화까지 붙이면 이야기가 한 박자 늘어진다. 진화 연출 자체는 demoExtinguish 로 남아 있다. */
   ],
@@ -15459,7 +15894,10 @@ const SMOKE = { dose:0, fled:false, fell:false, FLEE:0.70, FAINT:4.45 };
    반응 완료가 29.018초가 되어 29.000초의 ⑤ 비트에 **18ms 차이로 졌다** — 매 회차
    "경보 고리가 안 걸렸다"가 찍혔다(실측). 2.6초면 28.6초에 걸려 자막보다 먼저 나간다.
    ⚠️ ④~⑤ 간격을 바꾸면 이 값도 같이 줄여야 한다. */
-const ALARM = { on:false, t:0, src:null, REACT:2600 };
+/* REACT — 경보가 울리고 사람이 실제로 움직이기까지(ms).
+   2600 → **1200** (2026-08-31, 사용자 지적: 화재→감지→대피 간격이 길다).
+   감지가 발화 0.8초 뒤로 당겨졌으므로 반응도 같이 줄여야 한 덩어리로 읽힌다. */
+const ALARM = { on:false, t:0, src:null, REACT:1200 };
 function alarmRaise(src) {
   if (ALARM.on) return;
   ALARM.on = true; ALARM.t = 0; ALARM.src = src;
@@ -15473,10 +15911,28 @@ function smokeTick(dt) {
      (눌음 가속과 같은 가드). */
   if (!DEMO.on || DATAGEN.running || GT_BUSY) return;
   if (!state.fire || !FIRE_FOG.on) return;
-  if (!person.node.isEnabled()) return;            // 문밖으로 나갔다 — 더 안 마신다
+  /* ⚠️ **방 안에 아무도 없을 때만 멈춘다** (2026-08-31).
+     종전에는 주인공 한 명만 봤다. 주인공을 화면에서 빼면서(DEMO.hidePerson) 이 줄이
+     매 프레임 참이 되어 **흡입 모델이 통째로 죽었다** — before 에서 연기 자각 대피가
+     영영 안 걸리고(실측: SMOKE.fled 끝까지 false, 인원 2명이 불난 방에 그대로 남음),
+     쓰러짐도 흡입량이 아니라 ④ 비트 시각으로만 일어났다(24.01초 = 비트 시각 그대로).
+     연기를 마시는 것은 방 안에 남은 사람 누구나다. */
+  const inside = person.node.isEnabled() ||
+                 (typeof EXTRAS !== "undefined" && EXTRAS.some(P => P.root.isEnabled()));
+  if (!inside) return;                             // 다 나갔다 — 더 안 마신다
   const prog = Math.min(1, FIRE_FOG.t / FIRE_FOG.full);
   SMOKE.dose += prog * dt / 1000;
-  if (!SMOKE.fled && SMOKE.dose >= SMOKE.FLEE) {
+  /* ⚠️ **after 에서는 연기 자각으로 먼저 내보내지 않는다** (2026-08-31, 사용자 지적).
+     이 분기는 흡입량만 보므로 시나리오를 안 가린다. after 에서는 임계(0.70)가 **24초쯤**
+     걸리는데, 경보는 26초·대피 컷은 29초다. 그래서 추가 인원 2명이 아무도 안 보는 사이에
+     빠져나가고(실측: 27.5초에 이미 숨김, 위치 z 4.98·4.03), 정작 대피 장면에는 주인공
+     혼자 남는다 — 화면에서는 "세 명 중 한 명만 탈출"로 보인다.
+     이야기로도 어긋난다. after 의 논지는 **경보를 듣고 나간다**인데, 경보 전에 각자
+     연기를 맡고 나가버리면 감지가 한 일이 없어진다.
+     → after 는 ⑤ demoEvacuate 가 세 명을 한꺼번에 내보낸다(그쪽 끝의 demoExtrasFlee).
+       before 는 그대로 둔다 — 감지가 없으니 연기를 맡고 각자 도망치는 게 정확하다. */
+  if (!SMOKE.fled && SMOKE.dose >= SMOKE.FLEE &&
+      !(typeof DEMO !== "undefined" && DEMO.kind === "after")) {
     console.log("[DEMO] 연기를 자각 — 흡입 " + SMOKE.dose.toFixed(1) + " (임계 " + SMOKE.FLEE + ")");
     demoExtrasFlee();
     /* 주인공도 여기서 움직인다 — **비트가 아니라 인과다** (2026-08-30).
@@ -15498,11 +15954,41 @@ function smokeTick(dt) {
   }
 }
 
+/* ══ 주인공도 대기 중에 일한다 (2026-08-31, 사용자 지시) ═══════════════════════
+   ②~③ 동안 주인공은 대기 자리(DEMO_WATCH_SPOT)에 **가만히 서 있었다**. 추가 인원에
+   holdBusy 를 넣고 나니 주인공만 붙박이로 남아 더 눈에 띈다. 같은 방식으로 자리는
+   그대로 두고 동작만 돌린다 — 그 자리는 대피 동선·회피 보류 때문에 고른 좌표라
+   **옮기면 안 된다**(DEMO_WATCH_SPOT 주석).
+   ⚠️ 걷는 중·쓰러진 중·대피 중에는 손대지 않는다. 그 동작들을 덮으면
+      "쓰러진 사람이 갑자기 집기 동작을 한다"가 된다. */
+const WATCH_ACTS = ["idleTalk", "pickup", "interact", "idle", "kneel"];
+function demoWatchBusy(dt) {
+  if (!DEMO.on || DEMO.evac || SMOKE.fell) return;
+  if (person.freeze || person.moving || person.mode !== "idle") return;
+  if (PERSON.acting === "down") return;
+  DEMO.busyT = (DEMO.busyT || 0) - dt;
+  if (DEMO.busyT > 0) return;
+  DEMO.busyN = (DEMO.busyN || 0) + 1;
+  personAct(WATCH_ACTS[DEMO.busyN % WATCH_ACTS.length],
+            { speed: 0.9 + (DEMO.busyN % 4) * 0.05 });
+  DEMO.busyT = 2600 + ((DEMO.busyN * 11) % 6) * 420;    // 2.6~4.7초씩
+}
+
 function demoTick(dt) {
   smokeTick(dt);
+  demoWatchBusy(dt);
   /* 불이 붙으면 인원을 풀어 준다 — 세워 둔 이유(투입 시각 안정)가 끝났고,
      이제는 연기를 자각해 도망가야 한다. */
-  if (DEMO.holdExtras && state.fire) DEMO.holdExtras = false;
+  /* ⚠️ **after 는 대피할 때까지 잡아 둔다** (2026-08-31, 사용자 지적: 제자리걸음).
+     발화(20초)에 풀면 인원이 자기 순회 동선을 이어받아 **설비에 바싹 붙은 작업 자리**로
+     걸어간다. 그 자리는 통행 격자에서 막힘이고, 콜라이더가 매 프레임 되밀기 때문에
+     ⑤에서 대피 경로를 받아도 첫 걸음을 못 뗀다 — 실측: 인원0 이 옆 국솥 앞
+     (3.91, −0.87) 에서 **629ms 제자리걸음**. 경로를 아무리 고쳐도 안 풀렸다(탈출점을
+     끼워 넣어도 같았다). 서 있는 자리 자체가 원인이므로 **거기 가지 않게** 막는다.
+     before 는 종전대로 발화에 푼다 — 거기서는 연기를 자각하고 각자 도망쳐야 한다.
+     after 에서 잡아 두는 동안 인원은 열린 칸(demoNormalWork 의 스냅)에 서 있고,
+     ⑤ demoExtrasFlee 가 세 명을 한꺼번에 내보낸다. */
+  if (DEMO.holdExtras && state.fire && DEMO.kind !== "after") DEMO.holdExtras = false;
   /* after: **경보가 대피를 부른다.** ⑤ 비트가 시각으로 부르는 게 아니라, ④에서 올린
      경보가 반응 시간(3초) 뒤에 부른다. 감지가 없으면 이 고리가 아예 안 생긴다. */
   if (ALARM.on && DEMO.on && !DEMO.evacStarted && ALARM.t >= ALARM.REACT
@@ -15606,6 +16092,54 @@ function demoTick(dt) {
     }
     if (k >= 1) { DEMO.fade = null; setFire(false); }   // 여기서 안개를 정식 복원한다
   }
+  /* ══ 감지는 **불이 붙은 시각에 매인다** (2026-08-31, 사용자 지적) ═══════════
+     종전에는 ④ 비트(26초)가 감지를 걸었다. 그런데 불은 **15.9초**에 붙는다(과열 모델이
+     스스로 점화한다) — 실측. 즉 화면에 불이 훤히 보이는 채로 **10.1초**가 지난 뒤에야
+     "화재 감지"가 떴다. 화재 감지 시스템을 파는 발표에서 이 10초는 그 자체가 반증이다.
+     → 발화 시각을 잡아 두고 DEMO_DETECT_LAG 뒤에 감지한다. 비트는 보험으로 남는다
+       (이 파일의 "비트는 보험이다" 원칙 그대로 — 원인이 먼저, 비트는 늦은 회차만 받는다).
+     ⚠️ before 에는 걸지 않는다. 감지가 없다는 것이 before 의 전부다. */
+  /* ══ 희생자는 **발화 즉시** 쓰러질 자리로 간다 (2026-08-31, 사용자 지적) ═══════════
+     종전에는 연기 자각(SMOKE.FLEE)에서 demoExtrasFlee 가 목적지를 줬다. 그런데 데모를
+     압축한 뒤로 자각(0.70)과 실신(4.45) 임계가 **거의 동시**에 걸린다 — 실측 둘 다 22.1초.
+     걸어갈 시간이 0초라 희생자는 **대기 자리에서 그대로 쓰러진다**. 그 자리는 카트·선반
+     사이라 어느 각도에서 봐도 몸이 가린다(사용자 스크린샷: 다리만 보임).
+     → 불이 붙는 순간 목적지를 준다. 실신까지 9초쯤 있으니 걸어가 눕는다.
+     ⚠️ 카메라를 돌려서 풀 문제가 아니었다 — 쓰러지는 **자리**가 잘못된 것이다. */
+  /* ⚠️ 출발은 **로봇이 멈추는 시점**이다 — 발화가 아니다 (2026-08-31).
+     발화에 보냈더니 쓰러짐을 4.2초로 당긴 뒤로 **목표에 못 닿았다**(실측: 목표 (1.50,1.50),
+     실제 (2.87,1.28) — 설비 사이라 또 가렸다). 로봇은 ②에서 바스켓을 기름에 담그고
+     스스로 멈추므로(holdInOil, 약 8초) 그 뒤로는 사람이 로봇 반경에 들어가도 상관없다.
+     발화(12초)까지 4초, 쓰러짐(16초)까지 8초 — 1.9m 걷기에 충분하다. */
+  /* holdInOil 은 실행되면 곧바로 꺼지는 1회성 신호라 여기서 못 잡는다(실측: sent 가
+     발화 시각과 같았다). ② 비트가 8초쯤이고 로봇은 그 직후 멈추므로 **시각으로 잡는다**. */
+  if (DEMO.kind === "before" && (DEMO.t >= 8000 || state.fire) && DEMO.victim && !DEMO.victimSent) {
+    DEMO.victimSent = true;
+    const P = DEMO.victim, c = DEMO_COLLAPSE_SPOT();
+    DEMO.holdExtras = false;                      // 잡아 둔 상태면 못 걷는다
+    P.station = null; P.dwellT = 0; P.acting = null; P.evacWait = 0;
+    if (!setPathTo(P, c)) P.path = [c];
+    P.pi = 0; P.mode = "walk"; P.speed = 1.5; P.lastD = undefined; P.stallT = 0;
+  }
+  /* 쓰러짐도 발화 시각에 매단다(위 DEMO_COLLAPSE_LAG 주석) — 흡입 임계가 먼저면 그쪽이 이긴다. */
+  if (DEMO.kind === "before" && state.fire && !SMOKE.fell) {
+    if (DEMO.fireT == null) DEMO.fireT = DEMO.t;
+    if (DEMO.t - DEMO.fireT >= DEMO_COLLAPSE_LAG) demoCollapse();
+  }
+  if (DEMO.kind === "after" && state.fire && !DEMO.detected) {
+    if (DEMO.fireT == null) DEMO.fireT = DEMO.t;
+    /* ③ 자막도 발화 시각에 매단다(위 DEMO_IGNITE_MSG_LAG 주석) — 비트는 보험으로 남는다. */
+    if (!DEMO.saidIgnite && DEMO.t - DEMO.fireT >= DEMO_IGNITE_MSG_LAG) {
+      DEMO.saidIgnite = true;
+      demoSay("③ 과조리 — 기름에 불이 붙었습니다");
+    }
+    if (DEMO.t - DEMO.fireT >= DEMO_DETECT_LAG) {
+      demoDetectOn();
+      /* ⚠️ 자막을 **뒤에** 띄운다. demoDetectOn 안에서 실영상 패널이 자기 상태를
+         찍으므로("실영상 클립이 없습니다…") 먼저 띄우면 그게 덮어쓴다 — 실측. */
+      demoSay(demoDetectMsg());
+    }
+  }
   if (DEMO.evac) {
     const p = person.node.position;
     if (Math.hypot(p.x - DEMO.evac.x, p.z - DEMO.evac.z) < 0.45) {
@@ -15635,7 +16169,16 @@ function demoTick(dt) {
   /* 마지막 비트에서 4초 더 보여주고 시계를 멈춘다(화면 상태는 그대로 둔다).
      ⚠️ 화재 4배속은 **반드시 여기서 되돌린다.** 되돌리기를 안 누르고 그대로
      데이터셋을 생성하면 표본마다 연기 진행이 4배로 감겨 들어간다. */
-  if (DEMO.beat >= S.length - 1 && DEMO.t > S[S.length - 1].at + 4000) {
+  /* 마지막 비트 뒤 여유. **after 는 더 길게 잡는다** (2026-08-31, 사용자 지적).
+     ⑤에서 세 명이 한꺼번에 나가는데, 서 있던 자리가 제각각이라 뒤쪽 인원은 문까지
+     5m 넘게 남는다 — 2.5㎧ 로 2초 이상 걸린다. 종전 4초로는 마지막 한 명이 문에
+     닿기 전에 데모가 끝나 **방 안에 선 채로 굳었다**(실측: ① 이 z 0.4 에서 남았다).
+     before 는 마지막 비트가 '쓰러짐'이라 늘릴 이유가 없다 — 4초 그대로 둔다. */
+  /* after 꼬리 8초 → **5초** (2026-08-31, 사용자 지적: 길다). 8초는 주인공까지 3명이
+     제각각 자리에서 출발하던 때의 값이다. 지금은 인원 2명만 나가고 마지막 한 명이
+     대피 시작 3초 뒤에 문밖이라(실측), 5초면 나간 뒤 2초가 남는다. */
+  const tail = (DEMO.kind === "after") ? 5000 : 4000;
+  if (DEMO.beat >= S.length - 1 && DEMO.t > S[S.length - 1].at + tail) {
     DEMO.on = false;
     FIRE_FOG.speed = 1;
   }
@@ -15665,6 +16208,13 @@ function demoRun(kind) {
     /* ⚠️ 검출 모드도 뜬다. ④에서 mock→onnx로 바꾸는데, 되돌리지 않으면
        **다음 사람이 쓸 때 모드가 바뀐 채로 남는다.** 같은 sim.html을 팀원이 쓴다. */
     milMode: MIL.mode,
+    /* ⚠️ 센서 필터도 뜬다 (2026-08-31, 사용자 지적). [일반 CCTV]·[야간] 프리셋을 켠 채로
+       발표를 시작하면 **노이즈·왜곡·비네팅이 얹힌 화면**으로 시나리오가 나간다 —
+       화재 연기와 겹쳐 무엇이 연기이고 무엇이 화면 노이즈인지 구분이 안 된다.
+       발표는 선명(clean)으로 시작하고, 되돌리기에서 원래 프리셋을 복구한다. */
+    sensor: { grain:SENSOR.grain, distortion:SENSOR.distortion, chroma:SENSOR.chroma,
+              blur:SENSOR.blur, vignette:SENSOR.vignette, expJit:SENSOR.expJit,
+              lowres:SENSOR.lowres, steam:SENSOR.steam },
     /* 발표용 안전 설정도 뜬다 — 아래 demoPresentSafety 주석에 왜인지 적어 뒀다. */
     margin: AVOID.margin,
     horizon: PRED.vizHorizon,
@@ -15687,6 +16237,9 @@ function demoRun(kind) {
         시작 순간에 한 번 멈칫하는데, 본 동작이 시작되기 전이라 감수한다. */
   if (QUALITY.presets.rec) {
     QUALITY.apply("rec");
+    /* 센서 필터를 선명으로 — 노이즈·왜곡이 얹힌 채 발표가 나가지 않게 한다
+       (DEMO.saved.sensor 주석). 되돌리기에서 원래 프리셋으로 복구한다. */
+    if (typeof sensorPreset === "function") sensorPreset("clean");
     if (typeof $ === "function" && $("qualitySel")) $("qualitySel").value = "rec";
   }
   demoPresentSafety();
@@ -15779,6 +16332,7 @@ function demoWorkRoute() {
 
 function demoReset(quiet) {
   DEMO.on = false; DEMO.kind = null; DEMO.t = 0; DEMO.beat = -1;
+  fireBoxOff();
   FIRE_FOG.speed = 1;                          // 발표용 4배속을 원래대로
   setFire(false);
   STEAM.k = 1; steamSettle();
@@ -15794,6 +16348,11 @@ function demoReset(quiet) {
   /* 흡입량·경보도 되돌린다 — 안 지우면 다음 회차가 이미 쓰러진 상태로 시작한다 */
   SMOKE.dose = 0; SMOKE.fled = false; SMOKE.fell = false;
   DEMO.evacStarted = null; DEMO.holdExtras = false; alarmClear();
+  DEMO.detected = false; DEMO.fireT = null; DEMO.saidIgnite = false;   // 발화 기반(demoTick 주석)
+  DEMO.busyT = 0; DEMO.busyN = 0;                // 주인공 대기 동작(demoWatchBusy 주석)
+  DEMO.hidePerson = false; DEMO.victim = null; DEMO.victimSent = false;
+  person.node.setEnabled(true); person.freeze = false;
+  if (typeof EXTRAS !== "undefined") EXTRAS.forEach(P => { P.struckT = 0; P.evacWait = 0; });
   /* 대피로 숨긴 인원을 되살린다 — 안 하면 되돌리기 뒤에도 조리실이 비어 있다 */
   if (typeof EXTRAS !== "undefined") EXTRAS.forEach(P => { P.evac = false; P.root.setEnabled(true); });
   state.temp = 170; state.cook = 0; state.burn = 0; AUTO_IGNITE.armed = true;
@@ -15813,6 +16372,10 @@ function demoReset(quiet) {
   if (DEMO.saved && DEMO.saved.pip !== undefined) {      // 발표 중 껐던 PiP 복구(demoRun 의 ⚠️)
     pipView = DEMO.saved.pip;
     if (typeof pipSel !== "undefined" && pipSel) pipSel.value = pipView;
+  }
+  if (DEMO.saved && DEMO.saved.sensor) {                 // 발표 중 껐던 센서 필터 복구
+    Object.assign(SENSOR, DEMO.saved.sensor);
+    if (typeof sensorApply === "function") sensorApply();
   }
   if (DEMO.saved && DEMO.saved.quality && QUALITY.name !== DEMO.saved.quality) {
     QUALITY.apply(DEMO.saved.quality);                  // 발표 중 올렸던 화질 복구
