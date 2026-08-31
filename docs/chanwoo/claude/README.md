@@ -21,7 +21,8 @@
 | `person_finetune.png` | 기성 vs 파인튜닝 | R 0.175 → 0.871 · P 0.374 → 0.872 | 합성 val |
 | `person_fusion_ladder.png` | 4분할·월드융합·추적 사다리 | R 0.831 → 0.988 | 합성/존 |
 | `person_real_transfer.png` | 실사 전이(정직성) | R 0.270 → 0.844 (RF-DETR 0.917) | **실사** test 137 |
-| `sim_person_ba.png` | 검출 박스 · 기성 vs 나디르 4분할 | **0명 → 13명(전원)** | 합성 나디르(무화재) |
+| `sim_person_ba.png` | 검출 박스 · 기성 vs 나디르 4분할 (인상용) | **0명 → 13명** | 합성 나디르(무화재) |
+| `sim_person_verified.png` | 검출 박스 · **GT 대조 검증** (방 전체·잘림 0) | **0명 → 8/8 전원** (FP 0·누락 0) | 합성 나디르(무화재) |
 | `sim_zone4_exploded.png` | 4구역 타일별 재검출 | 6·5·4·1명 | 합성 나디르 |
 | `real_person_ba.png` | 검출 박스 · 기성 vs 실사모델 | **0명 → 13명** | 실사 overhead test 원본 |
 
@@ -29,6 +30,9 @@
 - 생성: `scripts/infer_boxes.py`(박스), `scripts/split4_detect.py`(4분할), `scripts/make_charts.py`(차트).
 - ⚠️ **도메인 구분**: 0.871·0.988은 **합성(SIM)** 수치. 실사 사람 검출은 `person_real_transfer` 기준
   (sim-only 0.270 붕괴 → real+sim 0.844)이며 **실사 검출 회복은 남은 과제**. SIM을 실사처럼 말하지 않는다.
+- **박스 이미지 두 버전**: `sim_person_ba`(13명·인상용)와 `sim_person_verified`(8/8·GT 검증). 단일
+  정지 프레임은 밀집 시 1~2명을 놓칠 수 있고, 그 놓침을 프레임 간 추적(ByteTrack+칼만 coast)이
+  메워 배포 recall 0.988이 된다 → "안 놓친다"의 정량 근거는 `person_fusion_ladder`.
 
 ## 움직임 예측 (`motion/`)
 
