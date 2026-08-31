@@ -14130,17 +14130,21 @@ function extrasUpdate(dt) {
     }
     n.x += ux * st; n.z += uz * st;
     resolvePersonCollision(n);
-    /* 역할 반경 유지 — 스테이션만 제한하면 **가는 길이 반경을 가로지른다.**
-       far가 조리대(2.8m)→제어반(3.3m)으로 갈 때 직선이 로봇 옆을 스칠 수 있다.
-       역할별 최소 거리보다 안쪽으로 들어오면 로봇 반대 방향으로 밀어낸다.
- */
-    const RR = ROLE[P.role] || ROLE.far;
-    const minR = RR.zone === "out" ? SAFE.NOM_SLOW : RR.zone === "slow" ? SAFE.NOM_STOP : 0;
-    if (minR > 0) {
-      const B = LAYOUT.robot.base;
-      const ox = n.x - B.x, oz = n.z - B.z, od = Math.hypot(ox, oz);
-      if (od < minR && od > 1e-4) { n.x = B.x + ox / od * minR; n.z = B.z + oz / od * minR; }
-    }
+    /* 역할 반경 유지(far·caution를 로봇 링 밖으로)는 **여기서 하지 않는다.**
+       종전에는 이 자리에 enforceRoleRing 과 똑같은 링 밀어내기 사본이 있었는데,
+       두 곳이 갈라지며 버그가 났다:
+         · enforceRoleRing 은 2026-08-31 에 `!state.auto` 게이트가 붙었지만(로봇이 서
+           있으면 막을 게 없고, 링 안쪽 스테이션을 목표로 받은 사람이 경계에 눌려
+           제자리걸음을 한다 — 그쪽 주석) **이 사본에는 게이트가 없어**, 궤적 수집
+           (state.auto=false)에서 far·caution 을 매 프레임 링으로 스냅했다.
+           실측: 조리는 국솥(2.70m)·점검은 로봇 앞(1.34m)에 한 번도 못 갔고, 운반은
+           서벽 링호(3.90m)에 갇혀 60초에 0.25m만 움직였다(전처리·조리 15~19m 정상).
+         · 이 사본은 enforceRoleRing 의 예외(대피·쓰러짐·희생자 skip)와 눌림 해제
+           (ringT>30 → 목표 재선정)도 없어, 있어도 반쪽짜리였다.
+       extrasUpdate 의 **두 호출부(렌더 틱·trajStep)가 모두 직후에 enforceRoleRing 을
+       부르므로**(이동→분리→링), 링은 프레임이 그려지거나 기록되기 전에 한 번 확실히
+       적용된다. 즉 이 사본은 redundant 했고, 유일한 소유자를 enforceRoleRing 하나로
+       둔다 — 사본을 다시 만들지 말 것(이 버그가 그렇게 났다). */
     // 정체 감지 — 설비에 막히면 다른 목적지로 (본체와 같은 규칙)
     if (P.lastD !== undefined && d > P.lastD - 0.004) P.stallT = (P.stallT || 0) + dt;
     else P.stallT = 0;
