@@ -1,0 +1,35 @@
+{
+  "source_scene": "E:\\VsCodeProjects\\robot-kitchen-safety-sim\\dataset\\trajectories\\island_h58_seed11_0010.json",
+  "split_note": "training/example scene; not held-out validation",
+  "node": "extra_0",
+  "window": "frames[24:44]",
+  "robot_center_m": [
+    -1.1,
+    0.815
+  ],
+  "stop_ring_m": 3.1,
+  "slow_ring_m": 3.9,
+  "gt_stop_ring_entry_step": 4,
+  "gt_stop_ring_entry_seconds": 1.6,
+  "modes": [
+    {
+      "mode": 1,
+      "weight": 0.5705242156982422,
+      "stop_ring_entry_step": 4,
+      "stop_ring_entry_seconds": 1.6
+    },
+    {
+      "mode": 2,
+      "weight": 0.22108782827854156,
+      "stop_ring_entry_step": 6,
+      "stop_ring_entry_seconds": 2.4
+    },
+    {
+      "mode": 3,
+      "weight": 0.20838801562786102,
+      "stop_ring_entry_step": null,
+      "stop_ring_entry_seconds": null
+    }
+  ],
+  "checkpoint": "C:\\Users\\s_cw8881\\.cache\\huggingface\\hub\\models--chanubc--human-move-lstm\\snapshots\\114304ceae88138a2a98c236ae7c876f1d6b441f\\model.pt"
+}
