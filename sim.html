@@ -10750,16 +10750,19 @@ function drawDetPip(ctx, W, H){
   const cam = camOf(DEMO_DET.cam);
   if(!cam || (SURV[DEMO_DET.cam] && cam !== SURV[DEMO_DET.cam].cam)) { DEMO_DET.sm = {}; return; }
   /* 화재 시연은 **불꽃(fire)+연기(smoke) 두 박스**, 충돌 시연은 사람(person) 한 박스. */
+  /* k = 프레임당 평활 계수. 불꽃·연기는 입자가 매 프레임 튀어 평활(0.3)로 눌러야 하지만,
+     사람 박스는 매끈한 AABB 라 평활을 걸면 **걷는 사람 뒤로 박스가 끌린다**(저프레임에서
+     최대 ~20cm — "좌표가 어긋난다"의 정체). 사람은 k=1(평활 없음)로 좌표에 딱 붙인다. */
   const items = [];
   if(DEMO_DET.kind === "fire"){
-    const fb = fireBoxNorm(cam);  if(fb) items.push({ id:"fire",  norm:fb, col:MIL_COLORS.fire,  tag:"fire "  + DEMO_FIRE_CONF  + "%" });
-    const sb = smokeBoxNorm(cam); if(sb) items.push({ id:"smoke", norm:sb, col:MIL_COLORS.smoke, tag:"smoke " + DEMO_SMOKE_CONF + "%" });
+    const fb = fireBoxNorm(cam);  if(fb) items.push({ id:"fire",  norm:fb, col:MIL_COLORS.fire,  tag:"fire "  + DEMO_FIRE_CONF  + "%", k:0.3 });
+    const sb = smokeBoxNorm(cam); if(sb) items.push({ id:"smoke", norm:sb, col:MIL_COLORS.smoke, tag:"smoke " + DEMO_SMOKE_CONF + "%", k:0.3 });
   } else {
     /* 충돌 = 객체검출 + **ByteTrack 트래킹 ID**. 대본상 1명이라 트랙은 #1 로 고정 —
        매 프레임 같은 id 를 달아 "한 사람을 계속 추적한다"를 보여준다(drawMilBoxes 의 #id 규약).
        밀도구름·예측선(밀도 구름/이동선)은 corrVizOn 이 켠 3D 오버레이라 이 나디르 PiP 에
        그대로 나온다 — 별도 그리기 없이 같은 화면에 얹힌다. */
-    const pb = personBoxNorm(cam); if(pb) items.push({ id:"person", norm:pb, col:MIL_COLORS.person, tag:"person " + DEMO_PERSON_CONF + "% #1" });
+    const pb = personBoxNorm(cam); if(pb) items.push({ id:"person", norm:pb, col:MIL_COLORS.person, tag:"person " + DEMO_PERSON_CONF + "% #1", k:1 });
   }
   if(!DEMO_DET.sm) DEMO_DET.sm = {};
   const R = pipRect(), rsx = W / R.W, rsy = H / R.H;
@@ -10771,9 +10774,9 @@ function drawDetPip(ctx, W, H){
   const seen = {};
   for(const it of items){
     let nb = it.norm; const prev = DEMO_DET.sm[it.id];
-    /* 떨림 완화(박스별) — 큰 점프(컷 전환·첫 등장)는 이어 붙이지 않는다. */
-    const sm = (prev && Math.abs(prev.x - nb.x) < 0.25 && Math.abs(prev.y - nb.y) < 0.25) ? prev : null;
-    if(sm){ const k = 0.3; nb = { x:sm.x+(nb.x-sm.x)*k, y:sm.y+(nb.y-sm.y)*k, w:sm.w+(nb.w-sm.w)*k, h:sm.h+(nb.h-sm.h)*k }; }
+    /* 떨림 완화(박스별) — 큰 점프(컷 전환·첫 등장)는 이어 붙이지 않는다. k=1 이면 평활 없음. */
+    const sm = (it.k < 1 && prev && Math.abs(prev.x - nb.x) < 0.25 && Math.abs(prev.y - nb.y) < 0.25) ? prev : null;
+    if(sm){ const k = it.k; nb = { x:sm.x+(nb.x-sm.x)*k, y:sm.y+(nb.y-sm.y)*k, w:sm.w+(nb.w-sm.w)*k, h:sm.h+(nb.h-sm.h)*k }; }
     DEMO_DET.sm[it.id] = nb; seen[it.id] = 1;
     const bx = rx + nb.x*rw, by = ry + nb.y*rh, bw = nb.w*rw, bh = nb.h*rh;
     ctx.lineWidth = Math.max(1.5, 2*s); ctx.strokeStyle = it.col;
