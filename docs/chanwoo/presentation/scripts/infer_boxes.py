@@ -16,13 +16,24 @@ def font(sz, bold=True):
         except: pass
     return ImageFont.load_default()
 
-def draw_boxes(img, boxes, color, width=None):
+def draw_boxes(img, boxes, color, width=None, cls_name="person", show_label=True):
     im = img.convert("RGB").copy()
     d = ImageDraw.Draw(im)
     W,H = im.size
     w = width or max(2, int(round(W/400)))
+    fsz = max(11, int(round(W/95)))
+    f = font(fsz, bold=False)
     for (x1,y1,x2,y2,conf) in boxes:
         d.rectangle([x1,y1,x2,y2], outline=color, width=w)
+        if show_label:
+            txt = f"{cls_name} {conf:.2f}"
+            tb = d.textbbox((0,0), txt, font=f)
+            tw, th = tb[2]-tb[0], tb[3]-tb[1]
+            pad = max(2, fsz//5)
+            ty = y1 - th - 2*pad
+            if ty < 0: ty = y1
+            d.rectangle([x1, ty, x1+tw+2*pad, ty+th+2*pad], fill=color)
+            d.text((x1+pad, ty+pad-tb[1]), txt, fill=(8,9,11), font=f)
     return im
 
 def header(im, text, color, count):
