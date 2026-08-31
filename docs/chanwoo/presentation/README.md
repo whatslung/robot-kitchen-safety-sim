@@ -36,10 +36,14 @@
 
 | 파일 | before → after | 입력 프레임 | 모델 |
 |---|---|---|---|
-| `boxes/sim_person_ba.png` | 기성 3명 → 나디르 **10명** | sim.html 전체 나디르 캡처(오버레이 억제 `groundTruth`) | 기성 vs HF `chanubc/robot-kitchen-nadir-yolo11s` (합성 학습) |
+| `boxes/sim_person_ba.png` | 기성 **0명** → 나디르 4분할 **13명 (전원)** | sim.html 전체 나디르 캡처(일반 씬·무화재) | 기성 vs HF `chanubc/robot-kitchen-nadir-yolo11s` (합성 학습) |
+| `boxes/sim_zone4_exploded.png` | 4구역 타일별 재검출(6·5·4·1명) | 위 프레임을 4분할(겹침) | 나디르 모델을 각 구역 확대 후 검출 |
 | `boxes/real_person_ba.png` | 기성 **0명** → 실사 **13명** | Roboflow `overhead-person-szky0` v3 **test 원본**(학습 0장) | 기성 vs HF `chanubc/overhead-person-yolo11` (실사 학습, recall 0.98) |
 
-- **합성**: 방 중앙 위 직교(ortho) 나디르로 캡처 → 사람이 작게 보이는 5m 나디르 도메인 = 기성 검출기가
-  무너지는 바로 그 조건. 라벨/오버레이 없는 clean RGB(`groundTruth(cam,{noDepth:true})`).
+- **합성**: 방 중앙 위 직교(ortho) 나디르로 캡처(불·연기 끈 일반 씬) → 사람이 작게 보이는 5m 나디르
+  도메인 = 기성 검출기가 무너지는 바로 그 조건. 라벨/오버레이 없는 clean RGB(`groundTruth`).
+- **4분할**: 전체 나디르 한 장은 사람이 작아 단일 패스도 놓친다(recall ~0.87). 프레임을 네 구역으로
+  나눠 각 구역을 확대 재검출하면 놓친 사람을 되찾는다 = nadir-zone-fusion §5-7~§5-9의 사다리.
+  `scripts/split4_detect.py`.
 - **실사**: Roboflow test 137장 중 대비가 큰 프레임 선택(before 0 / after 13). 실사 라벨 출처 CC BY 4.0.
 - `overhead-person-yolo11/assets/samples/*.jpg`는 이미 박스가 구워진 데모 출력이라 입력으로 쓰지 않음(원본 필요).
