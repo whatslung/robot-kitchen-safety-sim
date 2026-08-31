@@ -8,6 +8,7 @@
 - **kitchen_trajectories_nadir.json** — 조리원 3명 궤적(각 150점, 60s·2.5Hz) + 스테이션 21 + 로봇 + 안전링. 각 점에 `x,z`(미터)와 `u,v`(PNG 픽셀) 동봉 → `u,v`를 이미지에 바로 찍으면 정렬.
 - **figurelab_prompt.md** — 프롬프트만(데이터 별도 첨부 시).
 - **overlay_preview.png** — 검증/목표 예시. PNG 위에 JSON `u,v`를 그대로 찍은 것(prep 파랑·cook 주황·wash 초록).
+- **predictor_architecture.svg / .png** — 슬라이드 09용 구조도(논문 스타일). 관측 8스텝·ego 정규화 → 인코더 교체형(LSTM⇄Transformer) → 64-d 문맥 → 멀티모달 헤드 → K=3 미래 + best-of-K 학습. `trajectory/learned_predictor.py`에 1:1 대응. SVG=벡터(편집용) · PNG=3040×1600(삽입용).
 
 ## 넣는 법
 Figure Labs에 `figurelab_handoff.md` + `kitchen_nadir_wholescene.png` 두 개만 첨부.
