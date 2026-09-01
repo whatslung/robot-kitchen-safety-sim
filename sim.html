@@ -10433,7 +10433,8 @@ function drawOverlay() {
      ④에서 CCTV로 컷을 넘기던 동안에는 안 드러났고, ⑤ 대피(자유 시점)에서만 조용히 틀렸다.
      그 컷을 없앤 지금은 ④부터 바로 보이므로 여기서 막는다. */
   drawMilBoxes(ctx, overlayCv.width, overlayCv.height, SURV[mainView] ? mainView : null);
-  drawDetPip(ctx, overlayCv.width, overlayCv.height);      // 발표 검출 박스 — 우상단 PiP 캠에만
+  drawFireBox(ctx, overlayCv.width, overlayCv.height);     // 화재 박스 — 메인 화면(연출 카메라)에
+  drawDetPip(ctx, overlayCv.width, overlayCv.height);      // 충돌 검출 박스 — 우상단 PiP 캠에만
   drawBirdseye(ctx, overlayCv.width, overlayCv.height);
 }
 /* 모델 출력 박스 — 화면 오버레이와 캡처가 **같은 그림**을 쓰도록 떼어냈다.
@@ -10511,6 +10512,110 @@ const DEMO_FIRE_CONF = 96;
 /* 불꽃 몸통으로 볼 높이(유면 기준, m). 박스 크기 손잡이는 이것 하나다.
    0.75 = 솥 림(0.76) 위로 조금. 키우면 연기 기둥까지 먹고, 줄이면 유면에 붙은 띠가 된다. */
 const FIRE_BOX_H = 0.75;
+/* 화재 박스 상태. **DEMO 객체에 넣지 않는다** — DEMO 는 이 줄보다 한참 아래에서 const 로
+   선언되는데 drawOverlay 는 초기화 중에 이미 한 번 돈다. TDZ 라서 `typeof DEMO` 조차
+   ReferenceError 를 던지고(typeof 가드는 *미선언* 변수만 막는다) 초기화가 통째로 죽는다.
+   실측: "Cannot access 'DEMO' before initialization" 으로 씬이 아예 안 떴다.
+   ④ demoDetectOn 이 on 을 켜고, ① demoNormalWork · demoReset 이 끈다.
+     on — 감지 비트를 지났는가. before 는 그 비트가 없으므로 끝까지 false 다.
+     sm — 직전 프레임 박스(떨림 완화용). 컷이 바뀌면 null 로 끊는다. */
+const FIRE_BOX = { on:false, sm:null, view:null };
+/* ⚠️ **끌 때는 오버레이를 즉시 다시 그려야 한다** (2026-08-31, 사용자 지적).
+   렌더 루프는 `engine.runRenderLoop(() => scene.render())` 뿐이고, `drawOverlay()` 는
+   **주기 갱신에서만** 돈다. 그래서 on 을 false 로 내려도 캔버스에 이미 그려진 박스는
+   **다음 갱신이 올 때까지 그대로 남는다** — 컷이 대피 장면으로 넘어간 뒤에도 불 박스가
+   사람 위에 떠 있었다(사용자 지적). 플래그를 내리는 것과 지우는 것이 한 동작이어야 한다.
+   ⚠️ drawFireBox 안에서는 부르지 않는다 — 그쪽은 drawOverlay 가 부르는 중이라 재귀가 된다. */
+function fireBoxOff() {
+  FIRE_BOX.on = false; FIRE_BOX.sm = null;
+  if (window.__overlayReady && typeof drawOverlay === "function") drawOverlay();
+}
+
+/* ══ 화재 박스 — **메인 화면(연출 카메라)에 그린다** (2026-08-31, 2026-09-01 부활) ═════════
+   충돌 검출은 우상단 감시 캠(PiP)에 두지만(ByteTrack 트랙 ID 를 캠에서 보여야 설득이 된다),
+   **화재는 메인 화면에 크게 친다** — 불꽃이 화면을 지배해 임팩트가 크고, 관객이 "저 불을
+   잡았다"를 바로 읽는다(2026-09-01, 사용자 판단으로 PiP→메인 되돌림).
+   왜 검출 마스크 경로(milMaskBoxes)를 안 쓰나 — **그 경로로는 불이 나올 수가 없다.**
+   불은 파티클(firePS)이고, milMaskBoxes 는 마스크를 만들 때 `scene.particlesEnabled=false`
+   로 파티클을 꺼 놓고 **메시만** 클래스 색으로 칠한다. 게다가 classOfMesh 에는 "fire"를
+   돌려주는 규칙이 아예 없다(person·robot·kettle·equip·env 뿐). 그래서 mock 검출은
+   솥과 설비는 잡아도 화재는 구조적으로 못 잡는다 — 실측에서도 그랬다.
+   데이터셋 쪽은 gtParticleMask 로 파티클을 마스크에 따로 그려 넣어서 잡는다(fire 7,545px).
+   → 그 경로(3초마다 오프스크린 렌더 한 장)를 발표 화면으로 끌어오는 대신, 불꽃 입자의
+     월드 AABB 를 화면에 투영해 **테두리만** 친다. 렌더가 늘지 않아 화면이 안 끊긴다.
+   ⚠️ 이것은 '추론'이 아니라 아는 위치를 그리는 것이다. mock 검출도 GT 마스크를 보고
+      그리는 같은 성격이라(그쪽 주석의 "완벽한 검출") 정직성 수준은 달라지지 않는다.
+      실제 추론의 근거는 우하단 실영상 패널이 따로 맡는다.
+   ⚠️ **수증기(steam)는 절대 안 잡는다** (2026-09-01 검증). 박스는 firePS(불꽃) 입자만
+      읽고, steam 은 완전히 다른 입자 시스템이라 구조적으로 박스에 못 들어간다. 게다가
+      아래 yCap(유면+FIRE_BOX_H) 으로 솥 근처만 잡아 연기·수증기 기둥은 박스 밖이다. */
+function drawFireBox(ctx, W, H) {
+  if (!FIRE_BOX.on || !state.fire) { FIRE_BOX.sm = null; return; }
+  /* 사용자가 카메라 탭에서 시점을 직접 바꾼 경우 — 데모 컷이 아니라 이름이 바뀐다. */
+  if (FIRE_BOX.view && mainView !== FIRE_BOX.view) { FIRE_BOX.on = false; FIRE_BOX.sm = null; return; }
+  const cam = camOf(mainView);
+  if (!cam) { FIRE_BOX.sm = null; return; }
+  /* 입자 위치는 **월드 기준**이다 — emitter 를 노드에 붙이지 않고 좌표로 넘겼다(firePS 정의).
+     배열이 비면 아직 배출 전이거나 방금 꺼진 것이라 그리지 않는다. */
+  const ps = firePS.particles;
+  if (!ps || !ps.length) { FIRE_BOX.sm = null; return; }
+  /* ⚠️ **월드 AABB 8꼭짓점 방식은 버렸다** (2026-08-31, 실측 실패).
+     두 가지가 동시에 틀렸다.
+       ① 불꽃 입자는 gravity(0,1.6,0)·life 0.85s 로 **2.74m 까지 솟는다**(솥 림 0.76m).
+          그 꼭대기까지 AABB 에 넣으니 박스가 솥이 아니라 **연기 기둥**을 감쌌다.
+       ② AABB 꼭짓점 중 카메라에 바싹 붙은 것이 생기면 투영이 튄다 — 실측 raw 박스가
+          x 1441 · w 2251(화면 폭 978)로 화면 밖으로 2.3배 벗어났다.
+     → 입자를 **하나씩 투영**하고 **백분위(3~97%)**로 자른다. 튀는 입자와 높이 뜬 입자가
+       같이 걸러져 솥 안 불꽃 덩어리만 남는다. 270개 정렬은 프레임당 무시할 비용이다. */
+  const view = cam.getViewMatrix(true);
+  const m = view.multiply(cam.getProjectionMatrix(true));
+  const vp = new BABYLON.Viewport(0, 0, 1, 1);
+  /* **높이는 월드에서 자른다** — 화면 백분위로만 자르면 카메라 각도에 따라 자르는 높이가
+     달라진다. 요청은 "솥 안의 불"이므로 유면(F.oilY)에서 FIRE_BOX_H 위까지만 불꽃 몸통으로
+     본다. 그 위는 연기 쪽으로 넘어가는 구간이라 박스에 넣으면 솥이 아니라 기둥을 감싼다
+     (실측: 입자가 2.74m 까지 솟는데 솥 림은 0.76m 다). */
+  const yCap = F.oilY + FIRE_BOX_H;
+  const xs = [], ys = [];
+  for (const q of ps) {
+    const w = q.position;
+    if (w.y > yCap) continue;
+    /* 카메라 뒤로 넘어간 입자는 Project 가 화면 안쪽으로 접어 넣는다 — 반드시 버린다. */
+    if (BABYLON.Vector3.TransformCoordinates(w, view).z <= 0.05) continue;
+    const pr = BABYLON.Vector3.Project(w, BABYLON.Matrix.Identity(), m, vp);
+    xs.push(pr.x); ys.push(pr.y);
+  }
+  if (xs.length < 8) { FIRE_BOX.sm = null; return; }   // 표본이 적으면 박스가 요동친다
+  xs.sort((a,c)=>a-c); ys.sort((a,c)=>a-c);
+  const q = (arr, t) => arr[Math.min(arr.length-1, Math.max(0, Math.round((arr.length-1)*t)))];
+  /* 높이는 이미 월드에서 잘랐으므로 여기서는 **튀는 입자만** 떨군다(3~97%). */
+  const sx0 = q(xs, 0.03), sx1 = q(xs, 0.97), sy0 = q(ys, 0.03), sy1 = q(ys, 0.97);
+  let b = { x:sx0*W, y:sy0*H, w:(sx1-sx0)*W, h:(sy1-sy0)*H };
+  /* 떨림 완화. 불꽃은 매 프레임 모양이 바뀌어 AABB 가 몇 px 씩 흔들린다 — 실제 검출기도
+     떨지만, 안 잡아 주면 '박스가 부글거린다'로 보인다. 0.25 는 따라가는 티는 나되
+     부글거림은 안 보이는 값이다. 화면이 바뀌면(회차·컷) null 로 끊어 새로 잡는다. */
+  /* ⚠️ 큰 점프는 **이어 붙이지 않는다.** 컷 전환·창 크기 변경·첫 등장에서 직전 박스를
+     끌고 가면 박스가 엉뚱한 데서 미끄러져 들어온다 — 실측: 오버레이가 0→978 로 잡히는
+     순간 (0,0)에서 화면을 가로질러 기어왔다. 화면 폭 20% 넘게 벌어지면 그냥 갈아탄다. */
+  const sm = (FIRE_BOX.sm && Math.abs(FIRE_BOX.sm.x - b.x) < W*0.2
+                          && Math.abs(FIRE_BOX.sm.y - b.y) < H*0.2) ? FIRE_BOX.sm : null;
+  if (sm) { const k = 0.25;
+    b = { x: sm.x+(b.x-sm.x)*k, y: sm.y+(b.y-sm.y)*k,
+          w: sm.w+(b.w-sm.w)*k, h: sm.h+(b.h-sm.h)*k }; }
+  FIRE_BOX.sm = b;
+  if (b.w < 2 || b.h < 2) return;
+  const s = Math.max(1, W / 900), col = MIL_COLORS.fire;
+  ctx.save();
+  ctx.lineWidth = 2*s; ctx.strokeStyle = col;
+  ctx.strokeRect(b.x, b.y, b.w, b.h);
+  const tag = "fire " + DEMO_FIRE_CONF + "%";
+  ctx.font = Math.round(12*s) + "px ui-monospace,monospace";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = col;
+  ctx.fillRect(b.x, b.y - 16*s, ctx.measureText(tag).width + 10*s, 16*s);
+  ctx.fillStyle = "#0d1117";
+  ctx.fillText(tag, b.x + 5*s, b.y - 4*s);
+  ctx.restore();
+}
 /* 발화 → 감지까지 둘 재현 지연(ms). **화재 감지 시스템의 성능을 말하는 숫자**이므로
    비트 시각에 맡기지 않는다 — 아래 demoTick 의 감지 분기가 이 값을 쓴다. */
 /* 발화 → 감지 지연(ms).
@@ -10566,15 +10671,16 @@ const ALERT = {
   fire(){ if(this.mute) return; this.beep([880, 660]); this.say("화재가 감지되었습니다. 즉시 대피하십시오."); },
   collision(){ if(this.mute) return; this.beep([784, 784]); this.say("작업자가 감지되었습니다. 로봇이 회피합니다."); },
 };
-/* ══ 발표 검출 캠 — 우상단 PiP 에만 '시뮬 기반' 검출 박스 ═══════════════════════
-   메인 화면이 아니라 **감시 캠(PiP) 뷰에만** 테두리를 쳐서 "object detection 이 캠
-   영상에서 돌고 있다"를 보여준다(사용자 요청). **추론이 아니라 아는 위치를 그리는 것** —
-   시뮬이 가진 GT(입자·사람 좌표)를 캠 화면에 투영할 뿐이라 정직성 수준은 달라지지 않는다
+/* ══ 발표 검출 캠 — 우상단 PiP 에 '시뮬 기반' 검출 박스 (충돌 전용) ═══════════════
+   **충돌 시연**은 감시 캠(PiP) 뷰에 테두리를 쳐서 "object detection 이 캠 영상에서 돌고
+   있다 + ByteTrack 으로 추적한다"를 보여준다. **추론이 아니라 아는 위치를 그리는 것** —
+   시뮬이 가진 GT(사람 좌표)를 캠 화면에 투영할 뿐이라 정직성 수준은 달라지지 않는다
    (실제 추론의 근거는 우하단 실영상 패널이 따로 맡는다).
-   화재=해치뷰(cvHatch)·불꽃 입자, 충돌=탑뷰(cvTop)·사람 AABB. **학습 뷰가 달라 캠도 다르다.**
+   충돌=탑뷰(나디르)·사람 AABB + 트랙 ID. (화재는 메인 화면 drawFireBox 로 그린다 — 불꽃이
+   화면을 지배해 임팩트가 크다. 2026-09-01 화재 PiP→메인 되돌림.)
    PiP 카메라 기준으로 투영해 pipRect() 사각형 안에만 그리고, 밖으로는 클립한다. */
-const DEMO_PERSON_CONF = 93, DEMO_SMOKE_CONF = 91;
-/* sm 은 박스별 평활 상태 {fire:{}, smoke:{}, person:{}} — 화재는 불꽃+연기 두 박스라 키로 나눈다. */
+const DEMO_PERSON_CONF = 93;
+/* sm 은 박스별 평활 상태 {person:{}} — 이 PiP 는 충돌(사람) 전용이다(화재는 메인 drawFireBox). */
 const DEMO_DET = { on:false, kind:null, cam:null, sm:{} };
 function demoDetPipOn(kind, cam){
   DEMO_DET.on = true; DEMO_DET.kind = kind; DEMO_DET.cam = cam; DEMO_DET.sm = {};
@@ -10583,46 +10689,8 @@ function demoDetPipOn(kind, cam){
   applyCameras();
 }
 function demoDetOff(){ DEMO_DET.on = false; DEMO_DET.kind = null; DEMO_DET.cam = null; DEMO_DET.sm = {}; }
-/* 불꽃 입자를 cam 기준으로 투영해 정규([0,1]) 박스로 만든다. 유면(F.oilY)에서 FIRE_BOX_H
-   위까지의 불꽃 몸통만 백분위로 감싸고(연기 기둥 배제), 좌표를 화면이 아니라 정규로
-   돌려줘 PiP 사각형으로 다시 매핑할 수 있게 한다. */
-function fireBoxNorm(cam){
-  const ps = firePS.particles; if(!ps || !ps.length) return null;
-  const view = cam.getViewMatrix(true);
-  const m = view.multiply(cam.getProjectionMatrix(true));
-  const vp = new BABYLON.Viewport(0, 0, 1, 1);
-  const yCap = F.oilY + FIRE_BOX_H;
-  const xs = [], ys = [];
-  for(const q of ps){ const w = q.position; if(w.y > yCap) continue;
-    if(BABYLON.Vector3.TransformCoordinates(w, view).z <= 0.05) continue;
-    const pr = BABYLON.Vector3.Project(w, BABYLON.Matrix.Identity(), m, vp); xs.push(pr.x); ys.push(pr.y); }
-  if(xs.length < 8) return null;
-  xs.sort((a,c)=>a-c); ys.sort((a,c)=>a-c);
-  const q = (arr, t) => arr[Math.min(arr.length-1, Math.max(0, Math.round((arr.length-1)*t)))];
-  const sx0 = q(xs,0.03), sx1 = q(xs,0.97), sy0 = q(ys,0.03), sy1 = q(ys,0.97);
-  return { x:sx0, y:sy0, w:sx1-sx0, h:sy1-sy0 };
-}
-/* 화재 **연기(fsmoke)** 입자를 cam 기준으로 투영해 정규 박스로. ⚠️ 조리 **수증기(steam)**
-   가 아니라 화재 연기만 감싼다 — 이 프로젝트의 핵심이 "수증기 ≠ 연기" 구분이라, 흰
-   수증기를 smoke 로 잡으면 그게 바로 거짓양성이다. 높이컷은 두지 않는다(연기는 솟는다).
-   fsmoke 는 setFire(true) 에서 켜지고 FIRE_FOG 진행에 따라 배출이 는다(그쪽 정의). */
-function smokeBoxNorm(cam){
-  const ps = (typeof fsmoke !== "undefined") ? fsmoke.particles : null;
-  if(!ps || ps.length < 8) return null;
-  const view = cam.getViewMatrix(true);
-  const m = view.multiply(cam.getProjectionMatrix(true));
-  const vp = new BABYLON.Viewport(0, 0, 1, 1);
-  const xs = [], ys = [];
-  for(const q of ps){ const w = q.position;
-    if(BABYLON.Vector3.TransformCoordinates(w, view).z <= 0.05) continue;
-    const pr = BABYLON.Vector3.Project(w, BABYLON.Matrix.Identity(), m, vp); xs.push(pr.x); ys.push(pr.y); }
-  if(xs.length < 8) return null;
-  xs.sort((a,c)=>a-c); ys.sort((a,c)=>a-c);
-  const q = (arr, t) => arr[Math.min(arr.length-1, Math.max(0, Math.round((arr.length-1)*t)))];
-  const sx0 = q(xs,0.05), sx1 = q(xs,0.95), sy0 = q(ys,0.05), sy1 = q(ys,0.95);   // 튀는 입자만 떨군다
-  if(sx1 - sx0 < 0.01 || sy1 - sy0 < 0.01) return null;
-  return { x:sx0, y:sy0, w:sx1-sx0, h:sy1-sy0 };
-}
+/* ⚠️ 화재 검출 박스는 이제 **메인 화면(drawFireBox)**에 그린다 — PiP 화재 경로
+   (fireBoxNorm·smokeBoxNorm)는 2026-09-01 제거됐다. 이 PiP 는 **충돌(사람)** 전용이다. */
 /* 조리원 AABB(발밑~머리)를 cam 기준으로 투영해 정규 박스로. 탑뷰에서는 발자국 사각형이,
    측면 캠에서는 전신 박스가 자연히 나온다 — 8꼭짓점 min/max 라 시점에 안 매인다. */
 function personBoxNorm(cam){
@@ -10651,21 +10719,16 @@ function drawDetPip(ctx, W, H){
   if(pipView !== DEMO_DET.cam) { DEMO_DET.sm = {}; return; }      // PiP 가 그 캠일 때만
   const cam = camOf(DEMO_DET.cam);
   if(!cam || (SURV[DEMO_DET.cam] && cam !== SURV[DEMO_DET.cam].cam)) { DEMO_DET.sm = {}; return; }
-  /* 화재 시연은 **불꽃(fire)+연기(smoke) 두 박스**, 충돌 시연은 사람(person) 한 박스. */
-  /* k = 프레임당 평활 계수. 불꽃·연기는 입자가 매 프레임 튀어 평활(0.3)로 눌러야 하지만,
-     사람 박스는 매끈한 AABB 라 평활을 걸면 **걷는 사람 뒤로 박스가 끌린다**(저프레임에서
-     최대 ~20cm — "좌표가 어긋난다"의 정체). 사람은 k=1(평활 없음)로 좌표에 딱 붙인다. */
+  /* 이 PiP 는 **충돌 시연 전용** — 사람(person) 한 박스. (화재는 메인 화면 drawFireBox 로 옮겼다.)
+     k = 프레임당 평활 계수. 사람 박스는 매끈한 AABB 라 평활을 걸면 **걷는 사람 뒤로 박스가
+     끌린다**(저프레임에서 최대 ~20cm — "좌표가 어긋난다"의 정체). 사람은 k=1(평활 없음)로
+     좌표에 딱 붙인다. */
   const items = [];
-  if(DEMO_DET.kind === "fire"){
-    const fb = fireBoxNorm(cam);  if(fb) items.push({ id:"fire",  norm:fb, col:MIL_COLORS.fire,  tag:"fire "  + DEMO_FIRE_CONF  + "%", k:0.3 });
-    const sb = smokeBoxNorm(cam); if(sb) items.push({ id:"smoke", norm:sb, col:MIL_COLORS.smoke, tag:"smoke " + DEMO_SMOKE_CONF + "%", k:0.3 });
-  } else {
-    /* 충돌 = 객체검출 + **ByteTrack 트래킹 ID**. 대본상 1명이라 트랙은 #1 로 고정 —
-       매 프레임 같은 id 를 달아 "한 사람을 계속 추적한다"를 보여준다(drawMilBoxes 의 #id 규약).
-       밀도구름·예측선(밀도 구름/이동선)은 corrVizOn 이 켠 3D 오버레이라 이 나디르 PiP 에
-       그대로 나온다 — 별도 그리기 없이 같은 화면에 얹힌다. */
-    const pb = personBoxNorm(cam); if(pb) items.push({ id:"person", norm:pb, col:MIL_COLORS.person, tag:"person " + DEMO_PERSON_CONF + "% #1", k:1 });
-  }
+  /* 충돌 = 객체검출 + **ByteTrack 트래킹 ID**. 대본상 1명이라 트랙은 #1 로 고정 —
+     매 프레임 같은 id 를 달아 "한 사람을 계속 추적한다"를 보여준다(drawMilBoxes 의 #id 규약).
+     밀도구름·예측선(밀도 구름/이동선)은 corrVizOn 이 켠 3D 오버레이라 이 나디르 PiP 에
+     그대로 나온다 — 별도 그리기 없이 같은 화면에 얹힌다. */
+  const pb = personBoxNorm(cam); if(pb) items.push({ id:"person", norm:pb, col:MIL_COLORS.person, tag:"person " + DEMO_PERSON_CONF + "% #1", k:1 });
   if(!DEMO_DET.sm) DEMO_DET.sm = {};
   const R = pipRect(), rsx = W / R.W, rsy = H / R.H;
   const rx = R.x*rsx, ry = R.y*rsy, rw = R.w*rsx, rh = R.h*rsy;
@@ -14900,10 +14963,14 @@ function demoSay(msg) {
    둘 다 0~1 범위 밖이라 **아무것도 안 보이는 채로 자막만 나왔다.**
    비트가 무엇을 보여주려는지에 따라 사람 / 솥 / 방 전체로 나눈다. */
 function demoFreeCam(alpha, beta, radius, target) {
-  /* 참고: 검출 박스는 이제 **우상단 감시 캠(PiP) 뷰에만** 그린다(DEMO_DET/drawDetPip).
-     메인 컷에는 애초에 박스가 없으므로 컷 전환에서 끌 것이 없다 — 감시 캠은 계속
-     검출하는 게 맞다. PiP 검출은 demoReset 의 demoDetOff() 한 곳에서만 끈다.
-     (종전 메인 화면 화재 박스 drawFireBox·fireBoxOff 는 이 경로로 대체되며 제거됨.) */
+  /* ⚠️ **컷이 바뀌면 화재 박스를 끈다** (2026-08-31, 사용자 지적).
+     박스는 ④ 감지 비트가 켠 뒤 스스로 꺼지지 않아서, ⑤ 문 쪽 컷으로 넘어간 뒤에도
+     계속 떠 있었다(실측 로그: 29.1s·30.9s 모두 box=ON). 검출 화면이 아닌 컷 위에
+     검출 박스가 남으면 그 컷이 무엇을 보여주는지가 흐려진다.
+     ⚠️ mainView 비교로는 못 잡는다 — 데모의 컷은 전부 mainView "free" 안에서
+        각도만 바꾸기 때문에 이름이 그대로다. 그래서 전환 함수에서 직접 끈다.
+     (충돌 PiP 검출은 별개 — DEMO_DET/drawDetPip 는 컷 전환에도 유지하고 demoReset 에서만 끈다.) */
+  fireBoxOff();                                 // 컷 전환 — 끄고 즉시 지운다
   if (mainView !== "free") {
     mainView = "free";
     if (typeof viewSel !== "undefined" && viewSel) viewSel.value = "free";
@@ -15101,6 +15168,7 @@ function demoNormalWork() {
   } else {
     person.node.setEnabled(true);
   }
+  fireBoxOff();                              // 직전 회차의 화재 박스를 끈다(①은 before/after 공통)
   demoHazardClear();
   demoStandUp();
   setFire(false);
@@ -15340,10 +15408,11 @@ function demoDetectOn() {
      (demoHatchView — 솥·불·로봇·조리원이 한 화면에 남는 그 각도)이 **정작 감지·경보
      순간에 버려진다.** "로봇이 조리하다가 감지하고 경고를 뱉는다"가 이 발표의 그림인데
      그 장면에서 로봇이 화면 밖으로 나가는 것이다.
-     → 고정샷을 끝까지 유지하고, 감지됐다는 표시는 **우상단 검출 캠(PiP)의 화재 박스**로 한다.
-       (2026-09-01, 사용자 요청: 박스는 메인이 아니라 캠 뷰에만 — "실제 object detection 이
-        캠에서 돈다"를 보여준다. 화재는 해치뷰 cvHatch — 솥·불꽃을 정면으로 잡는 각도다.) */
-  demoDetPipOn("fire", "cvHatch");
+     → 고정샷을 끝까지 유지하고, 감지됐다는 표시는 **메인 화면의 화재 박스(drawFireBox)**로 한다.
+       (2026-09-01, 사용자 판단으로 PiP→메인 되돌림: 불꽃이 화면을 지배해 임팩트가 크고,
+        관객이 "저 불을 잡았다"를 바로 읽는다. 충돌은 ByteTrack 이 캠에서 보여야 하므로 PiP 유지.)
+     view 를 함께 박아 둔다 — 사용자가 카메라 탭에서 시점을 직접 바꾸면 drawFireBox 가 끈다. */
+  FIRE_BOX.on = true; FIRE_BOX.view = mainView;
   /* **좌우가 같은 모델이어야 증명이 된다.**
      `mock`은 `milMaskBoxes()`가 GT 마스크에서 박스를 뽑는다 — 주석에도 "완벽한 검출"이라
      적혀 있는, 정답지를 보고 그리는 경로다. 그 상태로 우측(실영상, 진짜 추론)과 나란히
@@ -15454,6 +15523,7 @@ function demoStandUp() { if (PERSON && PERSON.acting === "down") personGetUp(); 
    → 대피 비트에서만 **자유 시점을 문 쪽으로 돌린다.** 실제 CCTV 성능을 속이는 게 아니라
      (그건 ④ 감지 비트가 CCTV로 보여준다) 이야기를 보여주는 컷이다. */
 function demoExitView() {
+  fireBoxOff();                                  // 컷 전환 — 끄고 즉시 지운다
   DEMO.follow = null;                            // 문 쪽 고정 컷 — 따라가기와 싸우면 안 된다
   if (mainView !== "free") {
     mainView = "free";
@@ -16420,6 +16490,7 @@ function demoWorkRoute() {
 
 function demoReset(quiet) {
   DEMO.on = false; DEMO.kind = null; DEMO.t = 0; DEMO.beat = -1;
+  fireBoxOff();                                 // 메인 화면 화재 박스 끈다
   demoDetOff();                                 // 우상단 검출 캠 박스 끈다(PiP 는 아래에서 복구)
   FIRE_FOG.speed = 1;                          // 발표용 4배속을 원래대로
   setFire(false);
