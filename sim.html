@@ -11983,6 +11983,11 @@ function corrReset(quiet) {
 }
 function corrStart(mode) {
   corrReset(true);
+  /* 상대 시연(화재 데모)이 살아 있으면 **먼저 정리한다.** 안 하면 그쪽이 바꾼 PiP(검출 캠
+     cvHatch)를 아래 CORR.saved.pip 가 '원래 값'으로 착각해 잡고, 충돌 되돌리기가 원래
+     캠이 아니라 cvHatch 로 복원된다(실측 확인). resetBtn 이 corrReset 으로 교차 정리하는
+     것과 같은 방식이다. demoReset 이 PiP·화재 데모 상태를 원위치로 돌린 뒤 아래에서 캡처한다. */
+  if (typeof DEMO !== "undefined" && (DEMO.on || DEMO.saved)) demoReset(true);
   if (typeof ALERT !== "undefined") ALERT.resume();   // 버튼 클릭(제스처) 안에서 오디오 깨운다 — 아니면 음성이 안 난다
   if (typeof demoHazardClear === "function") demoHazardClear();
   demoStandUp();
@@ -16274,6 +16279,9 @@ function demoRun(kind) {
     return;
   }
   demoReset(true);
+  /* 상대 시연(충돌 데모)이 살아 있으면 **먼저 정리한다** — corrStart 와 대칭. 안 하면
+     그쪽이 바꾼 PiP(검출 캠 nzSE)를 아래 DEMO.saved.pip 가 '원래 값'으로 착각해 잡는다. */
+  if (typeof CORR !== "undefined" && (CORR.on || CORR.saved)) corrReset(true);
   if (typeof ALERT !== "undefined") ALERT.resume();   // 버튼 클릭(제스처) 안에서 오디오 깨운다 — 아니면 경보음·음성이 안 난다
   DEMO.presenting = true;              // 경고 배지를 감춘다 (DEMO.presenting 주석)
   /* 되돌릴 지점을 뜬다 — 사고 시나리오의 ACC.saved와 같은 방식이다.
