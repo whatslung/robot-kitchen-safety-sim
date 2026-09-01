@@ -11038,28 +11038,36 @@ function smDecide(dtMs) {
   const occ = smOccupancy(times, now);
 
   const proceed = smScore(state.to, occ);
-  // proceed 여유만큼 진행 속도를 낮춘다(여유 클수록 1, C 근처면 0.2). 기존 반응형 거리감속과 함께 적용.
+  // proceed 여유만큼 진행 속도를 낮춘다(여유 클수록 1, C 근처면 0.2). **swept clearance 로만** 스케일한다.
   SM.pathFactor = proceed.safe
     ? (Number.isFinite(proceed.clearance) ? clamp((proceed.clearance - SAFE.C) / 0.50, 0.20, 1) : 1) : 0;
-  const danger = !proceed.safe || SAFE.stopped;
+  /* ⚠️ danger 는 **팔 경로가 실제로 위협받는가(swept clearance)** 로만 본다.
+     종전엔 SAFE.stopped(사람이 3.10m 링 안)까지 넣었는데, 그 링은 팔 리치(1.8m)보다 훨씬 커
+     셀 안 사람이 늘 링 안이라 팔 경로가 비어도 상시 정지→굳었다. 고정베이스 팔은 거리 링이
+     아니라 팔↔사람 궤적 여유가 충돌 기준이다(v1의 핵심). E-STOP 만 절대 정지로 남긴다. */
+  const danger = !proceed.safe;
   SM.danger = danger;
   const releaseClearance = SAFE.C + 0.15;
+  // retract 는 danger 이면 **항상** 계산한다(스텝 시작으로 물러난 뒤에도 '안전 자세 유지' 후보가 있어야
+  // beforeCross HOLD 로 굳지 않는다). retract 목표 = 스텝 시작 자세(state.from).
   let retract = { safe:false, clearance:Number.NEGATIVE_INFINITY };
-  if (danger && progress > AVOID.startT) retract = smScore(state.from, occ);
+  if (danger) retract = smScore(state.from, occ);
 
   // release hysteresis 누적 — 후보가 releaseClearance 이상으로 '충분히' 비어 있는 시간
   const cand = { PROCEED:proceed, RETRACT:retract };
   const clearMsByMode = {};
   for (const mode of ["PROCEED", "RETRACT"]) {
     const c = cand[mode];
-    const clear = !estop && !(SAFE.stopped && mode === "PROCEED") && c.safe && c.clearance >= releaseClearance;
+    const clear = !estop && c.safe && c.clearance >= releaseClearance;
     if (clear) { if (SM.clearSince[mode] === null) SM.clearSince[mode] = now; }
     else SM.clearSince[mode] = null;
     clearMsByMode[mode] = SM.clearSince[mode] === null ? 0 : now - SM.clearSince[mode];
   }
 
+  // beforeCross:false — 고정베이스 팔은 '횡단 전 대기(HOLD)' 개념이 없다. danger 면 후퇴(안전하면)
+  // 또는 정지로 간다. SAFE_LIFT(v2)가 없어 beforeCross 를 켜면 HOLD 로 영구히 굳는다.
   const decision = SafetyMotion.chooseManeuver({
-    emergencyStop:estop, danger, beforeCross: progress <= AVOID.startT,
+    emergencyStop:estop, danger, beforeCross: false,
     currentMode:SM.mode, holdMs: now - SM.since, minHoldMs:SM.minHoldMs,
     clearMsByMode, releaseClearance,
     proceed, retract, safeLift:{ safe:false, clearance:Number.NEGATIVE_INFINITY },
@@ -11068,14 +11076,14 @@ function smDecide(dtMs) {
   SM.reason = decision.reason; SM.clearance = decision.clearance;
   SM.rate = SM.mode === "RETRACT" ? -1 : (SM.mode === "PROCEED" ? 1 : 0);
 
-  // 목표 속도계수: RETRACT 는 빨리 비우게 1, PROCEED 는 pathFactor×반응형거리감속, 그 외 0.
-  const reactiveSlow = clamp((SAFE.dist - SAFE.stopR) / Math.max(1e-6, SAFE.slowR - SAFE.stopR), 0, 1);
+  // 목표 속도계수: RETRACT 는 빨리 비우게 1, PROCEED 는 pathFactor(swept 여유), 그 외 0.
   let target = 0;
-  if (SM.mode === "PROCEED") target = Math.min(SM.pathFactor, reactiveSlow);
+  if (SM.mode === "PROCEED") target = SM.pathFactor;
   else if (SM.mode === "RETRACT") target = 1;
   const escapeVerified = SM.mode === "RETRACT" && retract.safe;
+  // safetyStopped:false — 거리 링으로 강제 정지하지 않는다(위 danger 주석과 정합). E-STOP 만 절대 정지.
   const stopReq = SafetyMotion.motionStopRequired({
-    emergencyStop:estop, safetyStopped:SAFE.stopped, mode:SM.mode, escapeVerified, targetFactor:target,
+    emergencyStop:estop, safetyStopped:false, mode:SM.mode, escapeVerified, targetFactor:target,
   });
   SM.targetFactor = stopReq ? 0 : target;
   SM.reason += (Number.isFinite(SM.clearance) ? " · 여유 " + SM.clearance.toFixed(2) + "m" : "");
