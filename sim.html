@@ -11196,9 +11196,9 @@ function stepUpdate(dt) {
   if (!state.auto) return;
   const s = SEQ[state.seqIdx];
   if (!s) return;
-  // ⚠️ SM(v1 통합 회피)은 **회피 데모(CORR)가 아닐 때만** 쓴다 — 회피 버튼 데모는 원래 칼만식
-  //    (avoidDecide + corrTick 후퇴)을 그대로 유지한다(연구 시연 보존). SM 은 WASD 등 일반 조작용.
-  if (SM.on && !(typeof CORR !== "undefined" && CORR.on)) {
+  // SM(v1 통합 회피)은 SM.on 이면 회피 데모·WASD 모두에 적용 — 정상 로봇 동작(경로 되감기)으로
+  //   매끄럽게 회피한다(사용자 선호). 회피 데모의 예측 시각화(밀도구름·화살표)는 corrVizOn 이 그대로.
+  if (SM.on) {
     // v1 통합 안전 기동 — chooseManeuver 하나로 base안전+능동후퇴. approachFactor 로 부드럽게 램프.
     smDecide(dt);
     SM.factor = SafetyMotion.approachFactor(SM.factor, SM.targetFactor, dt / 1000, 2.5, 0.8,
@@ -12178,7 +12178,7 @@ function corrTick(dt) {   // 매 프레임 호출 — 조리 사이클(stepUpdat
   // ── 회피(after): 정지 로직에 막히지 않게 **능동 후퇴** — 사람이 위험구역에 오면 팔을 오던 길로 되감는다.
   //    stepUpdate가 조리 사이클을 몰고(자연스러운 작업), 여기서 seqT를 줄여 이송 스텝을 뒤로 감는다.
   //    지나가면 seqT를 안 건드리므로 SAFE.factor 회복과 함께 조리가 다시 전진(작업 재개).
-  if (CORR.mode === "after" && CORR.launched && dist < 2.6 && state.dur) {   // 회피 데모는 원래 칼만식 후퇴(SM 은 CORR 중 비활성)
+  if (!SM.on && CORR.mode === "after" && CORR.launched && dist < 2.6 && state.dur) {   // SM.on 이면 통합 기동(SM)이 후퇴를 맡는다
     const s = SEQ[state.seqIdx];
     if (s && (s.k === "ik" || s.k === "ikOff")) {          // 이송/운반 스텝일 때만 후퇴(집기·털기 중엔 유지)
       const closeness = clamp((2.6 - dist) / 1.4, 0, 1);   // 가까울수록 빠르게 후퇴
