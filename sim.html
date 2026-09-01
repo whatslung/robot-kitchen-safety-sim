@@ -779,6 +779,7 @@
 
 <script src="./babylon.js"></script>
 <script src="./babylonjs.loaders.min.js"></script>
+<script src="./safety_motion.js"></script>
 <script>
 "use strict";
 /* ────────────────────────────────────────────────────────────────────────
@@ -10961,6 +10962,125 @@ function avoidDecide(dtMs) {
     AVOID.reason = "후퇴 — 횡단 중 " + dmin.toFixed(2) + "m 접근 예측";
   }
 }
+
+/* ══ v1 통합 안전 기동 (safety_motion.js) ════════════════════════════════════
+   SM.on 이면 base안전(거리 감속/정지)과 능동후퇴를 **chooseManeuver 하나**로 통합한다.
+   기존 avoidDecide(σ dmin) + corrTick/wasdAvoidTick 후퇴를 대체(플래그, 기본 off).
+   판정 근거: σ 빼기가 아니라 **TCP(팔 끝) 점 궤적 vs 사람 미래경로의 swept clearance**.
+     · proceed 후보 = 현 스텝 목표(state.to) 로 진행 시 팔끝 궤적
+     · retract 후보 = 스텝 시작(state.from) 으로 되감을 때 팔끝 궤적
+   proceed 가 안전하면 진행(여유만큼 감속), 위험하면 retract 안전하면 후퇴, 아니면 정지.
+   해제는 release hysteresis(일정 시간 여유 유지돼야 재개)로 깜빡임을 막는다. */
+const SM = { on:false, mode:"PROCEED", rate:1, factor:1, targetFactor:1, pathFactor:1,
+             since:0, minHoldMs:300, samples:6, clearSince:{ PROCEED:null, RETRACT:null },
+             reason:"", clearance:NaN, danger:false };
+
+/* 사람들의 미래 위치 occupancy — 학습예측(주 사람 gt:0 모드들) + 현재 보이는 모든 사람.
+   반환: [{ points:[{x,y,z}×N] }] (씬 AU). 학습 예측이 없으면 현재 위치만으로도 동작. */
+function smOccupancy(times, now) {
+  const occ = [];
+  const rec = MPRED.pred.get("gt:0");
+  if (rec && Number.isFinite(rec.at) && (now - rec.at) < 1000 && Array.isArray(rec.modes)) {
+    for (const m of rec.modes) {
+      if (!m || !Array.isArray(m.path) || !m.path.length) continue;
+      const pts = times.map(t => { const q = modePosAt(m, t); return { x:q[0], y:0, z:q[1] }; });
+      if (pts.every(p => Number.isFinite(p.x) && Number.isFinite(p.z))) occ.push({ points:pts });
+    }
+  }
+  // 현재 보이는 모든 사람(주인공 + 활성 EXTRAS) — 전 시간축 현재 위치(누구도 무시하지 않는다)
+  const addNow = (node) => { const p = node.position; occ.push({ points: times.map(() => ({ x:p.x, y:0, z:p.z })) }); };
+  if (person.node.isEnabled()) addNow(person.node);
+  if (typeof EXTRAS !== "undefined") for (const P of EXTRAS) if (P && P.root && P.root.isEnabled()) addNow(P.root);
+  return occ;
+}
+
+/* 후보 관절목표로 팔을 잠깐 옮겨 TCP 궤적을 샘플하고 원자세로 복구한다(부작용 없음). */
+function smTcpSamples(target) {
+  const saved = JOINTS.map(j => j.value), out = [];
+  try {
+    for (let k = 0; k < SM.samples; k++) {
+      const a = SM.samples > 1 ? k / (SM.samples - 1) : 1;
+      JOINTS.forEach((j, i) => { j.value = lerp(saved[i], target[i], a); applyJoint(j); });
+      refreshChain();
+      const tp = effector().getAbsolutePosition();
+      out.push({ x:tp.x, y:0, z:tp.z });
+    }
+  } finally { JOINTS.forEach((j, i) => { j.value = saved[i]; applyJoint(j); }); refreshChain(); }
+  return out;
+}
+
+/* 후보 관절목표 → { safe, clearance(m) }. clearance 는 팔끝 궤적과 사람 궤적의 최소 수평 여유. */
+function smScore(target, occ) {
+  if (!Array.isArray(target) || target.length !== JOINTS.length || target.some(v => !Number.isFinite(v)))
+    return { safe:false, clearance:Number.NEGATIVE_INFINITY };
+  const pts = smTcpSamples(target);
+  const clAU = SafetyMotion.trajectoryClearance(pts, occ, ARM_R, PERSON_R);
+  const clM = SCALE.m(clAU);
+  return { safe: clM >= SAFE.C, clearance: clM };
+}
+
+function smDecide(dtMs) {
+  const now = performance.now(), s = SEQ[state.seqIdx];
+  const estop = (typeof PHYS !== "undefined" && PHYS.estop) === true;
+  // 조종/이송 스텝이 아니거나 검출 실패(blind) 데모면 통합 회피를 끈다 — 기존 avoidDecide 게이트와 정합
+  const plannable = s && (s.k === "ik" || s.k === "ikOff" || s.k === "home");
+  if (!AVOID.on || !state.auto || !s || !plannable || SAFE.blind) {
+    SM.danger = false; SM.pathFactor = 1;
+    SM.mode = "PROCEED"; SM.rate = 1; SM.targetFactor = estop ? 0 : 1; SM.reason = "no-gate";
+    SM.clearSince = { PROCEED:null, RETRACT:null };
+    return;
+  }
+  const progress = state.dur ? clamp(state.seqT / state.dur, 0, 1) : 0;
+  const remain = state.dur ? Math.max(0.4, (state.dur - state.seqT) / 1000) : 0.4;
+  const windowSec = Math.min(remain, PRED.vizHorizon);
+  const times = [];
+  for (let i = 0; i < SM.samples; i++) times.push(windowSec * i / (SM.samples - 1));
+  const occ = smOccupancy(times, now);
+
+  const proceed = smScore(state.to, occ);
+  // proceed 여유만큼 진행 속도를 낮춘다(여유 클수록 1, C 근처면 0.2). 기존 반응형 거리감속과 함께 적용.
+  SM.pathFactor = proceed.safe
+    ? (Number.isFinite(proceed.clearance) ? clamp((proceed.clearance - SAFE.C) / 0.50, 0.20, 1) : 1) : 0;
+  const danger = !proceed.safe || SAFE.stopped;
+  SM.danger = danger;
+  const releaseClearance = SAFE.C + 0.15;
+  let retract = { safe:false, clearance:Number.NEGATIVE_INFINITY };
+  if (danger && progress > AVOID.startT) retract = smScore(state.from, occ);
+
+  // release hysteresis 누적 — 후보가 releaseClearance 이상으로 '충분히' 비어 있는 시간
+  const cand = { PROCEED:proceed, RETRACT:retract };
+  const clearMsByMode = {};
+  for (const mode of ["PROCEED", "RETRACT"]) {
+    const c = cand[mode];
+    const clear = !estop && !(SAFE.stopped && mode === "PROCEED") && c.safe && c.clearance >= releaseClearance;
+    if (clear) { if (SM.clearSince[mode] === null) SM.clearSince[mode] = now; }
+    else SM.clearSince[mode] = null;
+    clearMsByMode[mode] = SM.clearSince[mode] === null ? 0 : now - SM.clearSince[mode];
+  }
+
+  const decision = SafetyMotion.chooseManeuver({
+    emergencyStop:estop, danger, beforeCross: progress <= AVOID.startT,
+    currentMode:SM.mode, holdMs: now - SM.since, minHoldMs:SM.minHoldMs,
+    clearMsByMode, releaseClearance,
+    proceed, retract, safeLift:{ safe:false, clearance:Number.NEGATIVE_INFINITY },
+  });
+  if (decision.mode !== SM.mode) { SM.mode = decision.mode; SM.since = now; }
+  SM.reason = decision.reason; SM.clearance = decision.clearance;
+  SM.rate = SM.mode === "RETRACT" ? -1 : (SM.mode === "PROCEED" ? 1 : 0);
+
+  // 목표 속도계수: RETRACT 는 빨리 비우게 1, PROCEED 는 pathFactor×반응형거리감속, 그 외 0.
+  const reactiveSlow = clamp((SAFE.dist - SAFE.stopR) / Math.max(1e-6, SAFE.slowR - SAFE.stopR), 0, 1);
+  let target = 0;
+  if (SM.mode === "PROCEED") target = Math.min(SM.pathFactor, reactiveSlow);
+  else if (SM.mode === "RETRACT") target = 1;
+  const escapeVerified = SM.mode === "RETRACT" && retract.safe;
+  const stopReq = SafetyMotion.motionStopRequired({
+    emergencyStop:estop, safetyStopped:SAFE.stopped, mode:SM.mode, escapeVerified, targetFactor:target,
+  });
+  SM.targetFactor = stopReq ? 0 : target;
+  SM.reason += (Number.isFinite(SM.clearance) ? " · 여유 " + SM.clearance.toFixed(2) + "m" : "");
+}
+
 /* ══ 로봇 후보 기동 화살표 (Trajectron++ Fig.1 스타일) ═══════════════════════
    Fig.1에서 **음영은 자기 차량(제어 주체)의 후보 기동**, 화살표는 예측 대상의 행동 모드다.
    우리 시스템의 제어 주체는 로봇이므로 역할을 그대로 옮기면 로봇이 후보 기동을 갖는다.
@@ -11062,9 +11182,18 @@ function stepUpdate(dt) {
   if (!state.auto) return;
   const s = SEQ[state.seqIdx];
   if (!s) return;
-  avoidDecide(dt);
-  // 안전 구역: 접근 시 감속, 진입 시 정지 · AVOID.rate: 1 진행 / 0 대기(hold) / -1 후퇴(retract)
-  state.seqT = Math.max(0, state.seqT + dt * SAFE.factor * AVOID.rate);
+  if (SM.on) {
+    // v1 통합 안전 기동 — chooseManeuver 하나로 base안전+능동후퇴. approachFactor 로 부드럽게 램프.
+    smDecide(dt);
+    SM.factor = SafetyMotion.approachFactor(SM.factor, SM.targetFactor, dt / 1000, 2.5, 0.8,
+                                            SM.targetFactor <= 0);
+    SAFE.factor = SM.factor;   // 조리·시각화·상태바 호환 별칭
+    state.seqT = Math.max(0, state.seqT + dt * SM.factor * SM.rate);
+  } else {
+    avoidDecide(dt);
+    // 안전 구역: 접근 시 감속, 진입 시 정지 · AVOID.rate: 1 진행 / 0 대기(hold) / -1 후퇴(retract)
+    state.seqT = Math.max(0, state.seqT + dt * SAFE.factor * AVOID.rate);
+  }
   const t = clamp(state.seqT / state.dur, 0, 1);
   state.stirring = false;
   if (s.k === "ik" || s.k === "ikOff" || s.k === "home") {
@@ -12033,7 +12162,7 @@ function corrTick(dt) {   // 매 프레임 호출 — 조리 사이클(stepUpdat
   // ── 회피(after): 정지 로직에 막히지 않게 **능동 후퇴** — 사람이 위험구역에 오면 팔을 오던 길로 되감는다.
   //    stepUpdate가 조리 사이클을 몰고(자연스러운 작업), 여기서 seqT를 줄여 이송 스텝을 뒤로 감는다.
   //    지나가면 seqT를 안 건드리므로 SAFE.factor 회복과 함께 조리가 다시 전진(작업 재개).
-  if (CORR.mode === "after" && CORR.launched && dist < 2.6 && state.dur) {
+  if (!SM.on && CORR.mode === "after" && CORR.launched && dist < 2.6 && state.dur) {   // SM.on 이면 통합 기동이 후퇴를 맡는다
     const s = SEQ[state.seqIdx];
     if (s && (s.k === "ik" || s.k === "ikOff")) {          // 이송/운반 스텝일 때만 후퇴(집기·털기 중엔 유지)
       const closeness = clamp((2.6 - dist) / 1.4, 0, 1);   // 가까울수록 빠르게 후퇴
@@ -12060,6 +12189,7 @@ function corrTick(dt) {   // 매 프레임 호출 — 조리 사이클(stepUpdat
    사람이 반경에 들어오면 팔이 이송 스텝(ik/ikOff)에서 조금씩 후퇴한다.
    강도는 corrTick(시나리오)의 절반(1.0+2.5→0.5+1.2) — "light" 회피. */
 function wasdAvoidTick(dt) {
+  if (SM.on) return;                                                        // SM.on 이면 통합 기동(smDecide)이 후퇴까지 맡는다
   if (typeof CORR !== "undefined" && CORR.on) return;                       // 시나리오 데모 중이면 corrTick이 담당
   if (typeof CTRL === "undefined" || CTRL.target !== "person") return;      // WASD 사람 조작 중일 때만
   if (typeof SAFE !== "undefined" && SAFE.blind) return;                    // "안 봄" 상태(충돌 시연)에선 회피 X — avoidDecide/corrTick과 정합
@@ -17565,6 +17695,8 @@ $("demoStop").addEventListener("click",   () => demoReset(false));
 window.__sim.demoRun = demoRun;
 window.__sim.demoReset = demoReset;
 window.__sim.DEMO = DEMO;
+window.__sim.SM = SM;                           // v1 통합 안전 기동 — __sim.SM.on=true 로 켠다(기본 off)
+window.__sim.smDecide = smDecide;
 window.__sim.wasd11Set = wasd11Set;             // WASD 1:1 모드 — 콘솔에서도 토글
 window.__sim.WASD11 = WASD11;
 window.__sim.DEMO_SCRIPTS = DEMO_SCRIPTS;
