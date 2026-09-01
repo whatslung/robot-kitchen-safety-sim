@@ -87,15 +87,38 @@ WebGPU가 없으면 wasm으로 자동 폴백된다. 브라우저 탭을 앞에 �
   uv run python train/train_traj_predictor.py    # 학습 + val ADE/FDE → docs/chanwoo/prediction-eval.md
   uv run --with pytest python -m pytest tests/   # 예측 코어 테스트
   ```
-- **학습형(LSTM) 모델 쓰는 법** — 재학습 불필요, 3단계:
+- **학습형(LSTM·Transformer) 모델 쓰는 법** — 재학습 불필요, 3단계:
   1. 백엔드를 띄운다([방법 B](#방법-b--검출예측까지-백엔드-서버)). 예측기 가중치가 로컬에 없으면
-     허깅페이스 [`chanubc/human-move-lstm`](https://huggingface.co/chanubc/human-move-lstm)에서 자동으로 받는다.
+     허깅페이스에서 자동으로 받는다 — 기본은 LSTM [`chanubc/human-move-lstm`](https://huggingface.co/chanubc/human-move-lstm).
+     **Transformer로 돌리려면** 서버를 `PREDICT_NET=transformer`로 띄운다 — 그러면
+     [`chanubc/human-move-transformer`](https://huggingface.co/chanubc/human-move-transformer)를 받아
+     self-attention 인코더로 추론한다. 두 모델은 입출력 계약(K모드 · 경로 12스텝 · 스텝별 σ)이
+     같아 시뮬 쪽은 그대로다.
+     ```bash
+     uv run python backend/detect_server.py --port 8001                       # LSTM (기본)
+     PREDICT_NET=transformer uv run python backend/detect_server.py --port 8001   # Transformer
+     ```
+     (Windows PowerShell: `$env:PREDICT_NET="transformer"; uv run python backend/detect_server.py --port 8001`.
+      일부 conda 환경에서 torch가 `libiomp5md.dll` 중복으로 죽으면 `$env:KMP_DUPLICATE_LIB_OK="TRUE"`.)
   2. 시뮬 상단 시각화 토글은 기본 꺼짐이다 — ⚙ 고급 탭 *시각화 표시*에서
      **바닥 밀도 음영**(과 원하면 **사람 예측 화살표**)을 켠다.
   3. **예측 모델** 드롭다운 → *학습형 — window.\_\_customPredictor* 선택. 이제 매 프레임
      백엔드 `/predict`가 호출돼(왕복 ~5 ms, 10 Hz) 밀도 구름에 **멀티모달 봉우리**가
      갈라져 뜨고 로봇이 선제 감속한다. 서버가 없거나 미로드면 조용히 칼만으로 폴백한다.
-  - 재학습본으로 교체: `PREDICT_MODEL=경로/model.pt` 또는 다른 허브 저장소 `PREDICT_MODEL_REPO=...`.
+  - 교체 env: 로컬 파일 `PREDICT_MODEL=경로/model.pt` · 다른 허브 저장소
+    `PREDICT_MODEL_REPO=... PREDICT_MODEL_FILE=...` · 아키텍처 `PREDICT_NET=lstm|transformer`.
+  - **로컬 재학습본 파일명** — `PREDICT_MODEL`을 안 주면 서버는 `training/traj_predictor/`에서
+    아키텍처별 기본 파일을 찾는다: LSTM `model.pt` · Transformer `model_transformer.pt`
+    (각각 `train/train_traj_predictor.py` · `train/train_traj_transformer.py`가 저장하는 이름).
+    이 이름으로 안 두면 로컬 파일이 무시되고 허브 버전을 받는다.
+  - **아키텍처 형상**(공개/재학습 가중치가 맞아야 하는 값) — 두 백본 공통 계약: K=3 모드 ·
+    관측 8스텝 · 예측 12스텝 · 스텝별 σ. Transformer는 `d_model=64 · layers=2 · heads=4 ·
+    ff=256`(= `build_transformer_net()` 기본값)으로 로드하므로, 다른 형상으로 학습한 가중치는
+    `load_state_dict`에서 키 불일치로 실패한다(조용히 잘못 로드되지 않는다).
+  - 백엔드 `/health`는 서빙 중인 아키텍처를 `predict_net`으로 돌려주고, 시뮬은 이를 읽어
+    예측 상태줄에 표시한다(예: `✔ 연결됨 (Transformer)`) — 브라우저에서 어떤 백본이 도는지 확인용.
+  - 밀도 구름을 나디르(탑뷰·후드 제거)에서 찍은 예시 — 조리원의 곡선 동선을 따라 방향성 구름이
+    퍼진다: [docs/chanwoo/assets/prediction/](docs/chanwoo/assets/prediction/) (LSTM 5컷 · Transformer 3컷).
 
 설계·평가·sim2real 조사 문서 색인: **[docs/chanwoo/](docs/chanwoo/README.md)**.
 
