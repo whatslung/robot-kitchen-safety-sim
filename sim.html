@@ -3121,11 +3121,10 @@ applyRigMask();
    자유 시점의 기본값은 **보임**이다 — 지금 화면과 발표 데모를 바꾸지 않기 위해서다.
    새 카메라 위치를 잡을 때만 UI 체크박스로 끈다. */
 applyCeilingMask();
-/* PiP 기본값은 **주 시점과 가장 다른 각도**여야 한다.
-   예전 기본값 overhead는 자유 시점(방위각 180°)과 겨우 10° 차이(170°)여서,
-   고도만 다를 뿐 같은 쪽을 보고 있었다 — "PiP가 본화면과 똑같다"는 지적의 원인.
-   eye는 방위각 -120°로 반대편(동쪽)에서 본다. */
-let mainView = "free", pipView = "eye";
+/* PiP는 기본으로 끈다. 같은 장면에서 PiP ON 25fps · OFF 39fps로 이중 렌더가
+   지속 프레임 드랍의 원인이었다. 카메라 탭에서 필요한 감시 카메라를 고르면 기존
+   PiP 기능과 클릭 교환은 그대로 동작한다. */
+let mainView = "free", pipView = "none";
 /* 시점 세대 번호 — `applyCameras()`가 돌 때마다 1 오른다.
    왜 필요한가: `renderWith`(검출·GT 캡처)는 캡처 **시작 시점의** activeCameras를 저장했다가
    끝나면서 그대로 되돌린다. 캡처는 `await readPixels`를 끼고 있어 수백 ms 살아 있는데,
@@ -3136,27 +3135,13 @@ let mainView = "free", pipView = "eye";
 let CAM_GEN = 0;
 /* 직전 주 시점 — 주 시점이 PiP와 같아졌을 때 PiP가 물려받을 값. applyCameras가 관리한다. */
 let PIP_PREV_MAIN = mainView;
-/* 자유 시점 전용 후처리가 지금 붙어 있는지. 파이프라인은 [camera]로 생성되므로 시작값은 true. */
-let FREE_PIPE_ON = true;
+/* 자유 시점 기본 후처리와 고비용 SSAO·SSR이 붙어 있는지. 파이프라인은 빈 카메라
+   목록으로 생성되므로 시작값은 false이며, 촬영 품질에서만 붙인다. */
+let FREE_PIPE_ON = false;
+let FREE_HEAVY_ON = false;
 /* 발표 중에는 PiP를 꺼도 자유 시점의 고비용 SSAO·SSR 체인을 다시 붙이지 않는다.
    시나리오가 이 값을 켜고 되돌리기가 끈다. */
 let PRESENT_FAST = false;
-/* 주 시점과 방위각이 가장 많이 벌어진 감시 카메라를 고른다.
-   사용자가 주 시점을 CCTV로 바꿔 PiP와 겹칠 때도 이걸로 자동 회피한다. */
-function farthestCam(fromId) {
-  const yawOf = c => { const t = c.getTarget ? c.getTarget() : c.target;
-                       const d = t.subtract(c.position);
-                       return Math.atan2(d.x, d.z) * 180 / Math.PI; };
-  const base = yawOf(fromId === "free" ? camera : SURV[fromId].cam);
-  let best = null, bestD = -1;
-  for (const id of Object.keys(SURV)) {
-    if (id === fromId) continue;
-    let d = Math.abs(yawOf(SURV[id].cam) - base) % 360;
-    if (d > 180) d = 360 - d;                       // 각도 차는 180°가 최대
-    if (d > bestD) { bestD = d; best = id; }
-  }
-  return best;
-}
 /* PiP 위치·크기 — **화면 비율과 무관하게 16:9 고정**.
    예전에는 뷰포트 비율(0.26, 0.26)로 줬는데, 그러면 PiP의 픽셀 종횡비가 창 비율을
    그대로 따라간다. 패널을 접어 전체화면(2.15:1)으로 보면 PiP가 옆으로 늘어나
@@ -3218,8 +3203,10 @@ function applyCameras() {
   scene.activeCameras = arr;
   scene.cameraToUseForPointers = main;
   CAM_GEN++;                    // 캡처가 이 변경을 덮어쓰지 않게 표시한다 (CAM_GEN 주석)
-  /* ── 자유 시점 전용 후처리(post·ssao·ssr)를 붙일지 ──────────────────────
-     조건: **자유 카메라가 화면에 있고, PiP가 꺼져 있을 때만.**
+  /* ── 자유 시점 전용 후처리를 붙일지 ─────────────────────────────────────
+     post·SSAO·SSR은 사용자가 촬영 품질을 명시적으로 고른 경우에만 붙인다.
+     새로고침 직후 기본 post까지 켜면 PiP OFF에서도 7fps였고, 촬영 품질은 원래
+     실시간용이 아니다(QUALITY.presets.rec 주석).
 
      ① 자유 카메라가 화면에 없는데 붙여 두면 SSR이 활성 카메라 목록에서 자기 카메라를
         못 찾아 매 프레임 예외를 던진다(_finalizeFrame — reading '-1').
@@ -3229,15 +3216,24 @@ function applyCameras() {
         그래서 PiP를 쓰는 동안에는 자유 시점도 감시 카메라와 같은 소재 그대로 그린다.
         감시 카메라에는 원래 이 체인을 안 붙인다(데이터셋 RGB를 바꾸면 안 되므로). */
   const _mgr = scene.postProcessRenderPipelineManager;
-  const _freeOn = arr.indexOf(camera) >= 0 && arr.length === 1 && !PRESENT_FAST;
+  const _freeOn = arr.indexOf(camera) >= 0 && arr.length === 1 && !PRESENT_FAST &&
+                  QUALITY.name === "rec";
+  const _heavyOn = _freeOn;
   if (_mgr && _freeOn !== FREE_PIPE_ON) {
-    for (const n of ["post", "ssao", "ssr"]) {
-      try {
-        if (_freeOn) _mgr.attachCamerasToRenderPipeline(n, camera);
-        else _mgr.detachCamerasFromRenderPipeline(n, camera);
-      } catch (e) { /* 그 파이프라인이 꺼져 있는 품질 단계 — 무시 */ }
-    }
+    if (_freeOn) _mgr.attachCamerasToRenderPipeline("post", camera);
+    else _mgr.detachCamerasFromRenderPipeline("post", camera);
     FREE_PIPE_ON = _freeOn;
+  }
+  if (_mgr && _heavyOn !== FREE_HEAVY_ON) {
+    if (ssao) {
+      if (_heavyOn) _mgr.attachCamerasToRenderPipeline("ssao", camera);
+      else _mgr.detachCamerasFromRenderPipeline("ssao", camera);
+    }
+    if (ssr) {
+      if (_heavyOn) _mgr.attachCamerasToRenderPipeline("ssr", camera);
+      else _mgr.detachCamerasFromRenderPipeline("ssr", camera);
+    }
+    FREE_HEAVY_ON = _heavyOn;
   }
   // overlayCv는 아래에서 const로 만들어진다 — 초기화 중 호출되면 TDZ라 접근만 해도 죽는다.
   // 캔버스가 준비된 뒤부터만 그린다.
@@ -3513,6 +3509,14 @@ if (SMOKE_V2) {            // E-2 — 안개↓ 입자층↑. 근거는 SMOKE_V2
   FIRE_FOG.max = 0.12;
   FIRE_FOG.smokeMax = 950;
 }
+/* 화재를 켜는 순간 fogMode NONE→EXP로 바꾸면 모든 GLB 재질의 fog 변형 셰이더가
+   한꺼번에 컴파일되어 감지 직전 한 구간이 22fps까지 떨어졌다. 처음부터 EXP 셰이더를
+   밀도 0으로 사용하면 픽셀은 무안개와 같고, 발화 때는 밀도만 올리므로 재컴파일이 없다.
+   데이터 캡처가 저장·복원하는 fog 상태도 이 밀도 0 기준을 그대로 보존한다. */
+scene.fogEnabled = true;
+scene.fogMode = BABYLON.Scene.FOGMODE_EXP;
+scene.fogColor = FIRE_FOG.color.clone();
+scene.fogDensity = 0;
 function fireFogStart() {
   if (FIRE_FOG.saved) return;        // 중복 진입 방지 — 원본 안개 설정을 덮어쓰면 복원이 깨진다
   FIRE_FOG.saved = { mode:scene.fogMode, color:scene.fogColor.clone(),
@@ -6465,6 +6469,10 @@ async function loadAssets() {
   const RV = verifyRoute();
   console.log("[ROUTE] 스테이션 검증 " + (RV.ok ? "전 지점 통과" : "실패 " + RV.failed.length + "곳"));
 
+  /* 로더가 그림자 renderList 구성을 끝낸 뒤 기본 품질을 적용한다. 이보다 앞에서
+     ShadowGenerator를 교체하면 loadAssets가 폐기된 renderList를 읽어 실패한다. */
+  QUALITY.apply(QUALITY.name);
+  QUALITY.lastAuto = performance.now();       // 로딩 직후가 아닌 안정 프레임부터 강등 판단
   // 프로브가 새 렌더리스트로 한 번 굽는 데 몇 프레임 걸린다 — 그 뒤에 MSAA를 연다
   setTimeout(() => { ENV_READY = true; }, 900);
   lampSetup(); lampApply(0);   // 경고등 3단계 — 시그널타워 연동 (초기: 정상=녹색)
@@ -7631,7 +7639,10 @@ function applyRenderProfile(pf) {
 const glow = new BABYLON.GlowLayer("glow", scene, {mainTextureSamples:2});
 glow.intensity = ASSETS.enabled ? 0.15 : 0.5;   // 밝은 주방에서 존 테이프 과발광 방지
 
-const pipe = new BABYLON.DefaultRenderingPipeline("post", true, scene, [camera]);
+/* 기본 실시간 경로에는 후처리를 붙이지 않는다. 생성 시 camera를 넘겼다가 떼면 촬영
+   품질에서 다시 붙일 때 Babylon이 비재사용 post-process 오류를 낸다. 빈 카메라 목록으로
+   만들고 촬영 품질을 처음 선택한 순간 applyCameras가 한 번 붙인다. */
+const pipe = new BABYLON.DefaultRenderingPipeline("post", true, scene, []);
 pipe.fxaaEnabled = true;
 /* MSAA 4x — FXAA만으로는 그레이팅 살·와이어 선반 같은 얇은 구조가 지글거린다.
    단, 멀티샘플 프레임버퍼는 ReflectionProbe 캡처와 피드백 루프를 만든다
@@ -7668,10 +7679,12 @@ const QUALITY = {
           영상 녹화처럼 프레임보다 화질이 중요한 자리에서만 쓴다. */
     rec:    { label:"촬영", msaa:4, pcss:true,  quality:"HIGH", scale:0.75, map:4096, caster:0    },
   },
-  name: "high", cur: null, autoDone: false,
+  /* 실시간 기본값은 보통. 높음의 PCSS·2048 그림자는 초기 7~9fps를 만든 뒤 어차피
+     자동으로 보통에 내려갔다. 높음·촬영은 고급 탭에서 명시적으로 고를 때만 쓴다. */
+  name: "medium", cur: null, autoDone: false, lowWindows: 0,
   apply(name) {
     const p = this.presets[name]; if (!p) return;
-    this.name = name; this.cur = p;
+    this.name = name; this.cur = p; this.lowWindows = 0;
     /* '낮음'에서는 그림자 패스를 통째로 끈다 — 캐스터 1,252개 × 2048맵이 최대 병목이라
        끄면 프레임이 확 오른다. 평평해 보이지만 '느려서 못 보는 것'보다 낫다. */
     scene.shadowsEnabled = (name !== "low");
@@ -7704,10 +7717,12 @@ const QUALITY = {
       }
     }
     const sel = document.getElementById("qualitySel"); if (sel) sel.value = name;
+    /* 촬영 품질만 SSAO·SSR을 쓰므로 품질 변경을 실제 카메라 파이프라인에도 반영한다. */
+    applyCameras();
     return p;
   },
 };
-QUALITY.cur = QUALITY.presets.high;
+QUALITY.cur = QUALITY.presets.medium;
 
 /* ══ SSAO — 접촉 그림자 ═══════════════════════════════════════════════════
    이 씬이 '평평하다'고 읽히는 가장 큰 원인. 물체와 바닥이 만나는 틈이 어두워지지
@@ -7718,7 +7733,7 @@ let ssao = null;
 try {
   // matchCam은 파일 뒤에서 선언된다(TDZ) — 여기선 자유 시점만 붙이고 뒤에서 추가한다
   ssao = new BABYLON.SSAO2RenderingPipeline("ssao", scene,
-    { ssaoRatio: 0.75, blurRatio: 1 }, [camera], true);
+    { ssaoRatio: 0.75, blurRatio: 1 }, [], true);
   ssao.radius = 0.50;          // m 단위 — 주방 스케일에서 접촉부만 잡는 값
   ssao.totalStrength = 0.90;
   ssao.base = 0.12;            // 0이면 그늘이 새까매진다
@@ -7739,7 +7754,7 @@ try {
 let ssr = null;
 try {
   if (BABYLON.SSRRenderingPipeline) {
-    ssr = new BABYLON.SSRRenderingPipeline("ssr", scene, [camera], false,
+    ssr = new BABYLON.SSRRenderingPipeline("ssr", scene, [], false,
       BABYLON.Constants.TEXTURETYPE_UNSIGNED_BYTE);
     ssr.step = 8;                    // 레이마칭 간격 — 크면 빠르고 거칠다
     ssr.maxSteps = 320;
@@ -7991,7 +8006,13 @@ function sensorPreset(name) {
   setStatus("센서 프리셋: " + name);
 }
 
+/* 에셋 로딩 중에는 그림자 생성기를 교체하지 않는다(loadAssets 끝에서 적용).
+   여기서는 실시간 후처리 분리만 먼저 반영한다. */
 applyCameras();
+if (!ASSETS.enabled) {
+  QUALITY.apply(QUALITY.name);
+  QUALITY.lastAuto = performance.now();
+}
 
 /* ══ Ground Truth 캡처 — Isaac Sim Replicator 대응 ═══════════════════════
    카메라별 RGB + 세그멘테이션 마스크 + 깊이맵 + YOLO 라벨을 생성한다.
@@ -11537,6 +11558,11 @@ function resetBasket() {
   basketNode.rotation.set(0, basketNode.__homeYaw || 0, 0);
 }
 $("resetBtn").addEventListener("click", () => {
+  /* 발표 화재 시나리오가 카메라·PiP·인원 표시를 바꾼 상태라면 일반 리셋도 그 상태를
+     먼저 원복해야 한다. 종전에는 로봇·주인공만 초기화해 출구 카메라와 숨겨진 인원이
+     남았고, 화면에는 빈 대피 구역과 조리원 1명만 보였다. */
+  if (typeof DEMO !== "undefined" && (DEMO.on || DEMO.saved || DEMO.presenting))
+    demoReset(true);
   // ② 사람 동선 감지 데모가 살아있으면 먼저 정리(안전반경·카메라·숨긴 EXTRAS/카트 복원).
   //   없으면 정상 작업 리셋도 CORR 데모 잔여 상태(축소 반경·타이트 카메라·유령 예측) 위에 얹혀 이상해진다.
   if (typeof CORR !== "undefined" && (CORR.on || CORR.saved)) corrReset(true);
@@ -11546,6 +11572,9 @@ $("resetBtn").addEventListener("click", () => {
   resetBasket();                        // 바스켓을 솥 안 시작 위치로
   bubbles.emitRate = 0; steam.emitRate = 0;
   if (state.fire) setFire(false);
+  /* 리셋은 진행 중인 화재 입자까지 끝내는 명시적 동작이다. 배출만 0으로 두면 수명이
+     남은 연기가 10초 이상 화면을 가려, 원위치인데 설비가 사라진 것처럼 보인다. */
+  fsmoke.reset(); firePS.reset();
   /* **사람도 되돌린다.** 예전 리셋은 로봇·조리만 초기화하고 사람은 그대로 뒀다.
      그러면 사고 데모로 쓰러뜨리거나 끼워 놓은 사람이 그대로 남고, 검출 실패(SAFE.blind)와
      E-STOP도 켜진 채라 "리셋했는데 왜 그대로지"가 된다. 회차를 다시 돌리려면
@@ -11564,6 +11593,7 @@ $("resetBtn").addEventListener("click", () => {
   if (typeof personIdle === "function") personIdle();
   if (typeof OVERLAP === "object") { OVERLAP.cool = 0; OVERLAP.events = 0; }
   setStatus("리셋 완료 — 바스켓·사람·안전 상태 원위치 (인원 " + EXTRAS.length + "명)");
+  const demoNote = $("demoNote"); if (demoNote) demoNote.textContent = "되돌림 — 초기 상태";
 });
 $("tempSlider").addEventListener("input", e => {
   state.temp = +e.target.value;
@@ -11577,9 +11607,7 @@ const viewSel = $("viewSel"), pipSel = $("pipSel");
    PiP에도 자유 시점을 올릴 수 있게 한다: 주 시점을 CCTV로 두고 구석에 3D 전경을 띄우는
    조합이 실제로 가장 많이 쓰이고, 이게 있어야 클릭 교환이 양방향으로 성립한다. */
 camSelectsRebuild();
-/* PiP 기본값은 하드코딩하지 않는다 — 주 시점(자유)과 방위각이 가장 벌어진 카메라를 고른다.
-   카메라 배치를 바꾸면 기본값도 알아서 따라온다. */
-pipView = farthestCam(mainView) || pipView;
+/* 기본 PiP는 끈 상태다. 선택 UI와 applyCameras 경로는 그대로 유지한다. */
 pipSel.value = pipView;
 applyCameras();
 viewSel.addEventListener("change", () => { mainView = viewSel.value; applyCameras();
@@ -13004,7 +13032,13 @@ scene.registerBeforeRender(() => {
     if (!QUALITY.autoDone && QUALITY.name !== "low" && QUALITY.name !== "rec" && ENV_READY
         && performance.now() - (QUALITY.lastAuto || 0) > 4000) {
       const f = fpsAcc / fpsN;
-      if (f > 0 && f < 30) {
+      /* 화재를 처음 켤 때 fog 셰이더가 한 번 컴파일되는 짧은 구간까지 저사양으로
+         오판하지 않는다. 실측상 그 뒤 보통 화질은 48~59fps로 유지됐다. 20프레임
+         평균이 세 번 연속 낮을 때만 지속 저하로 판단하면, 실제 저하는 약 1초 안에
+         강등하면서 일회성 컴파일 비용에는 화질을 바꾸지 않는다. */
+      if (f > 0 && f < 30) QUALITY.lowWindows++;
+      else QUALITY.lowWindows = 0;
+      if (QUALITY.lowWindows >= 3) {
         QUALITY.lastAuto = performance.now();
         const next = QUALITY.name === "high" ? "medium" : "low";
         QUALITY.apply(next);
@@ -14144,9 +14178,10 @@ function extrasUpdate(dt) {
       extraPlay(P, "idle");
       continue;
     }
-    /* 대피 출발 시차 (2026-08-31). 정렬점을 하나로 모은 뒤로 셋이 **동시에** 같은 점에
+    /* 대피 출발 시차 (2026-09-01). 정렬점을 하나로 모은 뒤로 둘이 **동시에** 같은 점에
        몰려, 서로 밀어내느라 도착 반경 안에 못 들어가고 그 자리에서 뛰는 그림이 났다.
-       0.7초씩 늦춰 보내면 2.5㎧ 기준 1.75m 간격이 생겨 줄지어 통과한다.
+       0.45초씩 늦춰 보내면 2.5㎧ 기준 약 1.1m 간격이 생겨 충돌하지 않으면서도
+       출구 카메라의 가림 없는 구간(최소 1.5m)에서 두 사람이 함께 확인된다.
        ⚠️ dwellT 를 쓰면 안 된다 — 만료될 때 extraNextTarget 이 **대피 경로를 갈아엎는다.** */
     if (P.evacWait > 0) { P.evacWait -= dt; extraPlay(P, "idle"); continue; }
     if (P.mode === "crouch" || P.mode === "idle") {
@@ -15413,6 +15448,7 @@ function demoNormalWork() {
   if (DEMO.kind === "after" && typeof EXTRAS !== "undefined" && EXTRAS.length) {
     demoExitView();
     const exitView = camera.getViewMatrix(true).clone();
+    const exitPos = camera.position.clone();
     const exitVP = exitView.multiply(camera.getProjectionMatrix(true));
     demoHatchView();
     const workView = camera.getViewMatrix(true).clone();
@@ -15447,19 +15483,29 @@ function demoNormalWork() {
         }
       }
       if (inFrame) continue;
+      const direct = Math.hypot(x - gate.x, z - gate.z);
+      if (direct > 8.0) continue;
+      candidates.push({ x, z, direct });
+    }
+    /* 모든 격자 칸에서 A*와 경로 투영을 실행하면 시나리오 시작 한 프레임에 계산이 몰려
+       4fps까지 떨어졌다. 화면 밖·직선거리 조건은 값싼 계산으로 먼저 끝내고, 문에서 먼
+       후보부터 실제 경로를 확인해 충분한 후보를 찾는 즉시 멈춘다. */
+    candidates.sort((a, b) => b.direct - a.direct);
+    const routed = [];
+    for (const c of candidates) {
+      const x = c.x, z = c.z;
       const start = new V3(x, 0, z), route = navPath(start, gate);
       if (!route || !route.length) continue;
       let routeLen = Math.hypot(route[0].x - x, route[0].z - z);
       for (let ri = 1; ri < route.length; ri++)
         routeLen += Math.hypot(route[ri].x - route[ri-1].x, route[ri].z - route[ri-1].z);
       if (routeLen > 8.0) continue;
-      /* 대기점만 화면 밖이면 충분하지 않다. 종전에는 문까지 가는 경로도 선반 뒤·프레임
-         밖에 머무는 칸이 뽑혀, 실제로 두 사람이 달려도 문 앞의 짧은 순간 외에는 안 보였다.
-         경로를 NAV 반 칸 간격으로 훑어 출구 컷 안에 들어오는 구간을 재고,
-         화면과 한 번도 만나지 않는 경로는 버린다. 남은 경로 중 진입이 빠르고 화면 안
-         이동 거리가 긴 순서로 고른다. */
+      /* 대기점만 화면 밖이면 충분하지 않다. 경로를 NAV 반 칸 간격으로 훑고, 프레임 안에
+         들어오는 구간과 실제 설비에 가리지 않는 구간을 따로 잰다. 중앙 선반 뒤에서
+         문 앞 1프레임만 보이는 경로는 제외한다. */
       const walk = [start, ...route];
       let walked = 0, entryLen = Infinity, visibleLen = 0;
+      const visibleSamples = [];
       for (let wi = 1; wi < walk.length; wi++) {
         const a = walk[wi-1], b = walk[wi];
         const segLen = Math.hypot(b.x - a.x, b.z - a.z);
@@ -15478,18 +15524,31 @@ function demoNormalWork() {
           if (visible) {
             if (!isFinite(entryLen)) entryLen = walked;
             visibleLen += stepLen;
+            visibleSamples.push({ q, len:stepLen });
           }
           walked += stepLen;
         }
       }
-      if (!isFinite(entryLen) || visibleLen <= 0) continue;
-      candidates.push({ x, z, routeLen, entryLen, visibleLen });
+      if (!isFinite(entryLen) || visibleLen < 1.5) continue;
+      let clearLen = 0;
+      for (const s of visibleSamples) {
+        const dir = s.q.subtract(exitPos), dist = dir.length();
+        if (dist <= 0.4) continue;
+        dir.scaleInPlace(1 / dist);
+        const hit = scene.pickWithRay(new BABYLON.Ray(exitPos, dir, dist - 0.30),
+          m => m.isEnabled() && m.isVisible && m.isPickable !== false &&
+               !/^door(?:Win|Void)?$/.test(m.name));
+        if (!hit || !hit.hit) clearLen += s.len;
+      }
+      if (clearLen < 1.5) continue;
+      routed.push({ x, z, routeLen, entryLen, visibleLen, clearLen });
+      if (routed.length >= 8) break;
     }
-    candidates.sort((a, b) => a.entryLen - b.entryLen ||
-                              b.visibleLen - a.visibleLen ||
-                              b.routeLen - a.routeLen);
+    routed.sort((a, b) => a.entryLen - b.entryLen ||
+                          b.clearLen - a.clearLen ||
+                          b.routeLen - a.routeLen);
     afterSpots = [];
-    for (const c of candidates) {
+    for (const c of routed) {
       if (afterSpots.every(p => Math.hypot(p.x - c.x, p.z - c.z) > PERSON_SEP * 2))
         afterSpots.push(c);
       if (afterSpots.length === EXTRAS.length) break;
@@ -15499,7 +15558,8 @@ function demoNormalWork() {
     console.log("[DEMO] after 조리원 카메라 밖 대기 — " +
                 afterSpots.map(p => p.x.toFixed(2) + "," + p.z.toFixed(2) +
                                     "(진입 " + p.entryLen.toFixed(1) + "m · 화면 " +
-                                    p.visibleLen.toFixed(1) + "m)").join(" · "));
+                                    p.visibleLen.toFixed(1) + "m · 가림없음 " +
+                                    p.clearLen.toFixed(1) + "m)").join(" · "));
   }
   /* ⚠️ 추가 인원을 **로봇 반경 밖으로 물린다** (2026-08-28).
      안 하면 로봇이 출발조차 못 한다 — 예측 회피가 통로 횡단 단계에서
@@ -15843,7 +15903,12 @@ function demoDetectOn() {
     console.warn("[DEMO] 시뮬 검출이 mock이다 — GT 마스크 기반 '완벽한 검출'이지 모델이 아니다" +
                  (ONNX.isDummy ? " (붙은 모델이 더미다)" : " (모델 없음)"));
   }
-  if (!MIL.on) $("milBtn").click();
+  /* 실제 모델이 준비된 경우에만 발표 중 연속 캡처를 시작한다. 모델이 없을 때의 mock은
+     GT 마스크를 만들기 위해 GPU 렌더·픽셀 읽기를 반복하고, 감지→대피 전환마다
+     18fps까지 순간 하락했다. 이 회차의 화재 박스는 위 FIRE_BOX가 같은 GT 기준으로
+     이미 즉시 그렸으므로 mock 캡처를 또 돌려도 검증 근거는 늘지 않는다.
+     데이터 탭에서 사용자가 직접 누르는 검증 시작 동작은 그대로 둔다. */
+  if (demoDetectReal() && !MIL.on) $("milBtn").click();
   /* 실영상 패널도 같이 연다 — 시뮬이 시뮬을 검출하는 그림만으로는 설득이 안 된다.
 
      **세 조건을 이어서 튼다** (정상 → 연기 → 연기+화재). 회의록 after ④의 하위 1·2·3이다.
@@ -15954,12 +16019,12 @@ function demoExitView() {
   const dx = doorCenterX();       // 회전 중에는 문짝 중심이 움직인다(doorCenterX 주석)
   const zt = LAYOUT.room.z1 - 1.15;              // 문 조금 안쪽 — 걸어오는 구간이 같이 잡힌다
   camera.setTarget(new V3(dx, 1.00, zt));
-  /* 출구 컷은 사람의 현재 위치를 따라 넓히지 않는다. 종전 `gap + 2.6`은 두 사람이
-     출발점에 서 있는 순간부터 화면 안에 넣어, '경보 후 프레임 밖에서 뛰어 들어오는'
-     장면이 사라졌다. 문과 문 앞 통로만 잡는 기존 최소 반경 4.0을 유지하고,
-     대기 위치는 demoNormalWork가 이 프레임 밖의 통행 가능한 칸에서 고른다. */
-  camera.alpha = -2.60; camera.beta = 1.28;
-  camera.radius = 4.0;
+  /* 대기 위치는 demoNormalWork가 이 프레임 밖에서 고르므로 사람 위치에 맞춰 줌을
+     바꾸지 않는다. 종전 반경 4.0·beta 1.28은 카메라가 경로 바로 옆, 사람 눈높이에
+     놓여 화면 하단을 인물이 크게 가렸다. 같은 문 조준과 방향을 유지하되 뒤·위로 물리고,
+     시작점과 실제로 가리지 않는 주행 구간은 demoNormalWork에서 다시 검증한다. */
+  camera.alpha = -2.60; camera.beta = 1.20;
+  camera.radius = 5.0;
 }
 
 /* ══ 출입문 열림 — 대피 연출 (2026-08-25) ═══════════════════════════════════
@@ -16157,10 +16222,9 @@ function demoExtrasFlee() {
     }
     P.station = null; P.dwellT = 0; P.acting = null; P.struckT = 0;
     P.mode = "walk"; P.pi = 0; P.evac = true;
-    /* **주인공이 가장 먼저 나간다** (2026-08-31, 사용자 지시). 종전 i*700 은 첫 인원이
-       주인공과 동시에 출발해 누가 주인공인지 읽히지 않았다. (i+1)*700 이면
-       주인공 → 0.7초 → 1.4초 순으로 줄이 선다. */
-    P.evacWait = (i + 1) * 700;                  // 줄지어 나가게 (위 evacWait 주석)
+    /* 숨겨 둔 두 조리원은 카메라 밖에서 출발하되, 출구 컷에서는 둘 다 확인돼야 한다.
+       0.45초 시차면 사람 간 최소 간격(0.62m)보다 넓고 화면 구간에서는 잠깐 함께 보인다. */
+    P.evacWait = (i + 1) * 450;                  // 줄지어 나가게 (위 evacWait 주석)
     /* **뛴다.** 보행 클립은 속도로 갈린다 — `locoPlay`가 `RUN_AT`(1.9㎧) 이상이면
        달리기 클립을 쓴다. 종전 1.05~1.13㎧는 그 아래라 **불이 났는데 걸어 나갔다**.
        2.5~2.65㎧면 달리기 클립이고, 재생 배속이 `speed / RUN_REF(2.717)` = 0.92~0.98이라
@@ -16227,11 +16291,9 @@ function demoExtrasFlee() {
    표본에 연무가 섞여 그림과 라벨이 어긋난다. 그래서 페이드는 발표용에서만 켠다. */
 function demoExtinguish(ms) {
   if (!state.fire) return;
-  /* ⚠️ 목표는 `saved.density`가 **아니다.** 실측하니 원래 씬은 안개가 아예 없다
-     (저장된 fogMode = NONE — 그때 density 0.1은 쓰이지 않는 값이다).
-     0.1로 페이드하면 끝에서 fireFogStop이 모드를 NONE으로 되돌리는 순간
-     0.115 → 없음으로 툭 튄다. 페이드를 넣은 이유가 사라진다.
-     혹시 배치가 바뀌어 기본 안개가 생기면 그 값으로 가도록 분기해 둔다. */
+  /* ⚠️ 목표는 기본 씬의 실제 밀도다. 기본 씬은 발화 셰이더를 미리 컴파일하기 위해
+     EXP 모드·밀도 0을 유지하므로, 진화가 끝나면 0으로 자연스럽게 돌아간다.
+     혹시 배치가 바뀌어 기본 안개가 생기면 그 저장값으로 가도록 분기해 둔다. */
   const target = (FIRE_FOG.saved && FIRE_FOG.saved.mode !== BABYLON.Scene.FOGMODE_NONE)
     ? FIRE_FOG.saved.density : 0;
   /* FIRE_FOG.on을 먼저 내린다 — fireFogTick이 매 프레임 밀도를 다시 올리므로
@@ -16864,6 +16926,9 @@ function demoReset(quiet) {
   fireBoxOff();
   FIRE_FOG.speed = 1;                          // 발표용 4배속을 원래대로
   setFire(false);
+  /* 되돌리기는 화재를 끄는 것뿐 아니라 초기 화면을 복원하는 동작이다. 수명이 남은
+     연기 입자가 설비를 가리지 않도록 Babylon ParticleSystem의 정식 reset API로 비운다. */
+  fsmoke.reset(); firePS.reset();
   /* 발표 흐름에서는 강제 렌더를 쓰지 않는다. emitRate와 입자 수는 실제 프레임에서
      자연스럽게 원래 평형으로 돌아간다. 데이터셋 표본만 randomizeScene에서 steamSettle한다. */
   STEAM.k = 1;
