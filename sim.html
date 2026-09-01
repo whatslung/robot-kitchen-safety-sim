@@ -580,6 +580,13 @@
     <button id="corrAfter" class="primary">▶ 회피 (예측)</button>
     <button id="corrStop">↩ ② 되돌리기</button>
   </div>
+  <div class="btnrow">
+    <!-- WASD 1:1 — 배경 작업자 2명을 빼서 로봇이 오직 WASD 조종 조리원에게만 반응하게 한다.
+         다인원 씬에선 로봇이 '최근접자'(배경 인원일 수 있음)에 반응해 WASD 시연이 헷갈린다. -->
+    <button id="wasd11Btn" class="primary">▶ WASD 1:1 (배경 빼고 예측)</button>
+  </div>
+  <div class="note" id="wasd11Note"><b>WASD 1:1</b>: 배경 작업자를 빼고 <b>WASD로 조리원 한 명만</b> 조종 →
+    로봇이 <b>그 사람에게만</b> 실시간 감속·후퇴·재개. 다시 누르면 해제(배경 복귀). 예측 표시 자동 on.</div>
   <div class="note" id="demo2Note"><b>충돌</b>: 로봇이 사람을 못 본 채 작업 → 걸어오는 사람을 팔이 휩쓸어 쓰러뜨립니다. ·
     <b>회피</b>: 조리원이 <b>일정 동선으로 통로를 왕복</b> → 로봇이 <b>궤적을 예측</b>(화살표·경로선)해
     다가올 때 <b>감속 → 정지</b>, 지나가면 <b>재개</b>. 버튼 하나로 자동 실행됩니다.</div>
@@ -12071,6 +12078,35 @@ function wasdAvoidTick(dt) {
 $("corrBefore").addEventListener("click", () => corrStart("before"));
 $("corrAfter").addEventListener("click", () => corrStart("after"));
 $("corrStop").addEventListener("click", () => corrReset(false));
+
+/* ══ WASD 1:1 모드 ══════════════════════════════════════════════════════════
+   다인원 씬에선 로봇 안전이 **최근접자**(배경 작업자일 수 있음)에 반응해, WASD로 조리원을
+   몰아도 로봇이 딴 사람에게 반응하는 것처럼 보인다(사용자 지적). 이 모드는 배경 EXTRAS를
+   비활성(setEnabled false)해 nearestPerson·예측에서 빼고(그쪽 정합 주석), 조종을 person에
+   고정 + 조리 사이클을 켜, 로봇이 **WASD 조리원 한 명에게만** 반응하게 한다. 토글이다. */
+const WASD11 = { on:false, saved:null };
+function wasd11Set(on) {
+  if (on === WASD11.on) return;
+  if (on) {
+    if (typeof CORR !== "undefined" && (CORR.on || CORR.saved)) corrReset(true);   // ② 데모와 겹치지 않게
+    // 배경 인원 상태 저장 후 비활성 — nearestPerson/예측이 이들을 건너뛴다(위 정합 수정)
+    WASD11.saved = EXTRAS.map(P => ({ P, enabled: P.root.isEnabled() }));
+    EXTRAS.forEach(P => P.root.setEnabled(false));
+    if (typeof setCtrlTarget === "function") setCtrlTarget("person");   // WASD → 조리원
+    person.freeze = false; person.mode = "idle"; person.path = [];      // 스크립트 동선 해제
+    if (!state.auto) $("autoBtn").click();                              // 로봇은 평소처럼 작업(회피가 의미 있게)
+    ["vizDens", "vizPmode", "vizLine"].forEach(id => { const c = $(id); if (c && !c.checked) { c.checked = true; c.dispatchEvent(new Event("change")); } });
+    WASD11.on = true;
+    const btn = $("wasd11Btn"); if (btn) btn.textContent = "■ WASD 1:1 해제";
+    setStatus("WASD 1:1 — 배경 작업자 비활성. WASD로 조리원을 로봇에 접근/이탈 → 감속·후퇴·재개 확인");
+  } else {
+    if (WASD11.saved) WASD11.saved.forEach(s => { s.P.root.setEnabled(s.enabled); if (typeof extraNextTarget === "function") extraNextTarget(s.P); });
+    WASD11.saved = null; WASD11.on = false;
+    const btn = $("wasd11Btn"); if (btn) btn.textContent = "▶ WASD 1:1 (배경 빼고 예측)";
+    setStatus("WASD 1:1 해제 — 배경 작업자 복귀");
+  }
+}
+$("wasd11Btn").addEventListener("click", () => wasd11Set(!WASD11.on));
 $("scWander").addEventListener("click", () => personWander(!WANDER.on));
 $("scWorkflow").addEventListener("click", () => personWorkflow(!WF.on));
 /* 작업 동선 — 스테이션마다 도착해서 실제 작업 동작을 재생한다 */
@@ -17529,6 +17565,8 @@ $("demoStop").addEventListener("click",   () => demoReset(false));
 window.__sim.demoRun = demoRun;
 window.__sim.demoReset = demoReset;
 window.__sim.DEMO = DEMO;
+window.__sim.wasd11Set = wasd11Set;             // WASD 1:1 모드 — 콘솔에서도 토글
+window.__sim.WASD11 = WASD11;
 window.__sim.DEMO_SCRIPTS = DEMO_SCRIPTS;
 window.__sim.demoExtinguish = demoExtinguish;   // 진화 페이드 — 리허설·검증용
 window.__sim.demoEvacuate = demoEvacuate;
