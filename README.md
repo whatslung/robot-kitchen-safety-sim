@@ -107,6 +107,16 @@ WebGPU가 없으면 wasm으로 자동 폴백된다. 브라우저 탭을 앞에 �
      갈라져 뜨고 로봇이 선제 감속한다. 서버가 없거나 미로드면 조용히 칼만으로 폴백한다.
   - 교체 env: 로컬 파일 `PREDICT_MODEL=경로/model.pt` · 다른 허브 저장소
     `PREDICT_MODEL_REPO=... PREDICT_MODEL_FILE=...` · 아키텍처 `PREDICT_NET=lstm|transformer`.
+  - **로컬 재학습본 파일명** — `PREDICT_MODEL`을 안 주면 서버는 `training/traj_predictor/`에서
+    아키텍처별 기본 파일을 찾는다: LSTM `model.pt` · Transformer `model_transformer.pt`
+    (각각 `train/train_traj_predictor.py` · `train/train_traj_transformer.py`가 저장하는 이름).
+    이 이름으로 안 두면 로컬 파일이 무시되고 허브 버전을 받는다.
+  - **아키텍처 형상**(공개/재학습 가중치가 맞아야 하는 값) — 두 백본 공통 계약: K=3 모드 ·
+    관측 8스텝 · 예측 12스텝 · 스텝별 σ. Transformer는 `d_model=64 · layers=2 · heads=4 ·
+    ff=256`(= `build_transformer_net()` 기본값)으로 로드하므로, 다른 형상으로 학습한 가중치는
+    `load_state_dict`에서 키 불일치로 실패한다(조용히 잘못 로드되지 않는다).
+  - 백엔드 `/health`는 서빙 중인 아키텍처를 `predict_net`으로 돌려주고, 시뮬은 이를 읽어
+    예측 상태줄에 표시한다(예: `✔ 연결됨 (Transformer)`) — 브라우저에서 어떤 백본이 도는지 확인용.
   - 밀도 구름을 나디르(탑뷰·후드 제거)에서 찍은 예시 — 조리원의 곡선 동선을 따라 방향성 구름이
     퍼진다: [docs/chanwoo/assets/prediction/](docs/chanwoo/assets/prediction/) (LSTM 5컷 · Transformer 3컷).
 

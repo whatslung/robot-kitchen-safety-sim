@@ -6609,13 +6609,18 @@ function customPredictTick(srcPos, now, dtMs) {
    그래서 GET /health로 **로드 시 딱 한 번** 확인하고 그 판정을 세션 내내 쓴다.
    없으면 조용히 칼만 폴백하고 **폴링을 멈춘다**(매 틱 POST/health 도배 방지).
    백엔드를 나중에 켰다면 페이지 새로고침 — 또는 콘솔에서 window.__backendRecheck(). */
-const BACKEND = { ok: null, probing: false };
+const BACKEND = { ok: null, probing: false, net: null };   // net: 서버가 서빙하는 예측 아키텍처(/health)
 function backendProbe(force) {
   if (BACKEND.probing) return;
   if (BACKEND.ok !== null && !force) return;         // 이미 판정됨 — 재확인 안 함(모드 고정)
   BACKEND.probing = true;
   fetch("/health", { method: "GET" })
-    .then(r => { BACKEND.ok = r.ok; console.log("[backend] " + (r.ok ? "가동 → /predict·/nadir 배선 켬" : "부재 → 칼만 폴백(폴링 중단)")); })
+    .then(async r => {
+      BACKEND.ok = r.ok;
+      if (r.ok) { const j = await r.json().catch(() => ({})); BACKEND.net = j.predict_net || null; }
+      console.log("[backend] " + (r.ok ? "가동(" + (BACKEND.net || "?") + ") → /predict·/nadir 배선 켬"
+                                        : "부재 → 칼만 폴백(폴링 중단)"));
+    })
     .catch(() => { BACKEND.ok = false; console.log("[backend] 부재 → 칼만 폴백(폴링 중단). 백엔드 켰으면 새로고침 또는 __backendRecheck()"); })
     .finally(() => { BACKEND.probing = false; });
 }
@@ -7061,6 +7066,22 @@ function densInit() {
   p.material = m;
   DENS.plane = p; DENS.tex = tex;
 }
+/* 밀도 텍셀의 정규화 제곱거리 q — 가우시안 v=w·exp(-q/2)의 지수부. 순수 함수라
+   테스트(tests/browser/density-cloud-shape.spec.mjs)가 브라우저에서 직접 호출한다.
+   ux,uz는 **진행 방향 단위벡터**여야 회전 투영(al=따라, ac=가로)이 성립한다. 학습형
+   (LSTM/Transformer) 등방 블롭은 방향이 없어 ux=uz=0으로 들어오는데, 그대로 투영하면
+   al=ac=0 → q=0 → 3σ 박스 전체가 균일 채움(=사각형 구름)이 된다. 방향이 없으면 등방이므로
+   회전 없이 **반경 가우시안**으로 평가한다(sAlong==sAcross → 원). */
+function densTexelQ(g, dx, dz) {
+  let a1, a2;
+  if (g.ux || g.uz) {
+    const al = dx*g.ux + dz*g.uz, ac = -dx*g.uz + dz*g.ux;
+    a1 = al/g.sAlong; a2 = ac/g.sAcross;
+  } else {
+    a1 = dx/g.sAlong; a2 = dz/g.sAcross;
+  }
+  return a1*a1 + a2*a2;
+}
 function densUpdate(dtMs) {
   // 전원의 띠 성분(PRED.bands)을 그린다 — 방향이 있는 사람만 성분이 생기므로 게이트가 따로 필요 없다
   const live = DENS.on && !vizSuppressed && PRED.bands && PRED.bands.length > 1;
@@ -7112,18 +7133,7 @@ function densUpdate(dtMs) {
           const dx = wx - g.x, dz = wz - g.z;
           const rr = 3 * (g.sAlong > g.sAcross ? g.sAlong : g.sAcross);
           if (dx > rr || dx < -rr || dz > rr || dz < -rr) continue;   // 회전 계산 전 컷
-          /* 성분 좌표계로 정규화. ux,uz는 **진행 방향 단위벡터**여야 회전(al=따라,ac=가로)이
-             성립한다. 학습형(LSTM/Transformer) 등방 블롭은 방향이 없어 ux=uz=0으로 들어오는데,
-             그대로 투영하면 al=ac=0 → q=0 → 3σ 박스 전체가 균일 채움(=사각형 구름)이 된다.
-             방향이 없으면 등방이므로 회전 없이 **반경 가우시안**으로 평가한다(sAlong==sAcross → 원). */
-          let a1, a2;
-          if (g.ux || g.uz) {
-            const al = dx*g.ux + dz*g.uz, ac = -dx*g.uz + dz*g.ux;
-            a1 = al/g.sAlong; a2 = ac/g.sAcross;
-          } else {
-            a1 = dx/g.sAlong; a2 = dz/g.sAcross;
-          }
-          const q = a1*a1 + a2*a2;
+          const q = densTexelQ(g, dx, dz);
           if (q < 18) {
             const v = g.w * Math.exp(-0.5*q);
             acc += v*v*v*v;                      // p=4 노름 — max보다 이음새가 매끈하다
@@ -12942,9 +12952,10 @@ scene.registerBeforeRender(() => {
     if (window.startTabRefresh) startTabRefresh();   // 보일 때만 갱신 (내부에서 판정)
     drawOverlay();                                   // CCTV HUD (REC 점멸·시각)
     const ps = $("predStatus");
+    const archLabel = BACKEND.net === "transformer" ? "Transformer" : BACKEND.net === "lstm" ? "LSTM" : "";
     if (ps) ps.textContent = PRED.model !== "custom"
       ? "σ " + SCALE.m(PRED.sigma).toFixed(2) + "m · 지평선 " + PRED.horizon + "s"
-      : (CPRED.fn ? "✔ 연결됨 · 응답 " + CPRED.n + "회 · " + Math.round(CPRED.lastMs) + "ms" +
+      : (CPRED.fn ? "✔ 연결됨" + (archLabel ? " (" + archLabel + ")" : "") + " · 응답 " + CPRED.n + "회 · " + Math.round(CPRED.lastMs) + "ms" +
                     (CPRED.err ? " · 실패 " + CPRED.err : "") +
                     (CPRED.path && performance.now() - CPRED.at < 1000 ? "" : " · ⚠ 응답 없음 → 칼만 대체")
                   : "window.__customPredictor 미등록 → 칼만으로 동작 중");

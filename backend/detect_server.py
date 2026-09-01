@@ -306,7 +306,11 @@ def _decode_image(data_url):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "mode": MODE, "cameras": list(CAMS.keys())}
+    # predict_net: 이 서버가 서빙하도록 설정된 예측 아키텍처(env PREDICT_NET). 시뮬이
+    # 이 값을 읽어 상태 표시(예: "학습형 연결됨 (Transformer)")에 쓴다 — 운영자가 브라우저에서
+    # 어떤 백본이 도는지 바로 알 수 있게. (실제 로드는 첫 /predict 때 지연 수행)
+    arch, _, _ = _predictor_net_config(os.environ.get("PREDICT_NET", "lstm"))
+    return {"status": "ok", "mode": MODE, "cameras": list(CAMS.keys()), "predict_net": arch}
 
 
 @app.post("/detect")
@@ -403,6 +407,21 @@ _PREDICTOR = None
 _PREDICTOR_ERR = None
 
 
+def _predictor_net_config(net_kind):
+    """PREDICT_NET 문자열 → (arch, default_repo, default_local).
+
+    arch 는 'transformer'|'lstm' 로 정규화(대소문자·공백 무시, transformer 별칭 tf/xf).
+    로컬 파일명은 학습·평가 스크립트와 **반드시** 일치해야 재학습본이 조용히 무시되지 않는다:
+      LSTM        → training/traj_predictor/model.pt            (train_traj_predictor.py)
+      Transformer → training/traj_predictor/model_transformer.pt (train_traj_transformer.py)
+    """
+    kind = (net_kind or "lstm").strip().lower()
+    is_tf = kind in ("transformer", "tf", "xf")
+    if is_tf:
+        return "transformer", "chanubc/human-move-transformer", "model_transformer.pt"
+    return "lstm", "chanubc/human-move-lstm", "model.pt"
+
+
 def _get_predictor():
     """학습형 궤적 예측기를 1회 로드(지연). 없으면 _PREDICTOR_ERR에 이유."""
     global _PREDICTOR, _PREDICTOR_ERR
@@ -415,12 +434,10 @@ def _get_predictor():
             LearnedPredictor, build_net, build_transformer_net)
         # 아키텍처 선택: PREDICT_NET=transformer 면 self-attention 인코더, 기본은 LSTM.
         #   두 아키텍처는 head·출력 계약(paths/logits/logsig)이 같아 LearnedPredictor를
-        #   그대로 재사용한다. 기본 허브 repo도 아키텍처에 맞춰 갈라진다.
-        net_kind = os.environ.get("PREDICT_NET", "lstm").strip().lower()
-        is_tf = net_kind in ("transformer", "tf", "xf")
-        net = build_transformer_net() if is_tf else build_net()
-        default_repo = "chanubc/human-move-transformer" if is_tf else "chanubc/human-move-lstm"
-        default_local = "model_tf.pt" if is_tf else "model.pt"
+        #   그대로 재사용한다. 정규화·기본 repo·로컬 파일명은 _predictor_net_config 한 곳에서.
+        arch, default_repo, default_local = _predictor_net_config(
+            os.environ.get("PREDICT_NET", "lstm"))
+        net = build_transformer_net() if arch == "transformer" else build_net()
         # YOLO와 동일: 로컬 가중치 있으면 그대로, 없으면 허깅페이스 허브에서 받아 캐시.
         # → 팀원은 재학습 없이 서버만 켜면 된다. 재학습본 스왑: PREDICT_MODEL=경로/model.pt
         w = Path(os.environ.get("PREDICT_MODEL", str(_ROOT / "training" / "traj_predictor" / default_local)))
@@ -434,7 +451,7 @@ def _get_predictor():
             wpath = hf_hub_download(repo_id=repo, filename=file)
             print(f"[detect_server] 허브 캐시: {wpath}")
         _PREDICTOR = LearnedPredictor(weights_path=wpath, net=net, device="cpu")
-        print(f"[detect_server] 궤적 예측기 로드({net_kind}): {wpath}")
+        print(f"[detect_server] 궤적 예측기 로드({arch}): {wpath}")
     except Exception as e:                # noqa: BLE001
         _PREDICTOR_ERR = str(e)
         print(f"[detect_server] 궤적 예측기 로드 실패 → /predict 비활성 ({e})")
