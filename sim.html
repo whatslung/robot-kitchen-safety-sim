@@ -10904,8 +10904,15 @@ const AVOID = { on:true, mode:"proceed", eff:"proceed", rate:1, reason:"", holdM
                    로봇에서 3~4m에 몰려 있어 **사람이 제 일만 해도 상시 보류**가 된다
                    (실측: 보류 98%, "2.1s 내 2.99m 접근 예측"). 실제로 가까워질 때만 반응. */
                 margin:0.35,        // 정지 반경에 더할 여유(m)
+                /* σ 보정 상한(m). 예측 σ는 지평선 끝에서 ~2m까지 커지는데(학습형·칼만 공통),
+                   그걸 거리에서 통째로 빼면 **안전 반경 밖에 가만히 선 사람도 상시 위험**으로
+                   판정돼 로봇이 step 0에서 영구 hold(작업 시작·재개 불가)가 됐다(A/B 실측:
+                   정지 사람 3.13m → dmin 1.08m → hold). σ 기여를 이 값으로 잘라 '불확실성
+                   보정'은 유지하되 먼-지평선 σ 폭주가 게이트를 지배하지 못하게 한다.
+                   0.6m = 정지 반경(1.3m)의 약 절반 — 실제 접근(평균거리 하락) 때는 그대로 잡는다. */
+                sigCap:0.6,
                 startT:0.06 };      // 이 진행도 이하면 '아직 출발 전'으로 보고 hold
-/* 예측 시간창 안에서 사람이 로봇 베이스에 얼마나 가까워질 수 있는지(m). σ 보정 포함. */
+/* 예측 시간창 안에서 사람이 로봇 베이스에 얼마나 가까워질 수 있는지(m). σ 보정 포함(상한 AVOID.sigCap). */
 function avoidMinDist(window) {
   const bx = LAYOUT.robot.base.x, bz = LAYOUT.robot.base.z;
   let min = Infinity;
@@ -10913,7 +10920,8 @@ function avoidMinDist(window) {
   for (const g of mix) {
     if (g.t > window) continue;
     if (g.w < 0.25) continue;        // 가중치 낮은 가설까지 보면 상시 보류가 된다
-    const d = SCALE.m(Math.hypot(g.x - bx, g.z - bz)) - SCALE.m(Math.max(g.sAlong, g.sAcross));
+    const sig = Math.min(SCALE.m(Math.max(g.sAlong, g.sAcross)), AVOID.sigCap);   // σ 폭주 컷(위 주석)
+    const d = SCALE.m(Math.hypot(g.x - bx, g.z - bz)) - sig;
     if (d < min) min = d;
   }
   return min;
