@@ -10977,8 +10977,8 @@ function avoidDecide(dtMs) {
 const SM = { on:false, mode:"PROCEED", rate:1, factor:1, targetFactor:1, pathFactor:1,
              since:0, minHoldMs:300, samples:6, clearSince:{ PROCEED:null, RETRACT:null },
              reason:"", clearance:NaN, danger:false,
-             dodgeYaw:0, dodgeTargetYaw:0, dodgeSign:1,   // 옆 위빙(복싱) — J1 yaw 오프셋
-             dodgeAngle:0.30, dodgeRate:1.6 };            // 스윙 최대각(rad≈17°)·램프속도(rad/s) — __sim.SM 로 튜닝
+             dodgeSign:1, dodgeTarget:null, dodgeBlend:0,   // 옆 위빙(복싱) — 전관절 가드 자세 블렌드
+             dodgeAngle:0.30, dodgeRetract:0.45, dodgeRate:3.0 };   // 스윙각(rad≈17°)·홈방향 물러남 비율·블렌드 속도(1/s) — __sim.SM 튜닝
 
 /* 사람들의 미래 위치 occupancy — **현재 위치 + 속도(PVEL) 등속 외삽**으로 만든다.
    반환: [{ points:[{x,y,z}×N] }] (씬 AU). 활성(보이는) 사람만.
@@ -11054,17 +11054,22 @@ function smDecide(dtMs) {
   const danger = !proceed.safe;
   SM.danger = danger;
   const releaseClearance = SAFE.C + 0.15;
-  /* 회피 기동 = **옆 위빙(복싱)**. 뒤로 후퇴(경로 되감기)가 아니라, 조리 자세에서 J1(베이스 yaw)을
-     좌/우로 스윙해 사람을 비킨다. 두 방향 후보를 swept clearance 로 검증해 **더 안전한(사람 반대)**
-     쪽을 고른다. 사람이 좌우로 움직이면 안전한 쪽이 바뀌어 팔이 오고가며 위빙한다. */
+  /* 회피 기동 = **자연스러운 옆 위빙(복싱)**. J1만 트위스트하지 않고, 조리 자세에서 **홈 방향으로
+     살짝 물러나며(전 관절 조율) 베이스를 사람 반대쪽으로 lean** 한 '가드 자세'로 부드럽게 블렌드한다.
+     좌/우 두 가드 후보를 swept clearance 로 검증해 더 안전한 쪽을 고르고, 사람이 좌우로 움직이면
+     안전한 쪽이 바뀌어 팔이 오고가며 위빙한다. 정상 로봇 움직임처럼 매끄럽게 보이게 한다. */
   let retract = { safe:false, clearance:Number.NEGATIVE_INFINITY };
   if (danger) {
     const e = ease(clamp(state.dur ? state.seqT / state.dur : 0, 0, 1));
-    const cook = JOINTS.map((j, i) => lerp(state.from[i], state.to[i], e));   // 현 조리 자세(오프셋 제외)
-    const dodgeTgt = (sign) => { const t = cook.slice(); t[0] = clamp(cook[0] + sign * SM.dodgeAngle, JOINTS[0].min, JOINTS[0].max); return t; };
-    const L = smScore(dodgeTgt(+1), occ), R = smScore(dodgeTgt(-1), occ);
-    if (L.clearance >= R.clearance) { retract = L; SM.dodgeSign = +1; }
-    else { retract = R; SM.dodgeSign = -1; }
+    const cook = JOINTS.map((j, i) => lerp(state.from[i], state.to[i], e));   // 현 조리 자세
+    // 가드 자세: 조리 자세를 홈 쪽으로 dodgeRetract 만큼 당기고(팔을 세워 물러남), J1 은 사람 반대로 lean
+    const guard = (sign) => cook.map((c, i) => i === 0
+      ? clamp(c + sign * SM.dodgeAngle, JOINTS[0].min, JOINTS[0].max)
+      : lerp(c, JOINTS[i].home, SM.dodgeRetract));
+    const poseL = guard(+1), poseR = guard(-1);
+    const L = smScore(poseL, occ), R = smScore(poseR, occ);
+    if (L.clearance >= R.clearance) { retract = L; SM.dodgeSign = +1; SM.dodgeTarget = poseL; }
+    else { retract = R; SM.dodgeSign = -1; SM.dodgeTarget = poseR; }
   }
 
   // release hysteresis 누적 — 후보가 releaseClearance 이상으로 '충분히' 비어 있는 시간
@@ -11088,10 +11093,8 @@ function smDecide(dtMs) {
   });
   if (decision.mode !== SM.mode) { SM.mode = decision.mode; SM.since = now; }
   SM.reason = decision.reason; SM.clearance = decision.clearance;
-  // 후퇴(RETRACT)는 seqT 되감기가 아니라 **옆 위빙**(dodgeYaw)이므로 조리는 rate 0(일시정지)로 둔다.
+  // 후퇴(RETRACT)는 seqT 되감기가 아니라 **가드 자세 블렌드**(smApplyDodge)이므로 조리는 rate 0.
   SM.rate = SM.mode === "PROCEED" ? 1 : 0;
-  // 위빙 목표각: RETRACT 면 안전한 쪽으로 SM.dodgeAngle, 그 외 0(조리 자세 복귀).
-  SM.dodgeTargetYaw = SM.mode === "RETRACT" ? SM.dodgeSign * SM.dodgeAngle : 0;
 
   // 목표 속도계수: RETRACT 는 위빙 중 조리자세 유지(1, seqT는 rate 0으로 멈춤), PROCEED 는 pathFactor.
   let target = 0;
@@ -11106,16 +11109,21 @@ function smDecide(dtMs) {
   SM.reason += (Number.isFinite(SM.clearance) ? " · 여유 " + SM.clearance.toFixed(2) + "m" : "");
 }
 
-/* 위빙 오프셋 적용 — 조리 IK 자세 위에 J1(베이스 yaw)을 부드럽게 스윙해 얹는다.
-   stepUpdate 뒤(IK가 J1을 조리값으로 되돌린 뒤)에 매 프레임 새로 얹으므로 누적되지 않는다. */
+/* 가드 자세 블렌드 적용 — 조리 IK 자세와 회피 가드 자세(SM.dodgeTarget) 사이를 **전 관절**
+   부드럽게(이징) 오간다. stepUpdate(IK가 조리값으로 되돌림) 뒤 매 프레임 다시 블렌드하므로
+   누적되지 않는다. RETRACT 면 blend→1(가드), 그 외 blend→0(조리 복귀). 이렇게 하면 J1 만
+   트위스트하는 게 아니라 팔 전체가 조율돼 움직여 **정상 로봇 움직임처럼** 보인다. */
 function smApplyDodge(dt) {
   if (!SM.on) return;
-  const d = SM.dodgeTargetYaw - SM.dodgeYaw;
-  const maxStep = SM.dodgeRate * (dt || 16) / 1000;   // 램프 속도(rad/s) — 부드럽게
-  SM.dodgeYaw += Math.sign(d) * Math.min(Math.abs(d), maxStep);
-  if (Math.abs(SM.dodgeYaw) > 1e-4 && JOINTS.length) {
-    JOINTS[0].value = clamp(JOINTS[0].value + SM.dodgeYaw, JOINTS[0].min, JOINTS[0].max);
-    applyJoint(JOINTS[0]); refreshChain();
+  const want = (SM.mode === "RETRACT" && SM.dodgeTarget) ? 1 : 0;
+  const step = SM.dodgeRate * (dt || 16) / 1000;   // 블렌드 속도(1/s)
+  SM.dodgeBlend += Math.sign(want - SM.dodgeBlend) * Math.min(Math.abs(want - SM.dodgeBlend), step);
+  if (SM.dodgeBlend > 1e-3 && SM.dodgeTarget && JOINTS.length === SM.dodgeTarget.length) {
+    const e = ease(clamp(SM.dodgeBlend, 0, 1));
+    JOINTS.forEach((j, i) => { j.value = lerp(j.value, SM.dodgeTarget[i], e); applyJoint(j); });   // j.value = 조리 IK 값 → 가드로 블렌드
+    refreshChain();
+  } else if (SM.dodgeBlend <= 1e-3) {
+    SM.dodgeTarget = null;   // 완전 복귀 — 다음 회피에서 새로 잡는다
   }
 }
 
