@@ -11537,6 +11537,10 @@ function resetBasket() {
   basketNode.rotation.set(0, basketNode.__homeYaw || 0, 0);
 }
 $("resetBtn").addEventListener("click", () => {
+  /* 화재 발표가 바꾼 카메라·숨김 인원·대피 상태를 먼저 원복한다.
+     일반 리셋만 실행하면 출구 컷과 숨겨진 조리원이 그대로 남는다. */
+  if (typeof DEMO !== "undefined" && (DEMO.on || DEMO.saved || DEMO.presenting))
+    demoReset(true);
   // ② 사람 동선 감지 데모가 살아있으면 먼저 정리(안전반경·카메라·숨긴 EXTRAS/카트 복원).
   //   없으면 정상 작업 리셋도 CORR 데모 잔여 상태(축소 반경·타이트 카메라·유령 예측) 위에 얹혀 이상해진다.
   if (typeof CORR !== "undefined" && (CORR.on || CORR.saved)) corrReset(true);
@@ -11546,6 +11550,8 @@ $("resetBtn").addEventListener("click", () => {
   resetBasket();                        // 바스켓을 솥 안 시작 위치로
   bubbles.emitRate = 0; steam.emitRate = 0;
   if (state.fire) setFire(false);
+  /* 배출만 끄면 수명이 남은 화재 입자가 다음 초기 화면을 계속 가린다. */
+  fsmoke.reset(); firePS.reset();
   /* **사람도 되돌린다.** 예전 리셋은 로봇·조리만 초기화하고 사람은 그대로 뒀다.
      그러면 사고 데모로 쓰러뜨리거나 끼워 놓은 사람이 그대로 남고, 검출 실패(SAFE.blind)와
      E-STOP도 켜진 채라 "리셋했는데 왜 그대로지"가 된다. 회차를 다시 돌리려면
@@ -11564,6 +11570,7 @@ $("resetBtn").addEventListener("click", () => {
   if (typeof personIdle === "function") personIdle();
   if (typeof OVERLAP === "object") { OVERLAP.cool = 0; OVERLAP.events = 0; }
   setStatus("리셋 완료 — 바스켓·사람·안전 상태 원위치 (인원 " + EXTRAS.length + "명)");
+  const demoNote = $("demoNote"); if (demoNote) demoNote.textContent = "되돌림 — 초기 상태";
 });
 $("tempSlider").addEventListener("input", e => {
   state.temp = +e.target.value;
@@ -14151,7 +14158,19 @@ function extrasUpdate(dt) {
     if (P.evacWait > 0) { P.evacWait -= dt; extraPlay(P, "idle"); continue; }
     if (P.mode === "crouch" || P.mode === "idle") {
       /* 잡아 두는 중이면 붙박이로 두지 않는다(holdBusy 주석) */
-      if (typeof DEMO !== "undefined" && DEMO.holdExtras) { holdBusy(P, dt, EXTRAS.indexOf(P)); continue; }
+      if (typeof DEMO !== "undefined" && DEMO.holdExtras) {
+        /* after의 두 조리원은 경보 전까지 카메라 밖 대기 위치를 정확히 지킨다.
+           pickup·interact 계열의 루트 이동이 메시만 프레임 안으로 끌어오므로,
+           대피 시작 전에는 위치 이동이 없는 idle을 사용한다. */
+        if (DEMO.kind === "after") {
+          if (P.acting) {
+            Object.values(P.ACT || {}).forEach(a => a && a.stop());
+            P.acting = null;
+          }
+          extraPlay(P, "idle");
+        } else holdBusy(P, dt, EXTRAS.indexOf(P));
+        continue;
+      }
       extraPlay(P, P.mode === "crouch" ? "crouch" : "idle"); continue;
     }
     const tgt = P.path[P.pi];
@@ -15175,6 +15194,7 @@ const DEMO_BURN_SPEED = 18;
    "아무 일도 안 일어나는" 구간이라 발표 흐름만 잡아먹는다. ×3이면 1.3초. */
 const DEMO_COOK_SPEED = 3;
 const DEMO_FIRE_SPEED = 8;   // 발표 시나리오 화재 진행 배수. 4→8(2026-08-25): 4배속은 ④ '자욱'·'감지' 시점에 연기가 덜 차 자막과 화면이 어긋난다. 실측 안개 4x=28% → 8x=55%. 데모 전용(demoReset이 1로 복원)이라 데이터셋·물리에 영향 없다.
+const DEMO_EVAC_SPEED = RUN_AT + 0.08;  // 달리기 판정은 유지하되 출구 프레임 체류를 확보
 /* 발표 안개 밀도 상한. 8배속이면 안개가 최대(0.22)에 닿아 7.6m 시점(demoPersonView)의
    쓰러짐·대피가 백아웃된다. 이 값으로 상한을 걸면 사람 윤곽이 읽히면서도 방은 자욱하다.
    근거·비영향(dose·데이터셋)은 fireFogTick의 상한 주석 참조. 0.10 = 사람이 읽히는 최대 두께. */
@@ -15447,17 +15467,33 @@ function demoNormalWork() {
         }
       }
       if (inFrame) continue;
+      const direct = Math.hypot(x - gate.x, z - gate.z);
+      if (direct > 8.0) continue;
+      candidates.push({ x, z, direct });
+    }
+    /* 화면 밖 여부와 직선거리처럼 값싼 조건을 먼저 검사한다. 모든 격자에서 A*를
+       실행하던 종전 경로는 after 시작 한 프레임에 계산이 몰려 화면을 멈췄다. */
+    /* 이미 두 카메라 밖인 후보만 남았으므로 출구에 가까운 순서로 본다. 멀리 있는
+       후보부터 고르면 대피는 시작됐는데 한동안 아무도 화면에 들어오지 않는다. */
+    candidates.sort((a, b) => a.direct - b.direct);
+    const routed = [];
+    const minVisibleRun = DEMO_EVAC_SPEED * 0.75;  // 달리면서 최소 0.75초 보이는 거리
+    let routeCount = 0, maxVisibleLen = 0;
+    for (const c of candidates) {
+      const x = c.x, z = c.z;
+      /* 첫 대피점이 확보된 뒤에는 그 사람과 너무 가까워 어차피 두 번째로 쓸 수 없는
+         후보에서 A*를 돌리지 않는다. 시작 클릭 때 같은 구역을 반복 탐색하던 정체를 없앤다. */
+      if (routed.length && routed.every(p =>
+          Math.hypot(p.x - x, p.z - z) <= PERSON_SEP * 2)) continue;
       const start = new V3(x, 0, z), route = navPath(start, gate);
       if (!route || !route.length) continue;
       let routeLen = Math.hypot(route[0].x - x, route[0].z - z);
       for (let ri = 1; ri < route.length; ri++)
         routeLen += Math.hypot(route[ri].x - route[ri-1].x, route[ri].z - route[ri-1].z);
       if (routeLen > 8.0) continue;
-      /* 대기점만 화면 밖이면 충분하지 않다. 종전에는 문까지 가는 경로도 선반 뒤·프레임
-         밖에 머무는 칸이 뽑혀, 실제로 두 사람이 달려도 문 앞의 짧은 순간 외에는 안 보였다.
-         경로를 NAV 반 칸 간격으로 훑어 출구 컷 안에 들어오는 구간을 재고,
-         화면과 한 번도 만나지 않는 경로는 버린다. 남은 경로 중 진입이 빠르고 화면 안
-         이동 거리가 긴 순서로 고른다. */
+      routeCount++;
+      /* 경로를 NAV 반 칸 간격으로 훑어 출구 컷 안에 들어오는 구간을 잰다.
+         문 앞 한두 프레임만 보이는 경로는 제외한다. */
       const walk = [start, ...route];
       let walked = 0, entryLen = Infinity, visibleLen = 0;
       for (let wi = 1; wi < walk.length; wi++) {
@@ -15482,20 +15518,26 @@ function demoNormalWork() {
           walked += stepLen;
         }
       }
-      if (!isFinite(entryLen) || visibleLen <= 0) continue;
-      candidates.push({ x, z, routeLen, entryLen, visibleLen });
+      maxVisibleLen = Math.max(maxVisibleLen, visibleLen);
+      if (!isFinite(entryLen) || visibleLen < minVisibleRun) continue;
+      routed.push({ x, z, routeLen, entryLen, visibleLen });
+      const latest = routed[routed.length - 1];
+      if (routed.some(p => p !== latest &&
+          Math.hypot(p.x - latest.x, p.z - latest.z) > PERSON_SEP * 2)) break;
     }
-    candidates.sort((a, b) => a.entryLen - b.entryLen ||
-                              b.visibleLen - a.visibleLen ||
-                              b.routeLen - a.routeLen);
+    routed.sort((a, b) => b.visibleLen - a.visibleLen ||
+                          a.entryLen - b.entryLen ||
+                          b.routeLen - a.routeLen);
     afterSpots = [];
-    for (const c of candidates) {
+    for (const c of routed) {
       if (afterSpots.every(p => Math.hypot(p.x - c.x, p.z - c.z) > PERSON_SEP * 2))
         afterSpots.push(c);
       if (afterSpots.length === EXTRAS.length) break;
     }
     if (afterSpots.length !== EXTRAS.length)
-      throw new Error("after 조리원 대기 위치 검증 실패: 두 카메라 밖의 대피 가능 칸이 부족함");
+      throw new Error("after 조리원 대기 위치 검증 실패: 두 카메라 밖의 대피 가능 칸이 부족함" +
+        " — 화면밖 " + candidates.length + " · 경로 " + routeCount + " · 통과 " + routed.length +
+        " · 최대화면 " + maxVisibleLen.toFixed(2) + "m");
     console.log("[DEMO] after 조리원 카메라 밖 대기 — " +
                 afterSpots.map(p => p.x.toFixed(2) + "," + p.z.toFixed(2) +
                                     "(진입 " + p.entryLen.toFixed(1) + "m · 화면 " +
@@ -15556,28 +15598,42 @@ function demoNormalWork() {
          Death01이 몸을 누이면 머리·상체가 작업대 하부를 관통했다(2026-09-01 첨부 화면).
          첫 수정도 기존 사람 충돌 박스만 재사용해 실패했다. 그 박스는 사람이 서서
          지나다닐 수 있도록 높이 0.55m 위의 상판을 의도적으로 제외하므로, 테이블 다리
-         사이를 '빈 바닥'으로 판단했다. 누운 자세에서는 주변 ENV 프롭의 **전체 계층
+         사이를 '빈 바닥'으로 판단했다. 누운 자세에서는 현재 보이는 **실제 GLB 메시의
          월드 경계**를 바닥에 투영해 상판·선반 아래도 막고, 그 밖에서 몸 길이·팔 너비를
          전부 검사한다. 통으로 열린 자세 중 원래 대기점에 가장 가까운 곳을 고른다. */
       if (typeof DEMO !== "undefined" && DEMO.victim === P) {
         if (!NAV.ready) throw new Error("희생자 실신 자리 검증 실패: 통행 격자가 준비되지 않음");
         const wantX = px, wantZ = pz;
-        const bodyOffsets = [-0.95, -0.72, -0.48, -0.24, 0, 0.24, 0.48, 0.72, 0.95];
-        const bodySides = [-0.28, 0, 0.28];
+        /* Death01의 누운 몸을 길이×폭 회전 사각형으로 검사한다. 기존 점 샘플은 점
+           사이로 선반 다리가 들어왔고, 외접원은 빈 통로까지 막았다. */
+        const bodyHalfLen = 0.95 + PERSON_R * 0.5;
+        const bodyHalfWide = 0.28 + PERSON_R * 0.5;
         const proneBlockers = [];
-        for (let bi = 0; bi < ENV_PROPS.length; bi++) {
-          const h = scene.getTransformNodeByName("envProp_" + bi);
-          if (!h || !h.isEnabled()) continue;
-          const hb = h.getHierarchyBoundingVectors(true);
+        const humanRoots = [person.node, ...EXTRAS.map(E => E.root)];
+        for (const m of scene.meshes) {
+          if (!m.isEnabled() || !m.isVisible || !m.getTotalVertices || !m.getTotalVertices()) continue;
+          let n = m, human = false;
+          while (n) {
+            if (humanRoots.indexOf(n) >= 0) { human = true; break; }
+            n = n.parent;
+          }
+          if (human) continue;
+          const cls = classOfMesh(m);
+          if (cls !== "equip" && cls !== "kettle" && cls !== "robot") continue;
+          m.computeWorldMatrix(true);
+          const bb = m.getBoundingInfo().boundingBox;
+          const hb = { min:bb.minimumWorld, max:bb.maximumWorld };
           const v = [hb.min.x, hb.min.y, hb.min.z, hb.max.x, hb.max.y, hb.max.z];
           if (!v.every(Number.isFinite))
-            throw new Error("희생자 실신 자리 검증 실패: 설비 경계를 계산할 수 없음 — envProp_" + bi);
+            throw new Error("희생자 실신 자리 검증 실패: 설비 경계를 계산할 수 없음 — " + m.name);
           if (hb.min.y > 1.20 || hb.max.y < 0.02) continue;   // 벽걸이·천장물 또는 바닥면
           const w = hb.max.x - hb.min.x, d = hb.max.z - hb.min.z;
           if (w > 4.0 || d > 4.0) continue;                  // 벽·방 전체 면은 별도 벽 판정에 맡김
           proneBlockers.push([(hb.min.x + hb.max.x) / 2,
                               (hb.min.z + hb.max.z) / 2, w / 2, d / 2]);
         }
+        for (const b of [...COLL_FOOTPRINTS, ...COLL_AUTO, ...COLL_PUSH])
+          proneBlockers.push([b[0], b[1], b[2], b[3]]);
         let proneSpot = null, proneScore = Infinity;
         for (let ni = 0; ni < NAV.nx; ni++) for (let nj = 0; nj < NAV.nz; nj++) {
           if (!navOpen(ni, nj)) continue;
@@ -15590,22 +15646,22 @@ function demoNormalWork() {
             const yaw = ai * Math.PI / 8;
             const fx = Math.sin(yaw), fz = Math.cos(yaw);
             const sx = Math.cos(yaw), sz = -Math.sin(yaw);
-            let blocked = false;
-            for (const off of bodyOffsets) {
-              for (const side of bodySides) {
-                const qx = nx + fx * off + sx * side;
-                const qz = nz + fz * off + sz * side;
-                if (resolvePersonCollision(new V3(qx, 0, qz)) ||
-                    proneBlockers.some(b => Math.abs(qx - b[0]) < b[2] + PERSON_R &&
-                                            Math.abs(qz - b[1]) < b[3] + PERSON_R)) {
-                  blocked = true;
-                  break;
-                }
-              }
-              if (blocked) break;
-            }
+            const ex = Math.abs(fx) * bodyHalfLen + Math.abs(sx) * bodyHalfWide;
+            const ez = Math.abs(fz) * bodyHalfLen + Math.abs(sz) * bodyHalfWide;
+            const room = LAYOUT.room;
+            if (nx - ex <= room.x0 || nx + ex >= room.x1 ||
+                nz - ez <= room.z0 || nz + ez >= room.z1) continue;
+            const blocked = proneBlockers.some(b => {
+              const dx = nx - b[0], dz = nz - b[1];
+              if (Math.abs(dx) > b[2] + ex || Math.abs(dz) > b[3] + ez) return false;
+              if (Math.abs(dx * fx + dz * fz) >
+                  bodyHalfLen + b[2] * Math.abs(fx) + b[3] * Math.abs(fz)) return false;
+              if (Math.abs(dx * sx + dz * sz) >
+                  bodyHalfWide + b[2] * Math.abs(sx) + b[3] * Math.abs(sz)) return false;
+              return true;
+            });
             if (blocked) continue;
-            const score = move + ai * 1e-4;       // 동일 위치에서는 방향 순서를 결정적으로
+            const score = move + ai * 1e-4;
             if (score < proneScore) {
               proneScore = score;
               proneSpot = { x:nx, z:nz, yaw };
@@ -15843,7 +15899,10 @@ function demoDetectOn() {
     console.warn("[DEMO] 시뮬 검출이 mock이다 — GT 마스크 기반 '완벽한 검출'이지 모델이 아니다" +
                  (ONNX.isDummy ? " (붙은 모델이 더미다)" : " (모델 없음)"));
   }
-  if (!MIL.on) $("milBtn").click();
+  /* 실제 모델이 준비된 경우에만 연속 캡처를 시작한다. 모델이 없는 mock은 장면 전체의
+     재질을 마스크용으로 바꿔 오프스크린 렌더링하고 되돌리는 무거운 경로다. 화재 박스는
+     위 FIRE_BOX가 같은 GT 기준으로 이미 즉시 그리므로 발표 중 mock 캡처를 중복 실행하지 않는다. */
+  if (demoDetectReal() && !MIL.on) $("milBtn").click();
   /* 실영상 패널도 같이 연다 — 시뮬이 시뮬을 검출하는 그림만으로는 설득이 안 된다.
 
      **세 조건을 이어서 튼다** (정상 → 연기 → 연기+화재). 회의록 after ④의 하위 1·2·3이다.
@@ -15954,12 +16013,10 @@ function demoExitView() {
   const dx = doorCenterX();       // 회전 중에는 문짝 중심이 움직인다(doorCenterX 주석)
   const zt = LAYOUT.room.z1 - 1.15;              // 문 조금 안쪽 — 걸어오는 구간이 같이 잡힌다
   camera.setTarget(new V3(dx, 1.00, zt));
-  /* 출구 컷은 사람의 현재 위치를 따라 넓히지 않는다. 종전 `gap + 2.6`은 두 사람이
-     출발점에 서 있는 순간부터 화면 안에 넣어, '경보 후 프레임 밖에서 뛰어 들어오는'
-     장면이 사라졌다. 문과 문 앞 통로만 잡는 기존 최소 반경 4.0을 유지하고,
-     대기 위치는 demoNormalWork가 이 프레임 밖의 통행 가능한 칸에서 고른다. */
-  camera.alpha = -2.60; camera.beta = 1.28;
-  camera.radius = 4.0;
+  /* 대기 위치는 demoNormalWork가 이 프레임 밖에서 고른다. 카메라는 사람 눈높이에서
+     한 명을 크게 잡지 않고, 문으로 이어지는 가림 없는 주행 구간을 넓게 보여준다. */
+  camera.alpha = -2.60; camera.beta = 1.20;
+  camera.radius = 5.0;
 }
 
 /* ══ 출입문 열림 — 대피 연출 (2026-08-25) ═══════════════════════════════════
@@ -16157,16 +16214,15 @@ function demoExtrasFlee() {
     }
     P.station = null; P.dwellT = 0; P.acting = null; P.struckT = 0;
     P.mode = "walk"; P.pi = 0; P.evac = true;
-    /* **주인공이 가장 먼저 나간다** (2026-08-31, 사용자 지시). 종전 i*700 은 첫 인원이
-       주인공과 동시에 출발해 누가 주인공인지 읽히지 않았다. (i+1)*700 이면
-       주인공 → 0.7초 → 1.4초 순으로 줄이 선다. */
-    P.evacWait = (i + 1) * 700;                  // 줄지어 나가게 (위 evacWait 주석)
+    /* 카메라 밖에서 차례로 들어오되 출구 컷에서는 두 명을 함께 확인할 수 있게 한다.
+       0.35초 시차는 아래 달리기 속도 기준 약 0.8m로 사람 간격보다 넓다. */
+    P.evacWait = (i + 1) * 350;                  // 줄지어 나가게 (위 evacWait 주석)
     /* **뛴다.** 보행 클립은 속도로 갈린다 — `locoPlay`가 `RUN_AT`(1.9㎧) 이상이면
        달리기 클립을 쓴다. 종전 1.05~1.13㎧는 그 아래라 **불이 났는데 걸어 나갔다**.
-       2.5~2.65㎧면 달리기 클립이고, 재생 배속이 `speed / RUN_REF(2.717)` = 0.92~0.98이라
-       원본 속도에 가까워 발이 안 미끄러진다(배속이 1에서 멀수록 미끄러진다).
+       RUN_AT보다 조금 빠르게 두어 달리기 클립을 사용하면서,
+       출구 프레임에서는 최소 0.75초 동안 동작을 확인할 수 있게 한다.
        사람마다 조금씩 다르게 둔다 — 줄지어 뛰는 그림이 된다. */
-    P.speed = 2.5 + i * 0.15;
+    P.speed = DEMO_EVAC_SPEED + i * 0.05;
     /* ⚠️ **문 앞에 따로 접근점을 만들지 않는다 — 주인공과 같은 지점으로 보낸다**
        (2026-08-28). 인원마다 문 앞에 자기 자리를 잡아 주려다 세 번 실패했다:
          · x로 ±0.35m 벌림 → x=2.15가 개구부 밖 벽면이라 벽에 붙어 763ms 정체
@@ -16864,6 +16920,8 @@ function demoReset(quiet) {
   fireBoxOff();
   FIRE_FOG.speed = 1;                          // 발표용 4배속을 원래대로
   setFire(false);
+  /* 되돌리기는 초기 화면 복원이다. 수명이 남은 연기와 불꽃을 정식 API로 비운다. */
+  fsmoke.reset(); firePS.reset();
   /* 발표 흐름에서는 강제 렌더를 쓰지 않는다. emitRate와 입자 수는 실제 프레임에서
      자연스럽게 원래 평형으로 돌아간다. 데이터셋 표본만 randomizeScene에서 steamSettle한다. */
   STEAM.k = 1;
