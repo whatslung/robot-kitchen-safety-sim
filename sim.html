@@ -9491,8 +9491,11 @@ function pushUpdate(dt) {
   /* **위치를 옮기는 노드와 애니메이션을 가진 리그가 서로 다르다.** 주인공은 person.node로
      걷고 PERSON이 클립을 갖는다. 추가 인원은 **.root로 걷는다 — .node가 없다.**
      처음에 e.node로 적어 두는 바람에 추가 인원은 카트를 아예 못 밀었다(조건이 늘 거짓). */
-  const movers = [{ pos: person.node, rig: PERSON }];
-  for (const e of EXTRAS) if (e && e.root) movers.push({ pos: e.root, rig: e });
+  const movers = [];
+  if (person.node.isEnabled()) movers.push({ pos: person.node, rig: PERSON });
+  // ⚠️ 비활성(숨김) 인원은 제외한다 — 안 그러면 WASD 1:1 등으로 숨긴 EXTRA가 투명하게
+  //    걸어다니며 카트를 밀어 "카트가 저절로 움직인다"가 된다(nearestPerson 정합 수정과 같은 계열).
+  for (const e of EXTRAS) if (e && e.root && e.root.isEnabled()) movers.push({ pos: e.root, rig: e });
   for (const mv of movers)                       // 밀기 자세 유지시간 소진
     if (mv.rig && mv.rig.pushT > 0) mv.rig.pushT -= (dt || 16.7);
   for (const b of PUSH.bodies) {
@@ -10973,7 +10976,9 @@ function avoidDecide(dtMs) {
    해제는 release hysteresis(일정 시간 여유 유지돼야 재개)로 깜빡임을 막는다. */
 const SM = { on:false, mode:"PROCEED", rate:1, factor:1, targetFactor:1, pathFactor:1,
              since:0, minHoldMs:300, samples:6, clearSince:{ PROCEED:null, RETRACT:null },
-             reason:"", clearance:NaN, danger:false };
+             reason:"", clearance:NaN, danger:false,
+             dodgeYaw:0, dodgeTargetYaw:0, dodgeSign:1 };   // 옆 위빙(복싱) — J1 yaw 오프셋
+const SM_DODGE_ANGLE = 0.6;   // 옆 스윙 최대 각(rad ≈ 34°)
 
 /* 사람들의 미래 위치 occupancy — 학습예측(주 사람 gt:0 모드들) + 현재 보이는 모든 사람.
    반환: [{ points:[{x,y,z}×N] }] (씬 AU). 학습 예측이 없으면 현재 위치만으로도 동작. */
@@ -11048,10 +11053,18 @@ function smDecide(dtMs) {
   const danger = !proceed.safe;
   SM.danger = danger;
   const releaseClearance = SAFE.C + 0.15;
-  // retract 는 danger 이면 **항상** 계산한다(스텝 시작으로 물러난 뒤에도 '안전 자세 유지' 후보가 있어야
-  // beforeCross HOLD 로 굳지 않는다). retract 목표 = 스텝 시작 자세(state.from).
+  /* 회피 기동 = **옆 위빙(복싱)**. 뒤로 후퇴(경로 되감기)가 아니라, 조리 자세에서 J1(베이스 yaw)을
+     좌/우로 스윙해 사람을 비킨다. 두 방향 후보를 swept clearance 로 검증해 **더 안전한(사람 반대)**
+     쪽을 고른다. 사람이 좌우로 움직이면 안전한 쪽이 바뀌어 팔이 오고가며 위빙한다. */
   let retract = { safe:false, clearance:Number.NEGATIVE_INFINITY };
-  if (danger) retract = smScore(state.from, occ);
+  if (danger) {
+    const e = ease(clamp(state.dur ? state.seqT / state.dur : 0, 0, 1));
+    const cook = JOINTS.map((j, i) => lerp(state.from[i], state.to[i], e));   // 현 조리 자세(오프셋 제외)
+    const dodgeTgt = (sign) => { const t = cook.slice(); t[0] = clamp(cook[0] + sign * SM_DODGE_ANGLE, JOINTS[0].min, JOINTS[0].max); return t; };
+    const L = smScore(dodgeTgt(+1), occ), R = smScore(dodgeTgt(-1), occ);
+    if (L.clearance >= R.clearance) { retract = L; SM.dodgeSign = +1; }
+    else { retract = R; SM.dodgeSign = -1; }
+  }
 
   // release hysteresis 누적 — 후보가 releaseClearance 이상으로 '충분히' 비어 있는 시간
   const cand = { PROCEED:proceed, RETRACT:retract };
@@ -11074,9 +11087,12 @@ function smDecide(dtMs) {
   });
   if (decision.mode !== SM.mode) { SM.mode = decision.mode; SM.since = now; }
   SM.reason = decision.reason; SM.clearance = decision.clearance;
-  SM.rate = SM.mode === "RETRACT" ? -1 : (SM.mode === "PROCEED" ? 1 : 0);
+  // 후퇴(RETRACT)는 seqT 되감기가 아니라 **옆 위빙**(dodgeYaw)이므로 조리는 rate 0(일시정지)로 둔다.
+  SM.rate = SM.mode === "PROCEED" ? 1 : 0;
+  // 위빙 목표각: RETRACT 면 안전한 쪽으로 SM_DODGE_ANGLE, 그 외 0(조리 자세 복귀).
+  SM.dodgeTargetYaw = SM.mode === "RETRACT" ? SM.dodgeSign * SM_DODGE_ANGLE : 0;
 
-  // 목표 속도계수: RETRACT 는 빨리 비우게 1, PROCEED 는 pathFactor(swept 여유), 그 외 0.
+  // 목표 속도계수: RETRACT 는 위빙 중 조리자세 유지(1, seqT는 rate 0으로 멈춤), PROCEED 는 pathFactor.
   let target = 0;
   if (SM.mode === "PROCEED") target = SM.pathFactor;
   else if (SM.mode === "RETRACT") target = 1;
@@ -11087,6 +11103,19 @@ function smDecide(dtMs) {
   });
   SM.targetFactor = stopReq ? 0 : target;
   SM.reason += (Number.isFinite(SM.clearance) ? " · 여유 " + SM.clearance.toFixed(2) + "m" : "");
+}
+
+/* 위빙 오프셋 적용 — 조리 IK 자세 위에 J1(베이스 yaw)을 부드럽게 스윙해 얹는다.
+   stepUpdate 뒤(IK가 J1을 조리값으로 되돌린 뒤)에 매 프레임 새로 얹으므로 누적되지 않는다. */
+function smApplyDodge(dt) {
+  if (!SM.on) return;
+  const d = SM.dodgeTargetYaw - SM.dodgeYaw;
+  const maxStep = 4.0 * (dt || 16) / 1000;   // ~4 rad/s 램프
+  SM.dodgeYaw += Math.sign(d) * Math.min(Math.abs(d), maxStep);
+  if (Math.abs(SM.dodgeYaw) > 1e-4 && JOINTS.length) {
+    JOINTS[0].value = clamp(JOINTS[0].value + SM.dodgeYaw, JOINTS[0].min, JOINTS[0].max);
+    applyJoint(JOINTS[0]); refreshChain();
+  }
 }
 
 /* ══ 로봇 후보 기동 화살표 (Trajectron++ Fig.1 스타일) ═══════════════════════
@@ -13064,6 +13093,7 @@ scene.registerBeforeRender(() => {
   applyKeys(dt);
   ceilAutoTick();            // 자유 시점 천장 자동 숨김 — 카메라 포즈로 매 프레임 판정
   stepUpdate(dt);
+  if (SM.on && typeof smApplyDodge === "function") smApplyDodge(dt);   // 옆 위빙(복싱) — 조리 IK 위에 J1 스윙
   updateCooking(dt);
   fireFogTick(dt);           // 화재 연무 — 발화 후 경과에 따라 방 전체 농도를 올린다
   smokeConfineTick();        // 연기가 후드·천장을 뚫고 나가지 않게 가둔다
@@ -14256,6 +14286,7 @@ function extraNextTarget(P) {
 }
 function extrasUpdate(dt) {
   for (const P of EXTRAS) {
+    if (!P.root || !P.root.isEnabled()) continue;   // 숨긴 인원은 걷지도 밀지도 않게 — 투명 워커 방지(카트 저절로 밀림 등)
     const n = P.root.position;
     /* 인원별 독립 난수 — extraNextTarget과 같은 규약.
        여기서 전역 RNG를 쓰면 체류시간·대기동작이 전역 흐름을 공유하게 되어
