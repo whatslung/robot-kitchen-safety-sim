@@ -10977,8 +10977,8 @@ function avoidDecide(dtMs) {
 const SM = { on:false, mode:"PROCEED", rate:1, factor:1, targetFactor:1, pathFactor:1,
              since:0, minHoldMs:300, samples:6, clearSince:{ PROCEED:null, RETRACT:null },
              reason:"", clearance:NaN, danger:false,
-             dodgeYaw:0, dodgeTargetYaw:0, dodgeSign:1 };   // 옆 위빙(복싱) — J1 yaw 오프셋
-const SM_DODGE_ANGLE = 0.6;   // 옆 스윙 최대 각(rad ≈ 34°)
+             dodgeYaw:0, dodgeTargetYaw:0, dodgeSign:1,   // 옆 위빙(복싱) — J1 yaw 오프셋
+             dodgeAngle:0.30, dodgeRate:1.6 };            // 스윙 최대각(rad≈17°)·램프속도(rad/s) — __sim.SM 로 튜닝
 
 /* 사람들의 미래 위치 occupancy — **현재 위치 + 속도(PVEL) 등속 외삽**으로 만든다.
    반환: [{ points:[{x,y,z}×N] }] (씬 AU). 활성(보이는) 사람만.
@@ -11061,7 +11061,7 @@ function smDecide(dtMs) {
   if (danger) {
     const e = ease(clamp(state.dur ? state.seqT / state.dur : 0, 0, 1));
     const cook = JOINTS.map((j, i) => lerp(state.from[i], state.to[i], e));   // 현 조리 자세(오프셋 제외)
-    const dodgeTgt = (sign) => { const t = cook.slice(); t[0] = clamp(cook[0] + sign * SM_DODGE_ANGLE, JOINTS[0].min, JOINTS[0].max); return t; };
+    const dodgeTgt = (sign) => { const t = cook.slice(); t[0] = clamp(cook[0] + sign * SM.dodgeAngle, JOINTS[0].min, JOINTS[0].max); return t; };
     const L = smScore(dodgeTgt(+1), occ), R = smScore(dodgeTgt(-1), occ);
     if (L.clearance >= R.clearance) { retract = L; SM.dodgeSign = +1; }
     else { retract = R; SM.dodgeSign = -1; }
@@ -11090,8 +11090,8 @@ function smDecide(dtMs) {
   SM.reason = decision.reason; SM.clearance = decision.clearance;
   // 후퇴(RETRACT)는 seqT 되감기가 아니라 **옆 위빙**(dodgeYaw)이므로 조리는 rate 0(일시정지)로 둔다.
   SM.rate = SM.mode === "PROCEED" ? 1 : 0;
-  // 위빙 목표각: RETRACT 면 안전한 쪽으로 SM_DODGE_ANGLE, 그 외 0(조리 자세 복귀).
-  SM.dodgeTargetYaw = SM.mode === "RETRACT" ? SM.dodgeSign * SM_DODGE_ANGLE : 0;
+  // 위빙 목표각: RETRACT 면 안전한 쪽으로 SM.dodgeAngle, 그 외 0(조리 자세 복귀).
+  SM.dodgeTargetYaw = SM.mode === "RETRACT" ? SM.dodgeSign * SM.dodgeAngle : 0;
 
   // 목표 속도계수: RETRACT 는 위빙 중 조리자세 유지(1, seqT는 rate 0으로 멈춤), PROCEED 는 pathFactor.
   let target = 0;
@@ -11111,7 +11111,7 @@ function smDecide(dtMs) {
 function smApplyDodge(dt) {
   if (!SM.on) return;
   const d = SM.dodgeTargetYaw - SM.dodgeYaw;
-  const maxStep = 4.0 * (dt || 16) / 1000;   // ~4 rad/s 램프
+  const maxStep = SM.dodgeRate * (dt || 16) / 1000;   // 램프 속도(rad/s) — 부드럽게
   SM.dodgeYaw += Math.sign(d) * Math.min(Math.abs(d), maxStep);
   if (Math.abs(SM.dodgeYaw) > 1e-4 && JOINTS.length) {
     JOINTS[0].value = clamp(JOINTS[0].value + SM.dodgeYaw, JOINTS[0].min, JOINTS[0].max);
