@@ -10681,14 +10681,14 @@ const ALERT = {
    PiP 카메라 기준으로 투영해 pipRect() 사각형 안에만 그리고, 밖으로는 클립한다. */
 const DEMO_PERSON_CONF = 93;
 /* sm 은 박스별 평활 상태 {person:{}} — 이 PiP 는 충돌(사람) 전용이다(화재는 메인 drawFireBox). */
-const DEMO_DET = { on:false, kind:null, cam:null, sm:{} };
-function demoDetPipOn(kind, cam){
-  DEMO_DET.on = true; DEMO_DET.kind = kind; DEMO_DET.cam = cam; DEMO_DET.sm = {};
+const DEMO_DET = { on:false, cam:null, sm:{} };
+function demoDetPipOn(cam){
+  DEMO_DET.on = true; DEMO_DET.cam = cam; DEMO_DET.sm = {};
   pipView = cam;                                   // 우상단 PiP 에 그 감시 캠을 띄운다
   if(typeof pipSel !== "undefined" && pipSel) pipSel.value = cam;
   applyCameras();
 }
-function demoDetOff(){ DEMO_DET.on = false; DEMO_DET.kind = null; DEMO_DET.cam = null; DEMO_DET.sm = {}; }
+function demoDetOff(){ DEMO_DET.on = false; DEMO_DET.cam = null; DEMO_DET.sm = {}; }
 /* ⚠️ 화재 검출 박스는 이제 **메인 화면(drawFireBox)**에 그린다 — PiP 화재 경로
    (fireBoxNorm·smokeBoxNorm)는 2026-09-01 제거됐다. 이 PiP 는 **충돌(사람)** 전용이다. */
 /* 조리원 AABB(발밑~머리)를 cam 기준으로 투영해 정규 박스로. 탑뷰에서는 발자국 사각형이,
@@ -12016,7 +12016,7 @@ function corrReset(quiet) {
   if (CORR.saved) {
     SAFE.blind = CORR.saved.blind;
     if (CORR.saved.auto !== undefined) state.auto = CORR.saved.auto;
-    if (CORR.saved.pip !== undefined) {   // 검출 캠(cvTop)으로 바꿨던 PiP 복원
+    if (CORR.saved.pip !== undefined) {   // 검출 캠(nzSE)으로 바꿨던 PiP 복원
       pipView = CORR.saved.pip;
       if (typeof pipSel !== "undefined" && pipSel) pipSel.value = pipView;
       applyCameras();
@@ -12056,7 +12056,7 @@ function corrStart(mode) {
   demoStandUp();
   if (typeof clearEstop === "function") clearEstop();
   CORR.saved = { blind: SAFE.blind, ctrl: (typeof CTRL !== "undefined") ? CTRL.target : "camera", auto: state.auto,
-    pip: pipView,                                      // 검출 캠(cvTop)으로 바꿀 PiP 를 되돌리기에서 복원
+    pip: pipView,                                      // 검출 캠(nzSE)으로 바꿀 PiP 를 되돌리기에서 복원
     cam: { target: camera.getTarget().clone(), alpha: camera.alpha, beta: camera.beta, radius: camera.radius },
     nomStop: SAFE.NOM_STOP, nomSlow: SAFE.NOM_SLOW, spStop: SAFE.spStop, spSlow: SAFE.spSlow, stopR: SAFE.stopR, slowR: SAFE.slowR };
   CORR.announced = false;                              // 이번 회차 음성 안내는 첫 감지 때 1회
@@ -12098,7 +12098,7 @@ function corrStart(mode) {
        위에서 내려다본 영상으로 학습하므로 화재(해치뷰)와 캠이 다르다(사용자 지시).
        이 배치에는 단일 cvTop 이 없어, 충돌 셀(사람 경로 A→B→EXIT)을 프레임에 담는
        나디르(수직 하향) 캠 nzSE 를 쓴다 — 실측: A·중간·B(로봇 앞) 모두 프레임 안. */
-    demoDetPipOn("person", "nzSE");
+    demoDetPipOn("nzSE");
     setStatus("▶ 회피 — 로봇이 바스켓 작업 중 사람 정면 접근 → 예측 → 정지 대신 능동 후퇴 → 지나가면 작업 재개.  [demo-v27]");
   } else {
     SAFE.blind = true; corrVizOn(false);
