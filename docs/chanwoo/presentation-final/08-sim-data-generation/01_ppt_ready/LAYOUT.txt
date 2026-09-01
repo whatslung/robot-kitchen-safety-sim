@@ -1,0 +1,17 @@
+PPT Composite Layout Guide
+==========================
+
+01_normal_4way.png
+02_fire_early_4way.png
+03_fire_mid_4way.png
+04_fire_late_4way.png
+
+위 4개 이미지의 배치는 모두 같습니다.
+
+- Top left: RGB
+- Top right: Class mask
+- Bottom left: Instance mask
+- Bottom right: Depth 6 m
+
+나머지 이미지는 파일 이름에 표시된 조건을 왼쪽에서 오른쪽 순서로 비교합니다.
+

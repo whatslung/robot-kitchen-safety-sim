@@ -1,0 +1,17 @@
+Sensor RGB Examples - Important Notice
+======================================
+
+이 폴더의 이미지는 센서 열화 효과를 발표자료에서 비교하기 위한 RGB 예시입니다.
+
+- 01_clean.png: Clean sensor
+- 02_standard_cctv.png: Standard CCTV
+- 03_low_cost_cctv.png: Low-cost CCTV
+- 04_night.png: Night condition
+
+현재 main에서 저해상도 센서 프리셋을 사용하면 출력 단계 사이에 렌더 크기가
+달라질 수 있습니다. 해상도가 다른 GT 결과를 임의로 늘리거나 자르면 픽셀 단위
+정합성이 깨지므로, 이 폴더에는 RGB 예시만 포함했습니다.
+
+완전히 정합된 RGB, class mask, instance mask, depth 결과는
+02_normal_sets와 03_fire_sets를 사용하십시오.
+

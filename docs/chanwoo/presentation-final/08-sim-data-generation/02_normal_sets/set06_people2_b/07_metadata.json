@@ -1,0 +1,487 @@
+{
+ "camera_id": "overhead",
+ "intrinsics": {
+  "width": 960,
+  "height": 720,
+  "model": "pinhole",
+  "fov_vertical_rad": 0.8,
+  "fx": 851.48,
+  "fy": 851.48,
+  "cx": 480,
+  "cy": 360,
+  "position": [
+   2.3676,
+   2.7563,
+   5.182
+  ],
+  "world_matrix_row_major": [
+   -0.916803,
+   0,
+   0.39934,
+   0,
+   -0.140975,
+   0.935616,
+   -0.323649,
+   0,
+   -0.373628,
+   -0.353019,
+   -0.857776,
+   0,
+   2.367594,
+   2.756305,
+   5.181989,
+   1
+  ]
+ },
+ "scale": {
+  "m_per_au": 1,
+  "fryer_outer_diameter_m": 1.25,
+  "verified": false,
+  "note": "미검증 — 조리원 어깨너비 대비 추정, ±25% (measurement_basis.md)"
+ },
+ "depth8": {
+  "file": "_depth.png",
+  "encoding": "gray = 255*(1 - d/range_m)",
+  "range_m": 6
+ },
+ "depth_near": {
+  "file": "_depthnear.png",
+  "encoding": "d(m) = range_m*(1 - gray/255)",
+  "convention": "카메라로부터의 시야 거리(radial)",
+  "range_m": 3,
+  "precision_m": 0.0118,
+  "saturate": "range_m 초과 = 0(검정)"
+ },
+ "classes": [
+  {
+   "id": 0,
+   "label": "person",
+   "color": [
+    255,
+    0,
+    0
+   ]
+  },
+  {
+   "id": 1,
+   "label": "fire",
+   "color": [
+    255,
+    255,
+    0
+   ]
+  },
+  {
+   "id": 2,
+   "label": "smoke",
+   "color": [
+    0,
+    255,
+    255
+   ]
+  },
+  {
+   "id": 3,
+   "label": "robot",
+   "color": [
+    0,
+    255,
+    0
+   ]
+  },
+  {
+   "id": 4,
+   "label": "kettle",
+   "color": [
+    255,
+    128,
+    0
+   ]
+  },
+  {
+   "id": 5,
+   "label": "equipment",
+   "color": [
+    0,
+    128,
+    255
+   ]
+  }
+ ],
+ "label_mode": "instance",
+ "label_note": "labels/labelText는 인스턴스 마스크 기준(개체당 1박스). 클래스 마스크 기준 합산 박스는 labelsByClass에 별도 보관 — 학습에는 쓰지 말 것.",
+ "scene": {
+  "seed": 1528811146,
+  "cell": "",
+  "fire": false,
+  "fire_progress": 0,
+  "fog_density": 0.1,
+  "smoke_particles": 0,
+  "smoke_target": 0,
+  "steam_k": 1,
+  "people": 2,
+  "sensor": {
+   "grain": 0,
+   "distortion": 0,
+   "chroma": 0,
+   "blur": 0,
+   "vignette": 0,
+   "expJit": 0,
+   "lowres": 0,
+   "on": true,
+   "steam_lens": 0.173
+  }
+ },
+ "instances": [
+  {
+   "instance": "kettle_0",
+   "class": "kettle",
+   "color": [
+    60,
+    180,
+    75
+   ],
+   "cx": 0.496354,
+   "cy": 0.515972,
+   "w": 0.369792,
+   "h": 0.297222,
+   "pixels": 41546
+  },
+  {
+   "instance": "equip_cart",
+   "class": "equip",
+   "color": [
+    255,
+    225,
+    25
+   ],
+   "cx": 0.785417,
+   "cy": 0.663194,
+   "w": 0.154167,
+   "h": 0.252778,
+   "pixels": 3155
+  },
+  {
+   "instance": "equip_floorduct",
+   "class": "equip",
+   "color": [
+    0,
+    130,
+    200
+   ],
+   "cx": 0.88125,
+   "cy": 0.645833,
+   "w": 0.058333,
+   "h": 0.056944,
+   "pixels": 1056
+  },
+  {
+   "instance": "equip_kiosk",
+   "class": "equip",
+   "color": [
+    245,
+    130,
+    48
+   ],
+   "cx": 0.971354,
+   "cy": 0.505556,
+   "w": 0.057292,
+   "h": 0.326389,
+   "pixels": 8091
+  },
+  {
+   "instance": "kettle_nb0",
+   "class": "kettle",
+   "color": [
+    70,
+    240,
+    240
+   ],
+   "cx": 0.664063,
+   "cy": 0.234028,
+   "w": 0.088542,
+   "h": 0.169444,
+   "pixels": 6572
+  },
+  {
+   "instance": "equip_kettle_nb_closed1",
+   "class": "equip",
+   "color": [
+    240,
+    50,
+    230
+   ],
+   "cx": 0.574479,
+   "cy": 0.28125,
+   "w": 0.090625,
+   "h": 0.077778,
+   "pixels": 3219
+  },
+  {
+   "instance": "equip_kettle_nb_closed2",
+   "class": "equip",
+   "color": [
+    210,
+    245,
+    60
+   ],
+   "cx": 0.476563,
+   "cy": 0.307639,
+   "w": 0.088542,
+   "h": 0.113889,
+   "pixels": 3783
+  },
+  {
+   "instance": "equip_table3",
+   "class": "equip",
+   "color": [
+    250,
+    190,
+    212
+   ],
+   "cx": 0.316146,
+   "cy": 0.276389,
+   "w": 0.138542,
+   "h": 0.048611,
+   "pixels": 2564
+  },
+  {
+   "instance": "equip_rack4",
+   "class": "equip",
+   "color": [
+    0,
+    128,
+    128
+   ],
+   "cx": 0.133854,
+   "cy": 0.247917,
+   "w": 0.126042,
+   "h": 0.169444,
+   "pixels": 4962
+  },
+  {
+   "instance": "equip_rack5",
+   "class": "equip",
+   "color": [
+    220,
+    190,
+    255
+   ],
+   "cx": 0.034896,
+   "cy": 0.248611,
+   "w": 0.069792,
+   "h": 0.173611,
+   "pixels": 2971
+  },
+  {
+   "instance": "kettle_nb8",
+   "class": "kettle",
+   "color": [
+    128,
+    0,
+    0
+   ],
+   "cx": 0.219792,
+   "cy": 0.495139,
+   "w": 0.19375,
+   "h": 0.444444,
+   "pixels": 38193
+  },
+  {
+   "instance": "equip_kettle_nb_closed9",
+   "class": "equip",
+   "color": [
+    170,
+    255,
+    195
+   ],
+   "cx": 0.033854,
+   "cy": 0.615278,
+   "w": 0.067708,
+   "h": 0.276389,
+   "pixels": 10213
+  },
+  {
+   "instance": "equip_fridge10",
+   "class": "equip",
+   "color": [
+    128,
+    128,
+    0
+   ],
+   "cx": 0.845833,
+   "cy": 0.277778,
+   "w": 0.15,
+   "h": 0.254167,
+   "pixels": 13151
+  },
+  {
+   "instance": "equip_fridge11",
+   "class": "equip",
+   "color": [
+    255,
+    215,
+    180
+   ],
+   "cx": 0.926562,
+   "cy": 0.288889,
+   "w": 0.146875,
+   "h": 0.251389,
+   "pixels": 14030
+  },
+  {
+   "instance": "equip_table23",
+   "class": "equip",
+   "color": [
+    24,
+    24,
+    216
+   ],
+   "cx": 0.739583,
+   "cy": 0.370833,
+   "w": 0.15625,
+   "h": 0.123611,
+   "pixels": 4090
+  },
+  {
+   "instance": "equip_pancart24",
+   "class": "equip",
+   "color": [
+    24,
+    24,
+    248
+   ],
+   "cx": 0.360938,
+   "cy": 0.70625,
+   "w": 0.184375,
+   "h": 0.45,
+   "pixels": 36102
+  },
+  {
+   "instance": "equip_pancart25",
+   "class": "equip",
+   "color": [
+    24,
+    56,
+    24
+   ],
+   "cx": 0.030208,
+   "cy": 0.828472,
+   "w": 0.060417,
+   "h": 0.341667,
+   "pixels": 7579
+  },
+  {
+   "instance": "equip_bin29",
+   "class": "equip",
+   "color": [
+    24,
+    56,
+    216
+   ],
+   "cx": 0.661458,
+   "cy": 0.377083,
+   "w": 0.025,
+   "h": 0.036111,
+   "pixels": 375
+  },
+  {
+   "instance": "equip_table30",
+   "class": "equip",
+   "color": [
+    24,
+    56,
+    248
+   ],
+   "cx": 0.397396,
+   "cy": 0.360417,
+   "w": 0.165625,
+   "h": 0.130556,
+   "pixels": 6122
+  },
+  {
+   "instance": "equip_table31",
+   "class": "equip",
+   "color": [
+    24,
+    88,
+    24
+   ],
+   "cx": 0.086458,
+   "cy": 0.409028,
+   "w": 0.172917,
+   "h": 0.158333,
+   "pixels": 7668
+  },
+  {
+   "instance": "equip_basketcart32",
+   "class": "equip",
+   "color": [
+    24,
+    88,
+    56
+   ],
+   "cx": 0.288021,
+   "cy": 0.41875,
+   "w": 0.019792,
+   "h": 0.072222,
+   "pixels": 332
+  },
+  {
+   "instance": "equip_pancart33",
+   "class": "equip",
+   "color": [
+    24,
+    88,
+    88
+   ],
+   "cx": 0.930208,
+   "cy": 0.410417,
+   "w": 0.122917,
+   "h": 0.258333,
+   "pixels": 8876
+  },
+  {
+   "instance": "equip_basket",
+   "class": "equip",
+   "color": [
+    24,
+    88,
+    184
+   ],
+   "cx": 0.794792,
+   "cy": 0.529167,
+   "w": 0.15,
+   "h": 0.123611,
+   "pixels": 2581
+  },
+  {
+   "instance": "equip_jig",
+   "class": "equip",
+   "color": [
+    24,
+    88,
+    216
+   ],
+   "cx": 0.794792,
+   "cy": 0.463889,
+   "w": 0.114583,
+   "h": 0.106944,
+   "pixels": 610
+  },
+  {
+   "instance": "robot_0",
+   "class": "robot",
+   "color": [
+    24,
+    88,
+    248
+   ],
+   "cx": 0.609896,
+   "cy": 0.454861,
+   "w": 0.309375,
+   "h": 0.341667,
+   "pixels": 14324
+  }
+ ]
+}
