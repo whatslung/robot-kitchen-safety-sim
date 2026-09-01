@@ -10980,22 +10980,23 @@ const SM = { on:false, mode:"PROCEED", rate:1, factor:1, targetFactor:1, pathFac
              dodgeYaw:0, dodgeTargetYaw:0, dodgeSign:1 };   // 옆 위빙(복싱) — J1 yaw 오프셋
 const SM_DODGE_ANGLE = 0.6;   // 옆 스윙 최대 각(rad ≈ 34°)
 
-/* 사람들의 미래 위치 occupancy — 학습예측(주 사람 gt:0 모드들) + 현재 보이는 모든 사람.
-   반환: [{ points:[{x,y,z}×N] }] (씬 AU). 학습 예측이 없으면 현재 위치만으로도 동작. */
+/* 사람들의 미래 위치 occupancy — **현재 위치 + 속도(PVEL) 등속 외삽**으로 만든다.
+   반환: [{ points:[{x,y,z}×N] }] (씬 AU). 활성(보이는) 사람만.
+   ⚠️ **학습 다봉 예측(MPRED gt:0)은 안전 게이트에 쓰지 않는다.** 다봉 중 로봇 쪽으로 향하는
+      저확률 모드가 남으면 사람이 떠나도 proceed 가 계속 위험으로 판정돼 위빙에 갇혀 **재개가
+      안 됐다**(실측). 등속 외삽은 사람이 멀어지면 즉시 여유가 회복돼 확실히 재개한다. 학습
+      다봉 예측은 밀도구름 시각화(연구 그림)로 그대로 남는다 — 제어와 표시를 분리한다. */
 function smOccupancy(times, now) {
   const occ = [];
-  const rec = MPRED.pred.get("gt:0");
-  if (rec && Number.isFinite(rec.at) && (now - rec.at) < 1000 && Array.isArray(rec.modes)) {
-    for (const m of rec.modes) {
-      if (!m || !Array.isArray(m.path) || !m.path.length) continue;
-      const pts = times.map(t => { const q = modePosAt(m, t); return { x:q[0], y:0, z:q[1] }; });
-      if (pts.every(p => Number.isFinite(p.x) && Number.isFinite(p.z))) occ.push({ points:pts });
-    }
-  }
-  // 현재 보이는 모든 사람(주인공 + 활성 EXTRAS) — 전 시간축 현재 위치(누구도 무시하지 않는다)
-  const addNow = (node) => { const p = node.position; occ.push({ points: times.map(() => ({ x:p.x, y:0, z:p.z })) }); };
-  if (person.node.isEnabled()) addNow(person.node);
-  if (typeof EXTRAS !== "undefined") for (const P of EXTRAS) if (P && P.root && P.root.isEnabled()) addNow(P.root);
+  const add = (node) => {
+    const p = node.position;
+    let vx = 0, vz = 0;
+    if (typeof PVEL !== "undefined") { const v = PVEL.get(node); if (v) { vx = v.vx; vz = v.vz; } }
+    const moving = Math.hypot(vx, vz) > 0.03;
+    occ.push({ points: times.map(t => moving ? { x:p.x + vx*t, y:0, z:p.z + vz*t } : { x:p.x, y:0, z:p.z }) });
+  };
+  if (person.node.isEnabled()) add(person.node);
+  if (typeof EXTRAS !== "undefined") for (const P of EXTRAS) if (P && P.root && P.root.isEnabled()) add(P.root);
   return occ;
 }
 
