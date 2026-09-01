@@ -1,0 +1,16 @@
+Actual FIRE true-positive bounding-box output is not present in the local repositories.
+The authoritative checkpoint is stored under another Google Drive account. Do not draw boxes manually.
+
+Required Colab inputs:
+  DEMO_VIDEO=/content/drive/MyDrive/Kitchen Grease Fire Safety.mp4
+  MODEL=real_only_grouped_ck
+  START=90
+  END=100
+  OUT_MP4=/content/demo_grease_90_100.mp4
+
+Run remote scripts/colab_demo_video.py. Expected outputs:
+  /content/demo_grease_90_100.mp4
+  /content/demo_grease_90_100_strip.jpg
+
+Checkpoint:
+  /content/drive/MyDrive/fire_frames/runs_if/real_only_grouped_ck/weights/best.pt
