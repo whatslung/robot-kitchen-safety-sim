@@ -4,7 +4,7 @@
 재현하는 Babylon.js 기반 웹 3D 시뮬레이터다. 합성 학습 데이터 생성부터 검출·추적·궤적
 예측, 모델 기반 안전 정지 검증까지 한 저장소에서 다룬다.
 
-[웹 데모](https://robot-kitchen-safety-sim.vercel.app) ·
+[웹 데모](https://robot-kitchen-safety-sim-beryl.vercel.app) ·
 [모델·평가 문서](docs/chanwoo/README.md) ·
 [모델 연동 규격](MODEL_HANDOFF.md) ·
 [출처 및 라이선스](ATTRIBUTION.md)
@@ -32,7 +32,7 @@
 
 ### 1. 웹 데모
 
-[https://robot-kitchen-safety-sim.vercel.app](https://robot-kitchen-safety-sim.vercel.app)
+[https://robot-kitchen-safety-sim-beryl.vercel.app](https://robot-kitchen-safety-sim-beryl.vercel.app)
 
 설치 없이 최신 `main`의 정적 프런트엔드를 확인할 수 있다. 처음 열면 `발표` 탭이 보인다.
 
