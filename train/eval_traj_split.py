@@ -51,6 +51,11 @@ def learned_predictors():
     else:
         print(f"[eval] Transformer 가중치 없음({tf}) → LSTM만. "
               "먼저 `python train/train_traj_transformer.py` 실행.")
+    # autoresearch 튜닝본(adamw_sched_big: layers=3, heads=8) — results/autoresearch-log.tsv 참조.
+    tft = _TRAJ / "model_transformer_tuned.pt"
+    if tft.exists():
+        out["Transformer-tuned"] = LearnedPredictor(
+            net=build_transformer_net(layers=3, heads=8), weights_path=str(tft), device="cpu")
     return out
 
 
