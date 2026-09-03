@@ -655,6 +655,8 @@
   <div class="btnrow" id="devTools" style="display:none">
     <button id="inspectorBtn">Inspector</button>
   </div>
+  <label class="row" style="cursor:pointer"><input type="checkbox" id="useBackendPredict" checked style="accent-color:#76b900">
+    <span style="width:auto;color:#c9d1d9">백엔드 예측 사용 <span class="note" style="font-weight:400">끄면 로컬 칼만 — 백엔드 연동 없이 동작(노트북 프레임 끊김 완화)</span></span></label>
 
   <div class="section">시각화 표시 <span class="note" style="font-weight:400">기본 꺼짐 — 필요할 때 켜기</span></div>
   <label class="row" style="cursor:pointer"><input type="checkbox" id="vizNoStop" style="accent-color:#f0a020">
@@ -6589,6 +6591,7 @@ function mpredAnyFresh() { for (const r of MPRED.pred.values()) if (mpredFresh(r
 function customPredictTick(srcPos, now, dtMs) {
   CPRED.fn = (typeof window.__customPredictor === "function") ? window.__customPredictor : null;
   if (!CPRED.fn) return false;
+  if (!BACKEND.use) return false;   // 고급 토글 '백엔드 예측 사용' 꺼짐 → 로컬 칼만 폴백(POST 안 쏨)
   CPRED.acc += dtMs;
   if (!CPRED.busy && CPRED.acc >= 1000 / CPRED.hz) {
     CPRED.acc = 0; CPRED.busy = true;
@@ -6625,7 +6628,7 @@ function customPredictTick(srcPos, now, dtMs) {
    그래서 GET /health로 **로드 시 딱 한 번** 확인하고 그 판정을 세션 내내 쓴다.
    없으면 조용히 칼만 폴백하고 **폴링을 멈춘다**(매 틱 POST/health 도배 방지).
    백엔드를 나중에 켰다면 페이지 새로고침 — 또는 콘솔에서 window.__backendRecheck(). */
-const BACKEND = { ok: null, probing: false, net: null };   // net: 서버가 서빙하는 예측 아키텍처(/health)
+const BACKEND = { ok: null, probing: false, net: null, use: true };   // use: 백엔드 예측 사용(고급 토글, 끄면 로컬 칼만). net: 서버가 서빙하는 예측 아키텍처(/health)
 function backendProbe(force) {
   if (BACKEND.probing) return;
   if (BACKEND.ok !== null && !force) return;         // 이미 판정됨 — 재확인 안 함(모드 고정)
@@ -6718,7 +6721,7 @@ function mpredObserve(now) {
 }
 function mpredTick(now, dtMs) {
   if (typeof window.__customPredictor !== "function") return;   // 예측기 훅 없으면 배치 안 함
-  if (BACKEND.ok !== true) return;                              // 백엔드 부재 → 배치 예측 생략(칼만 폴백), POST 안 쏨(로드 시 1회 판정)
+  if (!BACKEND.use || BACKEND.ok !== true) return;             // 백엔드 부재/토글 꺼짐 → 배치 예측 생략(칼만 폴백), POST 안 쏨
   MPRED.acc += dtMs;
   if (MPRED.busy || MPRED.acc < 1000 / MPRED.hz) return;
   MPRED.acc = 0;
@@ -12702,6 +12705,14 @@ $("predModel").addEventListener("change", e => {
   PRED.kx = kf1(); PRED.kz = kf1(); PRED.sigma = 0;    // 모델을 바꾸면 상태를 새로 잡는다
   setStatus("궤적 예측 모델: " + e.target.selectedOptions[0].textContent);
 });
+$("useBackendPredict").addEventListener("change", e => {
+  BACKEND.use = e.target.checked;
+  if (!BACKEND.use) {                                   // 끄면 즉시 로컬 폴백 — 남은 백엔드 예측/오차 카운트를 비운다
+    MPRED.pred = new Map(); MPRED.worst = null;
+    CPRED.path = null; CPRED.modes = null; CPRED.err = 0;
+  }
+  setStatus("백엔드 예측 " + (BACKEND.use ? "사용 (학습형)" : "끔 — 로컬 칼만으로 동작"));
+});
 $("predModel").value = PRED.model;
 
 $("qualitySel").addEventListener("change", e => {
@@ -14827,7 +14838,7 @@ function histPickWindow(nodes) {
   const nd = sorted[0]; return { nd, now: Math.min(Math.max(8, nd.frames.length >> 1), nd.frames.length - 13) };
 }
 async function histPredictModes(obs) {                // 백엔드 /predict = 실제 학습형 예측기(있을 때만)
-  if (BACKEND.ok !== true) return null;
+  if (!BACKEND.use || BACKEND.ok !== true) return null;
   try {
     const r = await fetch("/predict", { method: "POST", headers: { "Content-Type": "application/json" },
                                         body: JSON.stringify({ hist: obs.map(f => [f.x, f.z]) }) });
