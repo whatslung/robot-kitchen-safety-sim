@@ -9490,8 +9490,11 @@ function pushUpdate(dt) {
   /* **위치를 옮기는 노드와 애니메이션을 가진 리그가 서로 다르다.** 주인공은 person.node로
      걷고 PERSON이 클립을 갖는다. 추가 인원은 **.root로 걷는다 — .node가 없다.**
      처음에 e.node로 적어 두는 바람에 추가 인원은 카트를 아예 못 밀었다(조건이 늘 거짓). */
-  const movers = [{ pos: person.node, rig: PERSON }];
-  for (const e of EXTRAS) if (e && e.root) movers.push({ pos: e.root, rig: e });
+  const movers = [];
+  if (person.node.isEnabled()) movers.push({ pos: person.node, rig: PERSON });
+  // ⚠️ 비활성(숨김) 인원은 제외한다 — 안 그러면 WASD 1:1 등으로 숨긴 EXTRA가 투명하게
+  //    걸어다니며 카트를 밀어 "카트가 저절로 움직인다"가 된다(nearestPerson 정합 수정과 같은 계열).
+  for (const e of EXTRAS) if (e && e.root && e.root.isEnabled()) movers.push({ pos: e.root, rig: e });
   for (const mv of movers)                       // 밀기 자세 유지시간 소진
     if (mv.rig && mv.rig.pushT > 0) mv.rig.pushT -= (dt || 16.7);
   for (const b of PUSH.bodies) {
@@ -14270,6 +14273,7 @@ function extraNextTarget(P) {
 }
 function extrasUpdate(dt) {
   for (const P of EXTRAS) {
+    if (!P.root || !P.root.isEnabled()) continue;   // 숨긴 인원은 걷지도 밀지도 않게 — 투명 워커 방지(카트 저절로 밀림 등)
     const n = P.root.position;
     /* 인원별 독립 난수 — extraNextTarget과 같은 규약.
        여기서 전역 RNG를 쓰면 체류시간·대기동작이 전역 흐름을 공유하게 되어
