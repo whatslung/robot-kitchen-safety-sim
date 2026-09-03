@@ -1,0 +1,9 @@
+# Cloud Run(예측 전용) 런타임 의존성 — 검출(YOLO)을 끄므로 ultralytics·supervision·
+# trackers·onnx·torchvision·PIL 은 전부 불필요. 궤적 예측기(LSTM)에 필요한 최소만 남긴다.
+#
+# torch 는 여기 넣지 않는다 — GPU 휠(용량 큼)이 딸려오지 않게, Dockerfile 에서
+# CPU 전용 인덱스로 따로 설치한다:  uv pip install --system torch==2.4.1 --index-url .../whl/cpu
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+numpy>=1.26,<2.3
+huggingface-hub>=0.25.0

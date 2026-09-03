@@ -1,0 +1,10 @@
+# gcloud run deploy --source . 가 Cloud Build 로 올리는 소스를 최소화한다.
+# (.gcloudignore 가 있으면 gcloud 는 .gitignore 대신 이 파일을 따른다)
+# 빌드에 필요한 것: Dockerfile + backend/ + trajectory/ + .dockerignore 만.
+*
+!Dockerfile
+!.dockerignore
+!backend
+!trajectory
+**/__pycache__
+**/*.pyc

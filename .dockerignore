@@ -1,0 +1,8 @@
+# 빌드 컨텍스트를 최소화한다 — 이미지엔 backend/ 와 trajectory/ 만 들어가면 된다.
+# (babylon.js 8MB, HavokPhysics wasm 2.7MB, assets/·train/·dataset/ 등은 배포와 무관)
+*
+!backend
+!trajectory
+# 파이썬 캐시는 넣지 않는다(마지막 매칭이 이겨서 위 화이트리스트보다 우선).
+**/__pycache__
+**/*.pyc
