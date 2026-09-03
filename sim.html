@@ -6660,7 +6660,7 @@ function trajResample(hist, now, n = 8, dtMs = 400) {
   return out;
 }
 async function trajPredict(obs) {
-  if (BACKEND.ok !== true) throw new Error("backend 미가동 → 칼만 폴백");   // POST 안 쏨(로드 시 1회 판정)
+  if (!BACKEND.use || BACKEND.ok !== true) throw new Error("backend 미가동/꺼짐 → 칼만 폴백");   // POST 안 쏨(로드 시 1회 판정 · 고급 토글로 끔 · 훅 직접 호출 대비 자기방어)
   const hist = (obs.hist && obs.hist.length) ? obs.hist : [{ t: obs.now, x: obs.pos.x, z: obs.pos.z }];
   const pts = trajResample(hist, obs.now);
   const r = await fetch("/predict", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -12708,7 +12708,7 @@ $("predModel").addEventListener("change", e => {
 $("useBackendPredict").addEventListener("change", e => {
   BACKEND.use = e.target.checked;
   if (!BACKEND.use) {                                   // 끄면 즉시 로컬 폴백 — 남은 백엔드 예측/오차 카운트를 비운다
-    MPRED.pred = new Map(); MPRED.worst = null;
+    MPRED.pred = new Map(); MPRED.worst = null; MPRED.reqId++;   // reqId++ : in-flight /predict 응답이 캐시를 되채우지 못하게 무효화(리뷰 Minor#1)
     CPRED.path = null; CPRED.modes = null; CPRED.err = 0;
   }
   setStatus("백엔드 예측 " + (BACKEND.use ? "사용 (학습형)" : "끔 — 로컬 칼만으로 동작"));
