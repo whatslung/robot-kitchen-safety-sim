@@ -1,4 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": null
+  "framework": null,
+  "rewrites": [
+    { "source": "/health", "destination": "https://detect-server-977211534391.asia-northeast3.run.app/health" },
+    { "source": "/predict", "destination": "https://detect-server-977211534391.asia-northeast3.run.app/predict" },
+    { "source": "/nadir", "destination": "https://detect-server-977211534391.asia-northeast3.run.app/nadir" }
+  ]
 }
