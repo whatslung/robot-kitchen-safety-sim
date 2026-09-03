@@ -11069,6 +11069,10 @@ function avoidDecide(dtMs) {
      강제하는 게 데모의 전제인데, 예측 회피만 살아 있으면 로봇이 영원히 출발 보류돼
      충돌·끼임 데모가 성립하지 않는다(2026-08-22 실측: hold로 210프레임+ 정지). */
   if (!AVOID.on || !state.auto || !s || !s.cross || SAFE.blind) return;   // 위험 구간(통로 횡단)에서만 개입
+  /* (2026-09) 일반·WASD 모드에선 후퇴(retract)/대기(hold) 안 함 — 사람 접근은 SAFE 감속·정지 +
+     latAvoidTick(옆비킴)이 담당한다. seqT 되감기 후퇴가 "기름 위로 원점 리셋"처럼 보였다는
+     사용자 지적. hold/retract 는 스크립트 데모(CORR '▶ 회피' · DEMO before/after)에서만 유지. */
+  if (!((typeof CORR !== "undefined" && CORR.on) || (typeof DEMO !== "undefined" && DEMO.on))) return;
   const t = state.dur ? clamp(state.seqT / state.dur, 0, 1) : 0;
   const remain = state.dur ? (state.dur - state.seqT) / 1000 : 0;   // 남은 횡단 시간(s)
   const window = Math.max(0.4, Math.min(remain, PRED.vizHorizon));
@@ -11081,6 +11085,71 @@ function avoidDecide(dtMs) {
   } else {                                     // 이미 횡단 중 → 같은 경로로 후퇴
     AVOID.mode = "retract"; AVOID.rate = -1; AVOID.retractMs += dtMs;
     AVOID.reason = "후퇴 — 횡단 중 " + dmin.toFixed(2) + "m 접근 예측";
+  }
+}
+
+/* ══ 방향 회피(옆비킴) — 예측 위험대에서 팔을 사람 반대쪽으로 기울인다 ══════════════
+   기존 AVOID(경로 위 1D 전진/후퇴/정지)로는 못 하는 "왼쪽에서 오면 오른쪽으로" 방향 회피.
+   고정 베이스 팔이라도 여유자유도로 TCP를 옆으로 옮길 수 있다. 순수 오프셋 계산은
+   tests/browser/lateral-offset.mjs 로 검증됨(node --test) — 아래는 그 canonical 복사본. */
+const LAT = { on: true, dx: 0, dz: 0, blend: 0.18, maxOffset: 0.45,
+              lead: 0.30 };   // 발동 시작 = 빨간 원(팔 반경) + lead. "빨간 원 즈음부터", 먼 반경 미발동
+if (typeof window !== "undefined") window.__latDbg = LAT;   // 디버그 관찰용
+
+function computeLateralOffset(person, base, tcp, opts) {
+  const { actR, dangerR, maxOffset, reachR } = opts;
+  const px = person.x - base.x, pz = person.z - base.z;
+  const d = Math.hypot(px, pz);
+  if (d >= actR || d < 1e-6) return { dx: 0, dz: 0 };
+  const ramp = Math.max(0, Math.min(1, (actR - d) / (actR - dangerR)));
+  const mag = maxOffset * ramp;
+  if (mag <= 0) return { dx: 0, dz: 0 };
+  const dirx = -px / d, dirz = -pz / d;                 // 사람 반대쪽 단위벡터
+  let dx = dirx * mag, dz = dirz * mag;
+  const tx = tcp.x - base.x, tz = tcp.z - base.z;       // 도달 클램프: reachR 밖으로 안 밀기
+  if (Math.hypot(tx + dx, tz + dz) > reachR) {
+    const b = 2 * (tx * dirx + tz * dirz);
+    const c = tx * tx + tz * tz - reachR * reachR;
+    const disc = b * b - 4 * c;
+    if (disc < 0) return { dx: 0, dz: 0 };
+    const t = Math.max(0, Math.min(mag, (-b + Math.sqrt(disc)) / 2));
+    dx = dirx * t; dz = dirz * t;
+  }
+  return { dx, dz };
+}
+
+/* stepUpdate 가 정한 팔 자세 '직후' 매 프레임 호출. 최근접 사람 반대쪽으로 TCP 를
+   부드럽게 오프셋해 solveIK 로 덮어쓴다(팔이 작업하며 옆으로 기욺). 위험대 밖이면 0 소멸.
+   스크립트 씬(CORR/DEMO)·검출실패(blind)에선 개입 안 함 — 그쪽이 팔을 직접 몬다. */
+function latAvoidTick() {
+  // ⚠️ state.auto 필수 — auto off 면 stepUpdate 가 nominal 자세 리셋을 안 해서(11244) 오프셋이
+  //    매 프레임 누적돼 팔이 끝까지 쏠리고 사람이 떠나도 복귀 못 한다(리뷰 Important). 정지 중엔 미개입.
+  if (!LAT.on || !state.auto || SAFE.blind ||
+      (typeof CORR !== "undefined" && CORR.on) ||
+      (typeof DEMO !== "undefined" && DEMO.on)) { LAT.dx = 0; LAT.dz = 0; return; }
+  const np = nearestPerson();
+  const base = LAYOUT.robot.base;
+  const tcp = effector().getAbsolutePosition();
+  let off = { dx: 0, dz: 0 };
+  if (np.pos) {
+    off = computeLateralOffset(
+      { x: np.pos.x, z: np.pos.z }, { x: base.x, z: base.z }, { x: tcp.x, z: tcp.z },
+      { actR: SAFE.NOM_DANGER + LAT.lead, dangerR: SAFE.NOM_DANGER,
+        maxOffset: LAT.maxOffset, reachR: SAFE.NOM_DANGER });
+  }
+  LAT.dx += (off.dx - LAT.dx) * LAT.blend;              // 부드럽게 in/out
+  LAT.dz += (off.dz - LAT.dz) * LAT.blend;
+  if (Math.hypot(LAT.dx, LAT.dz) > 2e-3) {
+    // ⚠️ solveIK 아닌 ccdSolve — solveIK 는 못 닿으면 홈·랜덤 자세로 재시작해(2178) 작은
+    //    오프셋에도 팔이 통째로 뒤집힌다. ccdSolve 는 현재 자세에서 미세 조정만 → 작은 옆비킴.
+    ccdSolve(new V3(tcp.x + LAT.dx, tcp.y, tcp.z + LAT.dz), 8);
+    // 운반 중이면 손목 재수평 — ccdSolve 가 J4/J5 를 틀어 포크·바스켓이 기우는 것 방지(stepUpdate:11267 미러).
+    const s = SEQ[state.seqIdx];
+    if (state.basketHeld && basketNode && s && s.k !== "shake") {
+      JOINTS[3].value = clamp(-(JOINTS[1].value + JOINTS[2].value), JOINTS[3].min, JOINTS[3].max);
+      JOINTS[4].value = 0;
+      applyJoint(JOINTS[3]); applyJoint(JOINTS[4]); refreshChain();
+    }
   }
 }
 /* ══ 로봇 후보 기동 화살표 (Trajectron++ Fig.1 스타일) ═══════════════════════
@@ -12215,20 +12284,11 @@ function corrTick(dt) {   // 매 프레임 호출 — 조리 사이클(stepUpdat
    사람이 반경에 들어오면 팔이 이송 스텝(ik/ikOff)에서 조금씩 후퇴한다.
    강도는 corrTick(시나리오)의 절반(1.0+2.5→0.5+1.2) — "light" 회피. */
 function wasdAvoidTick(dt) {
-  if (typeof CORR !== "undefined" && CORR.on) return;                       // 시나리오 데모 중이면 corrTick이 담당
-  if (typeof CTRL === "undefined" || CTRL.target !== "person") return;      // WASD 사람 조작 중일 때만
-  if (typeof SAFE !== "undefined" && SAFE.blind) return;                    // "안 봄" 상태(충돌 시연)에선 회피 X — avoidDecide/corrTick과 정합
-  if (!state.dur || !state.auto) return;                                    // 조리 사이클이 돌아야 되감기 의미 있음
-  const b = LAYOUT.robot.base, p = person.node.position;                    // ⚠️ 주인공(person)만 반응 — EXTRAS 근접은 base SAFE만
-  const dist = Math.hypot(p.x - b.x, p.z - b.z);
-  if (dist < 2.6) {
-    // ⚠️ SEQ가 끝난 프레임엔 seqIdx가 SEQ.length일 수 있어 `s &&` 가드가 로드베어링.
-    const s = SEQ[state.seqIdx];
-    if (s && (s.k === "ik" || s.k === "ikOff")) {
-      const closeness = clamp((2.6 - dist) / 1.4, 0, 1);
-      state.seqT = Math.max(0, state.seqT - (0.5 + 1.2 * closeness) * (dt || 16));
-    }
-  }
+  /* (2026-09) 후퇴(seqT 되감기) 제거 — WASD로 사람이 다가오면 팔이 작업 사이클 시작점
+     (potHover=기름 위)으로 되돌아가 "회피가 아니라 원점 리셋"처럼 보였다(사용자 지적).
+     이제 사람 접근 대응은 latAvoidTick(옆으로 lean) + SAFE(감속/정지)가 담당한다 — 팔은
+     후퇴하지 않고 하던 자리에서 옆으로 비키며 작업을 잇는다(정지반경 안이면 SAFE가 정지).
+     호환 위해 함수는 남겨둔 no-op. */
 }
 $("corrBefore").addEventListener("click", () => corrStart("before"));
 $("corrAfter").addEventListener("click", () => corrStart("after"));
@@ -13089,6 +13149,7 @@ scene.registerBeforeRender(() => {
   applyKeys(dt);
   ceilAutoTick();            // 자유 시점 천장 자동 숨김 — 카메라 포즈로 매 프레임 판정
   stepUpdate(dt);
+  latAvoidTick();            // 방향 회피 — 팔을 사람 반대쪽으로 옆비킴(예측 위험대에서만)
   updateCooking(dt);
   fireFogTick(dt);           // 화재 연무 — 발화 후 경과에 따라 방 전체 농도를 올린다
   smokeConfineTick();        // 연기가 후드·천장을 뚫고 나가지 않게 가둔다
