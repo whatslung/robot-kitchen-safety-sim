@@ -1,0 +1,4 @@
+# 셸 스크립트와 Dockerfile 은 LF 로 고정한다. autocrlf=true 환경에서 CRLF 로
+# 체크아웃되면 bash(`$'\r'` 오류)·docker buildkit 에서 문제가 생길 수 있다.
+*.sh        text eol=lf
+Dockerfile  text eol=lf

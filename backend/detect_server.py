@@ -62,6 +62,12 @@ _MODEL_PATH = os.environ.get(
 _HUB_REPO = os.environ.get("DETECT_MODEL_REPO", "chanubc/robot-kitchen-nadir-yolo11s")
 _HUB_FILE = os.environ.get("DETECT_MODEL_FILE", "best.pt")
 
+# 공개 배포(예: Cloud Run) 하드닝 스위치. 켜면(API_ONLY=1) 정적 파일 마운트와 로컬
+# 개발용 쓰기 엔드포인트(/dataset·/shot·/traj)를 노출하지 않는다 — 무인증·공개 상태에서
+# 임의 파일 읽기(정적 마운트)와 tmpfs 메모리 고갈(디스크 쓰기)을 막는다. 로컬 개발에선
+# 끄고 쓴다(기본 꺼짐 → 시뮬 정적 서빙·데이터셋 수집 그대로).
+API_ONLY = os.environ.get("API_ONLY", "").strip().lower() in ("1", "true", "yes", "on")
+
 
 def _is_detect_off(path) -> bool:
     """DETECT_MODEL 이 검출 비활성(예측 전용)을 뜻하는 값인가.
@@ -341,6 +347,8 @@ async def dataset(req: Request):
     요청: {"set":"sim-person-island","name":"orthotop_0000","image":"data:image/png;base64,...","label":"0 .. 
 "}
     """
+    if API_ONLY:
+        return JSONResponse(status_code=404, content={"error": "endpoint disabled (API_ONLY)"})
     try:
         body = await req.json()
         safe = lambda v, d: "".join(c for c in str(v) if c.isalnum() or c in "-_")[:80] or d
@@ -367,6 +375,8 @@ async def shot(req: Request):
     버튼을 눌러야** 했다. 데모/문서용 스냅을 자동으로 남기려면 서버가 받아 쓰는 쪽이 맞다.
     요청: {"name": "demo", "image": "data:image/png;base64,..."}
     """
+    if API_ONLY:
+        return JSONResponse(status_code=404, content={"error": "endpoint disabled (API_ONLY)"})
     try:
         body = await req.json()
         raw = body["image"]
@@ -389,6 +399,8 @@ async def traj(req: Request):
     받아 쓴다(폴더 선택창 없음, 클릭 0회). dataset/이 gitignore라 궤적도 자동 제외된다.
     요청: {"scene_id":"island_seed7_0000", "schema":1, "seed":7, ..., "nodes":[...]}
     """
+    if API_ONLY:
+        return JSONResponse(status_code=404, content={"error": "endpoint disabled (API_ONLY)"})
     try:
         body = await req.json()
         safe = lambda v, d: "".join(c for c in str(v) if c.isalnum() or c in "-_")[:80] or d
@@ -700,11 +712,16 @@ async def nadir(req: Request):
 # 시뮬 정적 파일(sim.html·assets·vendor…)도 같은 FastAPI가 서빙한다 →
 # 서버 하나로 시뮬 + 검출을 모두 처리(별도 http.server 불필요, 동일 출처라 CORS도 불필요).
 # 라우트(/detect·/health)를 먼저 등록한 뒤 마운트하므로 그 경로들이 우선한다.
-try:
-    from fastapi.staticfiles import StaticFiles
-    app.mount("/", StaticFiles(directory=str(_ROOT), html=True), name="sim")
-except Exception as e:                    # noqa: BLE001
-    print(f"[detect_server] 정적 서빙 비활성 ({e}) — 시뮬은 별도 http.server로 여세요")
+# ※ API_ONLY(공개 배포)면 마운트하지 않는다 — _ROOT 아래 임의 파일이 무인증으로 공개되는
+#   것을 막는다(프론트는 Vercel이 서빙). 로컬 개발(API_ONLY 꺼짐)에선 종전대로 서빙.
+if API_ONLY:
+    print("[detect_server] API_ONLY → 정적 파일 마운트 생략(공개 배포용). /health·/predict·/nadir 만 노출.")
+else:
+    try:
+        from fastapi.staticfiles import StaticFiles
+        app.mount("/", StaticFiles(directory=str(_ROOT), html=True), name="sim")
+    except Exception as e:                # noqa: BLE001
+        print(f"[detect_server] 정적 서빙 비활성 ({e}) — 시뮬은 별도 http.server로 여세요")
 
 
 if __name__ == "__main__":
